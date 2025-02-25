@@ -21,6 +21,10 @@ import (
 
 var _ source.Decomposer = (*Decomposer)(nil)
 
+func New() *Decomposer {
+	return &Decomposer{}
+}
+
 type Decomposer struct{}
 
 // These options not yet wired in
@@ -37,7 +41,7 @@ func (d *Decomposer) DefaultOptions() any {
 }
 
 // Extract calls go to get the data
-func (d *Decomposer) Extract(opts source.Options) (*sbom.NodeList, error) {
+func (d *Decomposer) Extract(opts *source.Options) (*sbom.NodeList, error) {
 	var cmd *command.Command
 	if opts.WorkDir == "" {
 		cmd = command.New("go", "mod", "graph")
@@ -169,7 +173,7 @@ func (d *Decomposer) convertTree(
 }
 
 // readMainModule reads the module name from the go.mod file.
-func (d *Decomposer) readMainModule(opts source.Options) (string, error) {
+func (d *Decomposer) readMainModule(opts *source.Options) (string, error) {
 	data, err := os.ReadFile(filepath.Join(opts.WorkDir, "go.mod"))
 	if err != nil {
 		return "", fmt.Errorf("reading go.mod: %w", err)

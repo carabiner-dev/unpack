@@ -7,7 +7,7 @@ import (
 // Decomposer is an interface that abstracts the logic of dependency extraction
 // from a codebase.
 type Decomposer interface {
-	Extract(Options) (*sbom.NodeList, error)
+	Extract(*Options) (*sbom.NodeList, error)
 	DefaultOptions() any
 }
 

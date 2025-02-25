@@ -18,11 +18,9 @@ func TestReadMainModule(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		t.Parallel()
 		d := Decomposer{}
-		name, err := d.readMainModule(
-			source.Options{
-				WorkDir: "../..",
-			},
-		)
+		name, err := d.readMainModule(&source.Options{
+			WorkDir: "../..",
+		})
 		require.NoError(t, err)
 		require.Equal(t, "github.com/carabiner-dev/unpack", name)
 	})
@@ -30,7 +28,7 @@ func TestReadMainModule(t *testing.T) {
 	t.Run("nofile", func(t *testing.T) {
 		t.Parallel()
 		d := Decomposer{}
-		_, err := d.readMainModule(source.Options{})
+		_, err := d.readMainModule(&source.Options{})
 		require.Error(t, err)
 	})
 }
