@@ -1,0 +1,23 @@
+module github.com/carabiner-dev/unpack
+
+go 1.24.0
+
+require (
+	github.com/carabiner-dev/protograph v0.0.0-20250223042216-b2bc7a0c5cb6
+	github.com/google/uuid v1.6.0
+	github.com/protobom/protobom v0.5.2-0.20250224074831-5612e368b95d
+	github.com/stretchr/testify v1.10.0
+	sigs.k8s.io/release-utils v0.11.0
+)
+
+require (
+	github.com/CycloneDX/cyclonedx-go v0.9.2 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/google/go-cmp v0.7.0 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/spdx/tools-golang v0.5.5 // indirect
+	golang.org/x/sys v0.28.0 // indirect
+	google.golang.org/protobuf v1.36.5 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
+)
