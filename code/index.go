@@ -6,6 +6,7 @@ import (
 	"slices"
 )
 
+// PathIndex lists all directories with their files
 type PathIndex map[string][]string
 
 // Adds an entry to the filesystem
@@ -25,6 +26,7 @@ func (pi PathIndex) FindFileLocations(filename string) ([]string, error) {
 			ret = append(ret, dir)
 		}
 	}
+
 	return ret, nil
 }
 

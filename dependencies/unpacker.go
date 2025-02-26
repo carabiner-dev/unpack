@@ -26,11 +26,21 @@ func NewUnpacker() *Unpacker {
 }
 
 type Options struct {
-	logger *slog.Logger
+	// FailOnSingleMulti makes Unpacker return an error on calls that return a
+	// single nodelist but obtain more than one from the configured decomposers.
+	// This can happen when a directory contains code for more than one language
+	// or multiple projects in the same directory.
+	//
+	// By default this is on as turning it off causes unpacker to behave in a
+	// non-deterministic way as it can return diferent data depending on the
+	// order of the configured decomposers
+	FailOnSingleMulti bool
+	logger            *slog.Logger
 }
 
 var DefaultOptions = Options{
-	logger: slog.Default(),
+	FailOnSingleMulti: true,
+	logger:            slog.Default(),
 }
 
 type Sources struct {
@@ -93,6 +103,11 @@ func (unpacker *Unpacker) ExtractCodebaseWithContext(ctx context.Context, path s
 	case 1:
 		return nodelists[0], nil
 	default:
+		// Fail if FailOnSingleMulti is set:
+		if unpacker.Options.FailOnSingleMulti {
+			return nil, fmt.Errorf("multiple codebases found in %q", path)
+		}
+
 		unpacker.Options.logger.WarnContext(
 			ctx, fmt.Sprintf("%d codebases found, only returning the first", len(nodelists)),
 		)
