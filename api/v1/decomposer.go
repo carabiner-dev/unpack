@@ -9,9 +9,3 @@ type Decomposer interface {
 	Requirements() []Requirement
 	DefaultOptions() any
 }
-
-// Requirement
-type Requirement interface {
-	Description() string
-	Check() bool
-}
