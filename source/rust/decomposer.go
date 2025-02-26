@@ -10,13 +10,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/carabiner-dev/unpack/source"
 	"github.com/google/uuid"
 	"github.com/protobom/protobom/pkg/sbom"
 	"sigs.k8s.io/release-utils/command"
+
+	api "github.com/carabiner-dev/unpack/api/v1"
 )
 
-var _ source.Decomposer = (*Decomposer)(nil)
+var _ api.Decomposer = (*Decomposer)(nil)
 
 func New() *Decomposer {
 	return &Decomposer{}
@@ -37,7 +38,7 @@ type Options struct {
 
 // TODO(puerco): Enrich from https://crates.io/api/v1/crates/quote/1.0.35
 
-func (d *Decomposer) Extract(opts *source.Options) (*sbom.NodeList, error) {
+func (d *Decomposer) Extract(opts *api.Options) (*sbom.NodeList, error) {
 	var dopts = d.DefaultOptions().(Options)
 	if lo := opts.GetDecomposerOptions(d); lo != nil {
 		var ok bool
@@ -70,7 +71,7 @@ func (d *Decomposer) Extract(opts *source.Options) (*sbom.NodeList, error) {
 // parseDependencyTree extracts dependencies from the rust source. This function
 // takes a dependency type string: "normal", "dev", or "build" matching the cargo
 // types.
-func (d *Decomposer) parseDependencyTree(opts *source.Options, nl *sbom.NodeList, depType string) error {
+func (d *Decomposer) parseDependencyTree(opts *api.Options, nl *sbom.NodeList, depType string) error {
 	var typeParam string
 
 	// Switch these to make sure we dont exec an unknown param:

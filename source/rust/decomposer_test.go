@@ -3,9 +3,10 @@ package rust
 import (
 	"testing"
 
-	"github.com/carabiner-dev/unpack/source"
 	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/require"
+
+	api "github.com/carabiner-dev/unpack/api/v1"
 )
 
 func TestParseCargoOutput(t *testing.T) {
@@ -48,7 +49,7 @@ func TestParseCargoOutput(t *testing.T) {
 			nl := sbom.NewNodeList()
 
 			d := New()
-			opts := source.Options{}
+			opts := api.Options{}
 			opts.SetDecomposerOptions(d, Options{
 				GenerateNormalDependencies: true,
 			})

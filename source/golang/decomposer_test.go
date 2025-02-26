@@ -6,7 +6,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/carabiner-dev/unpack/source"
+	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/google/uuid"
 	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/require"
@@ -18,7 +18,7 @@ func TestReadMainModule(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		t.Parallel()
 		d := Decomposer{}
-		name, err := d.readMainModule(&source.Options{
+		name, err := d.readMainModule(&api.Options{
 			WorkDir: "../..",
 		})
 		require.NoError(t, err)
@@ -28,7 +28,7 @@ func TestReadMainModule(t *testing.T) {
 	t.Run("nofile", func(t *testing.T) {
 		t.Parallel()
 		d := Decomposer{}
-		_, err := d.readMainModule(&source.Options{})
+		_, err := d.readMainModule(&api.Options{})
 		require.Error(t, err)
 	})
 }
