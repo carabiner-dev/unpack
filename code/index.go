@@ -3,6 +3,7 @@ package code
 import (
 	"io/fs"
 	"path/filepath"
+	"slices"
 )
 
 type PathIndex map[string][]string
@@ -13,6 +14,18 @@ func (pi PathIndex) Add(dirname, filename string) {
 		pi[dirname] = []string{}
 	}
 	pi[dirname] = append(pi[dirname], filename)
+}
+
+// FindFileLocations searches the index for directories containing a file
+// matching a specific name.
+func (pi PathIndex) FindFileLocations(filename string) ([]string, error) {
+	ret := []string{}
+	for dir, files := range pi {
+		if slices.Contains(files, filename) {
+			ret = append(ret, dir)
+		}
+	}
+	return ret, nil
 }
 
 type Indexer struct {

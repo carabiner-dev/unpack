@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/release-utils/command"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/code"
 	"github.com/carabiner-dev/unpack/requirements"
 )
 
@@ -180,4 +181,8 @@ func (d *Decomposer) DefaultOptions() any {
 	return Options{
 		GenerateNormalDependencies: true,
 	}
+}
+
+func (d *Decomposer) FindCodeBases(index *code.PathIndex) ([]string, error) {
+	return index.FindFileLocations("Cargo.lock")
 }

@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/release-utils/command"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/code"
 	"github.com/carabiner-dev/unpack/requirements"
 )
 
@@ -229,4 +230,8 @@ func goStringToPurl(gostring string) string {
 		purl = fmt.Sprintf("%s@%s", purl, version)
 	}
 	return purl
+}
+
+func (d *Decomposer) FindCodeBases(index *code.PathIndex) ([]string, error) {
+	return index.FindFileLocations("go.mod")
 }

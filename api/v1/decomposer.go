@@ -1,6 +1,9 @@
 package v1
 
-import "github.com/protobom/protobom/pkg/sbom"
+import (
+	"github.com/carabiner-dev/unpack/code"
+	"github.com/protobom/protobom/pkg/sbom"
+)
 
 // Decomposer is an interface that abstracts the logic of dependency extraction
 // from a codebase.
@@ -12,4 +15,9 @@ type Decomposer interface {
 
 // SourceDecomposer is a decomposer that reads data from a codebase.
 type SourceDecomposer interface {
+	// FindCodeBases reads a path index and locates any directories that
+	// contain a codebase that a decomposer understands. Typically this
+	// will be the root directory, but there may be cases where a directory
+	// contains many, for example in a monorepo structure.
+	FindCodeBases(*code.PathIndex) ([]string, error)
 }
