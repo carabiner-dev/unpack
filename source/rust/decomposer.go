@@ -51,7 +51,7 @@ func (d *Decomposer) Requirements(_ *api.DecomposerOptions) []api.Requirement {
 
 func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	var dopts = d.DefaultOptions().(Options)
-	if lo := opts.GetDecomposerOptions(d); lo != nil {
+	if lo := opts.GetDriverOptions(d); lo != nil {
 		var ok bool
 		dopts, ok = lo.(Options)
 		if !ok {

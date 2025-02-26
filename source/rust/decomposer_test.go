@@ -50,7 +50,7 @@ func TestParseCargoOutput(t *testing.T) {
 
 			d := New()
 			opts := api.DecomposerOptions{}
-			opts.SetDecomposerOptions(d, Options{
+			opts.SetDriverOptions(d, Options{
 				GenerateNormalDependencies: true,
 			})
 

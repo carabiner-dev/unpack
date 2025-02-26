@@ -6,25 +6,25 @@ import "fmt"
 // a decomposer. They are meant to be ephimeral, for the invocation only, and
 // derived from the Unpacker configuration whe invoked from there.
 type DecomposerOptions struct {
-	WorkDir           string
-	decomposerOptions map[string]any
+	WorkDir       string
+	driverOptions map[string]any
 }
 
-func (so *DecomposerOptions) SetDecomposerOptions(dec Decomposer, opts any) {
+func (so *DecomposerOptions) SetDriverOptions(dec Decomposer, opts any) {
 	if dec == nil {
 		return
 	}
-	if so.decomposerOptions == nil {
-		so.decomposerOptions = map[string]any{}
+	if so.driverOptions == nil {
+		so.driverOptions = map[string]any{}
 	}
-	so.decomposerOptions[fmt.Sprintf("%T", dec)] = opts
+	so.driverOptions[fmt.Sprintf("%T", dec)] = opts
 }
 
-func (so *DecomposerOptions) GetDecomposerOptions(dec Decomposer) any {
-	if so.decomposerOptions == nil {
+func (so *DecomposerOptions) GetDriverOptions(dec Decomposer) any {
+	if so.driverOptions == nil {
 		return nil
 	}
-	if opts, ok := so.decomposerOptions[fmt.Sprintf("%T", dec)]; ok {
+	if opts, ok := so.driverOptions[fmt.Sprintf("%T", dec)]; ok {
 		return opts
 	}
 	return nil
