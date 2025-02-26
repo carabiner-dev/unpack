@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/release-utils/command"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/requirements"
 )
 
 var _ api.Decomposer = (*Decomposer)(nil)
@@ -37,6 +38,16 @@ type Options struct {
 }
 
 // TODO(puerco): Enrich from https://crates.io/api/v1/crates/quote/1.0.35
+
+// Requirements returns the requirements for the decomposer.
+// The rust decomposer needs the cargo binary to be installed.
+func (d *Decomposer) Requirements() []api.Requirement {
+	return []api.Requirement{
+		&requirements.Executable{
+			Command: "cargo",
+		},
+	}
+}
 
 func (d *Decomposer) Extract(opts *api.Options) (*sbom.NodeList, error) {
 	var dopts = d.DefaultOptions().(Options)

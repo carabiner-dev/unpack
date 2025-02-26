@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/release-utils/command"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/requirements"
 )
 
 var _ api.Decomposer = (*Decomposer)(nil)
@@ -38,6 +39,16 @@ var defaultOptions = Options{
 
 func (d *Decomposer) DefaultOptions() any {
 	return defaultOptions
+}
+
+// Requirements returns the requirements for the decomposer.
+// To extract dependencies, it needs the go binary top be available.
+func (d *Decomposer) Requirements() []api.Requirement {
+	return []api.Requirement{
+		&requirements.Executable{
+			Command: "go",
+		},
+	}
 }
 
 // Extract calls go to get the data
