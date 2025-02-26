@@ -18,7 +18,7 @@ func TestReadMainModule(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		t.Parallel()
 		d := Decomposer{}
-		name, err := d.readMainModule(&api.Options{
+		name, err := d.readMainModule(&api.DecomposerOptions{
 			WorkDir: "../..",
 		})
 		require.NoError(t, err)
@@ -28,7 +28,7 @@ func TestReadMainModule(t *testing.T) {
 	t.Run("nofile", func(t *testing.T) {
 		t.Parallel()
 		d := Decomposer{}
-		_, err := d.readMainModule(&api.Options{})
+		_, err := d.readMainModule(&api.DecomposerOptions{})
 		require.Error(t, err)
 	})
 }

@@ -41,7 +41,7 @@ type Options struct {
 
 // Requirements returns the requirements for the decomposer.
 // The rust decomposer needs the cargo binary to be installed.
-func (d *Decomposer) Requirements(_ *api.Options) []api.Requirement {
+func (d *Decomposer) Requirements(_ *api.DecomposerOptions) []api.Requirement {
 	return []api.Requirement{
 		&requirements.Executable{
 			Command: "cargo",
@@ -49,7 +49,7 @@ func (d *Decomposer) Requirements(_ *api.Options) []api.Requirement {
 	}
 }
 
-func (d *Decomposer) Extract(opts *api.Options) (*sbom.NodeList, error) {
+func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	var dopts = d.DefaultOptions().(Options)
 	if lo := opts.GetDecomposerOptions(d); lo != nil {
 		var ok bool
@@ -82,7 +82,7 @@ func (d *Decomposer) Extract(opts *api.Options) (*sbom.NodeList, error) {
 // parseDependencyTree extracts dependencies from the rust source. This function
 // takes a dependency type string: "normal", "dev", or "build" matching the cargo
 // types.
-func (d *Decomposer) parseDependencyTree(opts *api.Options, nl *sbom.NodeList, depType string) error {
+func (d *Decomposer) parseDependencyTree(opts *api.DecomposerOptions, nl *sbom.NodeList, depType string) error {
 	var typeParam string
 
 	// Switch these to make sure we dont exec an unknown param:

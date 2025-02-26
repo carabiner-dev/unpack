@@ -49,7 +49,7 @@ func TestParseCargoOutput(t *testing.T) {
 			nl := sbom.NewNodeList()
 
 			d := New()
-			opts := api.Options{}
+			opts := api.DecomposerOptions{}
 			opts.SetDecomposerOptions(d, Options{
 				GenerateNormalDependencies: true,
 			})

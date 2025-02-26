@@ -43,7 +43,7 @@ func (d *Decomposer) DefaultOptions() any {
 
 // Requirements returns the requirements for the decomposer.
 // To extract dependencies, it needs the go binary top be available.
-func (d *Decomposer) Requirements(_ *api.Options) []api.Requirement {
+func (d *Decomposer) Requirements(_ *api.DecomposerOptions) []api.Requirement {
 	return []api.Requirement{
 		&requirements.Executable{
 			Command: "go",
@@ -52,7 +52,7 @@ func (d *Decomposer) Requirements(_ *api.Options) []api.Requirement {
 }
 
 // Extract calls go to get the data
-func (d *Decomposer) Extract(opts *api.Options) (*sbom.NodeList, error) {
+func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	var cmd *command.Command
 	if opts.WorkDir == "" {
 		cmd = command.New("go", "mod", "graph")
@@ -184,7 +184,7 @@ func (d *Decomposer) convertTree(
 }
 
 // readMainModule reads the module name from the go.mod file.
-func (d *Decomposer) readMainModule(opts *api.Options) (string, error) {
+func (d *Decomposer) readMainModule(opts *api.DecomposerOptions) (string, error) {
 	data, err := os.ReadFile(filepath.Join(opts.WorkDir, "go.mod"))
 	if err != nil {
 		return "", fmt.Errorf("reading go.mod: %w", err)

@@ -2,12 +2,15 @@ package v1
 
 import "fmt"
 
-type Options struct {
+// DecomposerOptions is the options set that goes into an Extract() run in
+// a decomposer. They are meant to be ephimeral, for the invocation only, and
+// derived from the Unpacker configuration whe invoked from there.
+type DecomposerOptions struct {
 	WorkDir           string
 	decomposerOptions map[string]any
 }
 
-func (so *Options) SetDecomposerOptions(dec Decomposer, opts any) {
+func (so *DecomposerOptions) SetDecomposerOptions(dec Decomposer, opts any) {
 	if dec == nil {
 		return
 	}
@@ -17,7 +20,7 @@ func (so *Options) SetDecomposerOptions(dec Decomposer, opts any) {
 	so.decomposerOptions[fmt.Sprintf("%T", dec)] = opts
 }
 
-func (so *Options) GetDecomposerOptions(dec Decomposer) any {
+func (so *DecomposerOptions) GetDecomposerOptions(dec Decomposer) any {
 	if so.decomposerOptions == nil {
 		return nil
 	}
