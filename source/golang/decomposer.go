@@ -43,7 +43,7 @@ func (d *Decomposer) DefaultOptions() any {
 
 // Requirements returns the requirements for the decomposer.
 // To extract dependencies, it needs the go binary top be available.
-func (d *Decomposer) Requirements() []api.Requirement {
+func (d *Decomposer) Requirements(_ *api.Options) []api.Requirement {
 	return []api.Requirement{
 		&requirements.Executable{
 			Command: "go",

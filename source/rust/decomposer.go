@@ -41,7 +41,7 @@ type Options struct {
 
 // Requirements returns the requirements for the decomposer.
 // The rust decomposer needs the cargo binary to be installed.
-func (d *Decomposer) Requirements() []api.Requirement {
+func (d *Decomposer) Requirements(_ *api.Options) []api.Requirement {
 	return []api.Requirement{
 		&requirements.Executable{
 			Command: "cargo",

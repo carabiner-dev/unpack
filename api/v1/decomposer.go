@@ -6,6 +6,6 @@ import "github.com/protobom/protobom/pkg/sbom"
 // from a codebase.
 type Decomposer interface {
 	Extract(*Options) (*sbom.NodeList, error)
-	Requirements() []Requirement
+	Requirements(*Options) []Requirement
 	DefaultOptions() any
 }
