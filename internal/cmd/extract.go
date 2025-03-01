@@ -87,15 +87,12 @@ to read its dependency data.
 			unpacker.Options.IndexFiles = true
 
 			nodelist, err := unpacker.ExtractCodebase(opts.Path)
-
 			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				os.Exit(1)
+				return err
 			}
 
 			if nodelist == nil {
-				fmt.Fprintln(os.Stderr, "No dependency data found")
-				os.Exit(1)
+				return errors.New("no dependency data found")
 			}
 
 			var format formats.Format

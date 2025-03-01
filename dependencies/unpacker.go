@@ -52,6 +52,7 @@ type Options struct {
 
 var DefaultOptions = Options{
 	FailOnSingleMulti: true,
+	ReadGitVersion:    true,
 	logger:            slog.Default(),
 }
 
@@ -106,7 +107,7 @@ func (unpacker *Unpacker) ExtractCodebaseWithContext(ctx context.Context, path s
 		Paths: []string{path},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("extracting codebases")
+		return nil, fmt.Errorf("extracting codebases: %w", err)
 	}
 
 	switch len(nodelists) {
