@@ -91,7 +91,6 @@ func (d *Decomposer) IndexFS(source fs.FS) (*sbom.NodeList, error) {
 			}
 
 			mtx.Lock()
-			fmt.Println(node.FileName)
 			nl.AddRootNode(node)
 			mtx.Unlock()
 
@@ -100,7 +99,7 @@ func (d *Decomposer) IndexFS(source fs.FS) (*sbom.NodeList, error) {
 		t.Throttle()
 	}
 
-	logrus.Infof("Nodelist got %d nodes", len(nl.Nodes))
+	logrus.Debugf("Nodelist got %d nodes", len(nl.Nodes))
 
 	// If the throttler picked up errors when running, fail here
 	if err := t.Err(); err != nil {
