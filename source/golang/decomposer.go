@@ -79,7 +79,7 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	}
 
 	// Convert the go package trees to a protobom nodelist
-	nl, err := d.convertTrees(root, trees)
+	nl, err := d.convertTrees(opts, root, trees)
 	if err != nil {
 		return nil, fmt.Errorf("converting graph trees: %w", err)
 	}
@@ -89,24 +89,33 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 
 // convertTrees reads the tree map parsed from the go graph output and
 // converts it to a protobom NodeList, capturing the graph structure.
-func (d *Decomposer) convertTrees(root string, trees *map[string][]string) (nl *sbom.NodeList, err error) {
+func (d *Decomposer) convertTrees(opts *api.DecomposerOptions, root string, trees *map[string][]string) (nl *sbom.NodeList, err error) {
 	// Create the new NodeList
 	nl = sbom.NewNodeList()
 
 	// Add the root package to anchor the
 	// module's dependencies
-	nl.AddRootNode(&sbom.Node{
-		Id:   uuid.NewString(),
-		Type: sbom.Node_PACKAGE,
-		Name: root,
+	rootNode := &sbom.Node{
+		Id:      uuid.NewString(),
+		Type:    sbom.Node_PACKAGE,
+		Name:    root,
+		Version: opts.Version,
 		Identifiers: map[int32]string{
 			int32(sbom.SoftwareIdentifierType_PURL): goStringToPurl(root),
 		},
-	})
+	}
+	nl.AddRootNode(rootNode)
 
 	// Run the recursive tree converter
 	if err = d.convertTree(nl, []string{root}, trees, &map[string]struct{}{}); err != nil {
 		return nil, fmt.Errorf("error running recursive conversion: %w", err)
+	}
+
+	// If the optiosn specify a new version, set it here. Not before traversing
+	// the tree because recursion breaks:
+	if opts.Version != "" {
+		rootNode.Identifiers[int32(sbom.SoftwareIdentifierType_PURL)] =
+			goStringToPurl(fmt.Sprintf("%s@%s", root, opts.Version))
 	}
 
 	return nl, nil
@@ -194,11 +203,7 @@ func (d *Decomposer) readMainModule(opts *api.DecomposerOptions) (string, error)
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	for scanner.Scan() {
 		if strings.HasPrefix(scanner.Text(), "module ") {
-			modString := strings.TrimSpace(strings.TrimPrefix(scanner.Text(), "module "))
-			if opts.Version != "" {
-				modString += "@" + opts.Version
-			}
-			return modString, nil
+			return strings.TrimSpace(strings.TrimPrefix(scanner.Text(), "module ")), nil
 		}
 	}
 	return "", errors.New("unable to read main module name")

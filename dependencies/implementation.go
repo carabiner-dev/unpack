@@ -98,7 +98,7 @@ func (di *defaultImplementation) ExtractCodeBases(
 				CommitHash: hashHex,
 			})
 			if err != nil {
-				return nil, fmt.Errorf("extracting dependencies from %q with %T", cbPath, d)
+				return nil, fmt.Errorf("from %q with %T: %w", cbPath, d, err)
 			}
 
 			// This should never happen but we need it to
@@ -109,7 +109,7 @@ func (di *defaultImplementation) ExtractCodeBases(
 
 			// Index the source files if the options is set
 			if opts.IndexFiles {
-				opts.logger.Info(fmt.Sprintf("indexing all files in %s", cbPath))
+				opts.logger.Debug(fmt.Sprintf("indexing all files in %s", cbPath))
 				fsd, err := filesystem.New()
 				if err != nil {
 					return nil, fmt.Errorf("creating fs decomposer: %w", err)
@@ -120,7 +120,7 @@ func (di *defaultImplementation) ExtractCodeBases(
 					return nil, fmt.Errorf("indexing filesystem: %w", err)
 				}
 
-				opts.logger.Info(fmt.Sprintf("read data from %d files", len(nlFiles.RootElements)))
+				opts.logger.Debug(fmt.Sprintf("read data from %d files", len(nlFiles.RootElements)))
 
 				// Mix the resulting nodes into the code nodelist
 				err = nl.RelateNodeListAtID(nlFiles, nl.RootElements[0], sbom.Edge_contains)
