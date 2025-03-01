@@ -57,7 +57,7 @@ func TestParseCargoOutput(t *testing.T) {
 				GenerateNormalDependencies: true,
 			})
 
-			err := d.parseCargoOutput(nl, tc.input, sbom.Edge_dependsOn, map[string]*sbom.Node{})
+			err := d.parseCargoOutput(&api.DecomposerOptions{}, nl, tc.input, sbom.Edge_dependsOn, map[string]*sbom.Node{})
 			if tc.mustErr {
 				require.Error(t, err)
 				return

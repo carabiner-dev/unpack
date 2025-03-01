@@ -118,6 +118,15 @@ func (d *Decomposer) convertTrees(opts *api.DecomposerOptions, root string, tree
 			goStringToPurl(fmt.Sprintf("%s@%s", root, opts.Version))
 	}
 
+	if opts.CommitHash != "" {
+		rootNode.ExternalReferences = append(rootNode.ExternalReferences, &sbom.ExternalReference{
+			Hashes: map[int32]string{
+				int32(sbom.HashAlgorithm_SHA1): opts.CommitHash,
+			},
+			Type: sbom.ExternalReference_VCS,
+		})
+	}
+
 	return nl, nil
 }
 

@@ -110,13 +110,13 @@ func (d *Decomposer) parseDependencyTree(opts *api.DecomposerOptions, nl *sbom.N
 
 	seen := map[string]*sbom.Node{}
 
-	if err := d.parseCargoOutput(nl, output.OutputTrimNL(), sbom.Edge_dependsOn, seen); err != nil {
+	if err := d.parseCargoOutput(opts, nl, output.OutputTrimNL(), sbom.Edge_dependsOn, seen); err != nil {
 		return fmt.Errorf("parsing cargo data: %w", err)
 	}
 	return nil
 }
 
-func (d *Decomposer) parseCargoOutput(nl *sbom.NodeList, data string, edgeType sbom.Edge_Type, seen map[string]*sbom.Node) error {
+func (d *Decomposer) parseCargoOutput(opts *api.DecomposerOptions, nl *sbom.NodeList, data string, edgeType sbom.Edge_Type, seen map[string]*sbom.Node) error {
 	scanner := bufio.NewScanner(strings.NewReader(data))
 	if packageNameRegex == nil {
 		packageNameRegex = regexp.MustCompile(packageNameRegexString)
@@ -171,6 +171,23 @@ func (d *Decomposer) parseCargoOutput(nl *sbom.NodeList, data string, edgeType s
 				return fmt.Errorf("linking %q to nodelist: %w", purl, err)
 			}
 		} else {
+			// This sets the version from git, but cargo manages the version
+			// from the Cargo.toml file
+			//
+			// if opts.Version != "" {
+			// 	node.Version = opts.Version
+			// 	node.Identifiers[int32(sbom.SoftwareIdentifierType_PURL)] = fmt.Sprintf("pkg:cargo/%s@%s", name, opts.Version)
+			// }
+
+			if opts.CommitHash != "" {
+				node.ExternalReferences = append(node.ExternalReferences, &sbom.ExternalReference{
+					Hashes: map[int32]string{
+						int32(sbom.HashAlgorithm_SHA1): opts.CommitHash,
+					},
+					Type: sbom.ExternalReference_VCS,
+				})
+			}
+
 			nl.AddRootNode(node)
 		}
 	}
