@@ -66,7 +66,8 @@ func nodeListToAttestation(wr io.WriteCloser, format formats.Format, nl *sbom.No
 			}
 		}
 
-		if n.GetExternalReferences() != nil {
+		// If the subject still has no hashes, then it's a codebase. Use the commit hash
+		if len(sub.Digest) > 0 && n.GetExternalReferences() != nil {
 			for _, ref := range n.GetExternalReferences() {
 				if ref.Type == sbom.ExternalReference_VCS {
 					for algo, h := range ref.Hashes {
