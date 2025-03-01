@@ -35,7 +35,14 @@ type Options struct {
 	// non-deterministic way as it can return diferent data depending on the
 	// order of the configured decomposers
 	FailOnSingleMulti bool
-	logger            *slog.Logger
+
+	// IndexFiles instructs the unpacker to add all files to the resulting
+	// nodelist after running source decomposers in a directory. This runs
+	// the file decomposer indexer which will hash all files in the source
+	// directory.
+	IndexFiles bool
+
+	logger *slog.Logger
 }
 
 var DefaultOptions = Options{
