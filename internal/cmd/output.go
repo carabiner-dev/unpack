@@ -66,6 +66,16 @@ func nodeListToAttestation(wr io.WriteCloser, format formats.Format, nl *sbom.No
 			}
 		}
 
+		if n.GetExternalReferences() != nil {
+			for _, ref := range n.GetExternalReferences() {
+				if ref.Type == sbom.ExternalReference_VCS {
+					for algo, h := range ref.Hashes {
+						sub.Digest[strings.ToLower(sbom.HashAlgorithm_name[algo])] = h
+					}
+				}
+			}
+		}
+
 		sub.DownloadLocation = n.UrlDownload
 		sub.Name = string(n.Purl())
 		att.Subject = append(att.Subject, &sub)
