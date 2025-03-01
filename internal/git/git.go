@@ -49,7 +49,12 @@ func RepoVersion(path string) (tag string, commit string, err error) {
 	}
 
 	// If we're not a the tag then we sinthesize the version
-	return lastTag + fmt.Sprintf("-%d+%s", num, headHash[0:8]), headHash, nil
+	sep := "-"
+	if strings.Contains(lastTag, "-") {
+		sep = "."
+	}
+	version := lastTag + fmt.Sprintf("%s%d+%s", sep, num, headHash[0:8])
+	return version, headHash, nil
 }
 
 func GetLatestTag(path string) (string, string, error) {
@@ -97,8 +102,6 @@ func getCommitsFromTag(repo *git.Repository, tagName string) (int, error) {
 	var i = 0
 	var found = false
 	err = cIter.ForEach(func(c *object.Commit) error {
-		fmt.Println(c.Hash.String() + " vs " + tagCommit.Hash.String())
-
 		if c.Hash.String() == tagCommit.Hash.String() {
 			found = true
 			return git.ErrTagExists
