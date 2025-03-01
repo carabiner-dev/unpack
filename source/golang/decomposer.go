@@ -194,7 +194,11 @@ func (d *Decomposer) readMainModule(opts *api.DecomposerOptions) (string, error)
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	for scanner.Scan() {
 		if strings.HasPrefix(scanner.Text(), "module ") {
-			return strings.TrimSpace(strings.TrimPrefix(scanner.Text(), "module ")), nil
+			modString := strings.TrimSpace(strings.TrimPrefix(scanner.Text(), "module "))
+			if opts.Version != "" {
+				modString += "@" + opts.Version
+			}
+			return modString, nil
 		}
 	}
 	return "", errors.New("unable to read main module name")
