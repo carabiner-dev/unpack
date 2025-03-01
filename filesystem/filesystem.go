@@ -7,7 +7,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -15,35 +14,34 @@ import (
 	"sync"
 
 	gitignore "github.com/go-git/go-git/v5/plumbing/format/gitignore"
-	intoto "github.com/in-toto/attestation/go/v1"
+	"github.com/google/uuid"
 	"github.com/nozzle/throttler"
 	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/sirupsen/logrus"
 
-	"github.com/carabiner-dev/hasher"
-
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/filesystem/options"
 )
 
 const gitIgnoreFile = ".gitignore"
 
-func New(funcs ...optFn) (*Decomposer, error) {
-	opts := defaultOptions
+func New(funcs ...options.Function) (*Decomposer, error) {
+	opts := options.Default
 	for _, f := range funcs {
-		f(&opts)
+		if err := f(&opts); err != nil {
+			return nil, err
+		}
 	}
 
-	h := hasher.New()
 	return &Decomposer{
-		Hasher:  h,
 		Options: opts,
 	}, nil
 }
 
 // Decomposer is a filesystem indexer
 type Decomposer struct {
-	Hasher  *hasher.Hasher
-	Options Options
+	Options    options.Options
+	Processors []FileProcessor
 }
 
 // Extract reads and hashes the files from the filesystem
@@ -55,17 +53,9 @@ func (d *Decomposer) Extract(*api.DecomposerOptions) (*sbom.NodeList, error) {
 	return nl, nil
 }
 
-// IndexFS takes an fs.FS and returns a nodelist with all the files indexed
-// and hashed.
+// IndexFS takes an fs.FS and returns a nodelist with all the files
+// indexed and enriched by the configured processors.
 func (d *Decomposer) IndexFS(source fs.FS) (*sbom.NodeList, error) {
-	// dirPath, err = filepath.Abs(dirPath)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("getting absolute directory path: %w", err)
-	// }
-
-	// Always reset the hashes before running
-	d.Hasher.Options.Algorithms = d.Options.Algorithms
-
 	// First, get a list of all the files
 	fileList, err := d.readtTree(source)
 	if err != nil {
@@ -85,12 +75,11 @@ func (d *Decomposer) IndexFS(source fs.FS) (*sbom.NodeList, error) {
 		return nil, fmt.Errorf("filesystem has no files to scan")
 	}
 
-	logrus.Debugf("Scanning %d files", len(fileList))
+	logrus.Infof("Scanning %d files", len(fileList))
 
-	t := throttler.New(5, len(fileList))
-	var mtx = sync.Mutex{}
-
+	var t = throttler.New(5, len(fileList))
 	var nl = sbom.NewNodeList()
+	var mtx = sync.Mutex{}
 
 	// Read the files in parallel
 	for _, path := range fileList {
@@ -102,7 +91,8 @@ func (d *Decomposer) IndexFS(source fs.FS) (*sbom.NodeList, error) {
 			}
 
 			mtx.Lock()
-			nl.AddNode(node)
+			fmt.Println(node.FileName)
+			nl.AddRootNode(node)
 			mtx.Unlock()
 
 			t.Done(nil)
@@ -110,7 +100,9 @@ func (d *Decomposer) IndexFS(source fs.FS) (*sbom.NodeList, error) {
 		t.Throttle()
 	}
 
-	// If the throttler picked an error, fail here
+	logrus.Infof("Nodelist got %d nodes", len(nl.Nodes))
+
+	// If the throttler picked up errors when running, fail here
 	if err := t.Err(); err != nil {
 		return nil, err
 	}
@@ -159,7 +151,7 @@ func (d *Decomposer) readtTree(source fs.FS) ([]string, error) {
 // }
 
 // ignorePatterns compiles the list of gitignore patterns from options and
-// from the gitignore file
+// from the gitignore file.
 func (d *Decomposer) ignorePatterns(source fs.FS, dirPath string) ([]gitignore.Pattern, error) {
 	patterns := []gitignore.Pattern{}
 	for _, s := range d.Options.IgnorePatterns {
@@ -170,8 +162,8 @@ func (d *Decomposer) ignorePatterns(source fs.FS, dirPath string) ([]gitignore.P
 		logrus.Debug("Not using patterns in .gitignore")
 		return patterns, nil
 	}
-	fmt.Println("Sale de " + filepath.Join(dirPath, gitIgnoreFile))
 
+	// Open the gitignore file, if we fail dont err. Simply ignore.
 	f, err := source.Open(filepath.Join(dirPath, gitIgnoreFile))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -229,42 +221,20 @@ func (d *Decomposer) applyIgnorePatterns(
 func (d *Decomposer) processFile(source fs.FS, path string) (*sbom.Node, error) {
 	// Create the new file node
 	node := sbom.NewNode()
+	node.Id = uuid.NewString()
 	node.Type = sbom.Node_FILE
+	node.Name = path
 	node.FileName = path
-	// node.FileTypes = []string{}
 	node.PrimaryPurpose = append(node.PrimaryPurpose, sbom.Purpose_SOURCE)
 
-	f, err := source.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("opening %q: %w", path, err)
-	}
-	defer f.Close()
-
-	hashes, err := d.Hasher.HashReaders([]io.Reader{f})
-	if err != nil {
-		return nil, fmt.Errorf("hashing %q: %w", path, err)
-	}
-
-	// We need to translate here
-	for algo, val := range (*hashes)[0] {
-		var at sbom.HashAlgorithm
-		switch algo {
-		case intoto.AlgorithmMD5:
-			at = sbom.HashAlgorithm_MD5
-		case intoto.AlgorithmSHA1:
-			at = sbom.HashAlgorithm_SHA1
-		case intoto.AlgorithmSHA224:
-			at = sbom.HashAlgorithm_SHA224
-		case intoto.AlgorithmSHA256, intoto.AlgorithmDirHash:
-			at = sbom.HashAlgorithm_SHA256
-		case intoto.AlgorithmSHA512:
-			at = sbom.HashAlgorithm_SHA512
-		case intoto.AlgorithmGitBlob, intoto.AlgorithmGitCommit, intoto.AlgorithmGitTag, intoto.AlgorithmGitTree:
-			at = sbom.HashAlgorithm_SHA1
-		default:
-			continue
+	for _, procId := range d.Options.Processors {
+		p, ok := FileProcessors[procId]
+		if !ok {
+			return nil, fmt.Errorf("unknown file processor %s", procId)
 		}
-		node.AddHash(at, val)
+		if err := p.Process(&d.Options, source, node); err != nil {
+			return nil, fmt.Errorf("processor %s returned an error %w", procId, err)
+		}
 	}
 
 	return node, nil
