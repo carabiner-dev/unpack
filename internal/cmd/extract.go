@@ -11,18 +11,15 @@ import (
 
 	"github.com/carabiner-dev/protograph"
 	"github.com/carabiner-dev/unpack/dependencies"
-	"github.com/google/uuid"
 	"github.com/protobom/protobom/pkg/formats"
-	"github.com/protobom/protobom/pkg/sbom"
-	"github.com/protobom/protobom/pkg/writer"
 	"github.com/spf13/cobra"
-	"google.golang.org/protobuf/types/known/timestamppb"
-	"sigs.k8s.io/release-utils/version"
 )
 
 type extractOptions struct {
-	Path   string
-	Format string
+	Path       string
+	Format     string
+	IndexFiles bool
+	Attest     bool
 }
 
 var validFormats = []string{"spdx", "cyclonedx", "cdx", "tree"}
@@ -46,8 +43,17 @@ func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVarP(
 		&ro.Path, "path", "p", "", "path to the artifact to unpack",
 	)
+
 	cmd.PersistentFlags().StringVarP(
 		&ro.Format, "format", "f", "tree", fmt.Sprintf("format for the output %+v", validFormats),
+	)
+
+	cmd.PersistentFlags().BoolVar(
+		&ro.IndexFiles, "files", true, "Index all files in codebases",
+	)
+
+	cmd.PersistentFlags().BoolVar(
+		&ro.Attest, "attest", false, "output sboms in an intoto attestation",
 	)
 }
 
@@ -109,23 +115,17 @@ to read its dependency data.
 				return fmt.Errorf("invalid format")
 			}
 
-			doc := &sbom.Document{
-				Metadata: &sbom.Metadata{
-					Id:   uuid.NewString(),
-					Date: timestamppb.Now(),
-					Tools: []*sbom.Tool{
-						{
-							Name:    appname,
-							Version: version.GetVersionInfo().GitVersion,
-							Vendor:  "Carabiner Systems, Inc",
-						},
-					},
-				},
-				NodeList: nodelist,
+			if opts.Attest {
+				err = nodeListToAttestation(os.Stdout, format, nodelist)
+			} else {
+				err = nodeListToSbom(os.Stdout, format, nodelist)
 			}
 
-			w := writer.New(writer.WithFormat(format))
-			return w.WriteStream(doc, os.Stdout)
+			if err != nil {
+				return fmt.Errorf("rendering SBOM: %w", err)
+			}
+
+			return nil
 		},
 	}
 
