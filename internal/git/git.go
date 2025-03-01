@@ -39,6 +39,12 @@ func RepoVersion(path string) (tag string, commit string, err error) {
 		return "", "", fmt.Errorf("reading latest tag: %w", err)
 	}
 
+	// If there is no tag, then dont, try to compute a version.
+	// We just return the commit
+	if lastTag == "" {
+		return "", headHash, nil
+	}
+
 	num, err := getCommitsFromTag(repo, lastTag)
 	if err != nil {
 		return "", "", fmt.Errorf("finding commits from tag: %w", err)
@@ -80,7 +86,7 @@ func getCommitsFromTag(repo *git.Repository, tagName string) (int, error) {
 
 	tagRef, err := repo.Tag(tagName)
 	if err != nil {
-		return 0, fmt.Errorf("finding tag: %w", err)
+		return 0, fmt.Errorf("finding tag %q: %w", tagName, err)
 	}
 
 	tagCommitHash, err := repo.ResolveRevision(plumbing.Revision(tagRef.Name().String()))
