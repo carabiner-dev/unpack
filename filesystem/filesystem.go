@@ -75,7 +75,7 @@ func (d *Decomposer) IndexFS(source fs.FS) (*sbom.NodeList, error) {
 		return nil, fmt.Errorf("filesystem has no files to scan")
 	}
 
-	logrus.Infof("Scanning %d files", len(fileList))
+	logrus.Debugf("Scanning %d files", len(fileList))
 
 	var t = throttler.New(5, len(fileList))
 	var nl = sbom.NewNodeList()
@@ -196,7 +196,7 @@ func (d *Decomposer) ignorePatterns(source fs.FS, dirPath string) ([]gitignore.P
 func (d *Decomposer) applyIgnorePatterns(
 	fileList []string, patterns []gitignore.Pattern,
 ) (filteredList []string) {
-	logrus.Infof(
+	logrus.Debugf(
 		"Applying %d ignore patterns to list of %d filenames",
 		len(patterns), len(fileList),
 	)
