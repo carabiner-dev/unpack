@@ -42,6 +42,11 @@ type Options struct {
 	// directory.
 	IndexFiles bool
 
+	// ReadGitVersion instructs the unpacker to read the current version from
+	// the git history and pass it to the decomposers to use as the version
+	// for the root nodes.
+	ReadGitVersion bool
+
 	logger *slog.Logger
 }
 

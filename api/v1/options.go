@@ -9,7 +9,14 @@ import "fmt"
 // a decomposer. They are meant to be ephimeral, for the invocation only, and
 // derived from the Unpacker configuration whe invoked from there.
 type DecomposerOptions struct {
-	WorkDir       string
+	WorkDir string
+
+	// Version is the version to use on the resulting root nodes after decomposing
+	Version string
+
+	// CommitHash captures the hash of the last commit when running in a repository
+	CommitHash string
+
 	driverOptions map[string]any
 }
 

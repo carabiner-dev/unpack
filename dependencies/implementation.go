@@ -7,11 +7,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/code"
 	"github.com/carabiner-dev/unpack/filesystem"
+	"github.com/carabiner-dev/unpack/internal/git"
 	"github.com/protobom/protobom/pkg/sbom"
+	"sigs.k8s.io/release-utils/util"
 )
 
 type unpackerImplementation interface {
@@ -79,8 +82,20 @@ func (di *defaultImplementation) ExtractCodeBases(
 	ret := []*sbom.NodeList{}
 	for d, codebases := range codebaseMap {
 		for _, cbPath := range codebases {
+			// If this is a git repo, compute the version from the tag data
+			var ver, hashHex string
+			if opts.ReadGitVersion && util.IsDir(filepath.Join(cbPath, ".git")) {
+				var err error
+				ver, hashHex, err = git.RepoVersion(filepath.Join(cbPath, ".git"))
+				if err != nil {
+					return nil, fmt.Errorf("reading version from repo: %w", err)
+				}
+			}
+
 			nl, err := d.Extract(&api.DecomposerOptions{
-				WorkDir: cbPath,
+				WorkDir:    cbPath,
+				Version:    ver,
+				CommitHash: hashHex,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("extracting dependencies from %q with %T", cbPath, d)
