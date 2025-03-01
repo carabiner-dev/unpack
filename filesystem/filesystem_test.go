@@ -53,7 +53,7 @@ func TestProcessFile(t *testing.T) {
 			t.Parallel()
 			d, err := New()
 			require.NoError(t, err)
-			d.Hasher.Options.Algorithms = []intoto.HashAlgorithm{intoto.AlgorithmSHA256}
+			d.Options.Algorithms = []intoto.HashAlgorithm{intoto.AlgorithmSHA256}
 
 			n, err := d.processFile(os.DirFS("testdata/fs"), tc.path)
 			if tc.mustErr {
