@@ -16,10 +16,11 @@ import (
 )
 
 type extractOptions struct {
-	Path       string
-	Format     string
-	IndexFiles bool
-	Attest     bool
+	Path                 string
+	Format               string
+	IndexFiles           bool
+	Attest               bool
+	IgnoreExtraCodebases bool
 }
 
 var validFormats = []string{"spdx", "cyclonedx", "cdx", "tree"}
@@ -55,6 +56,10 @@ func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().BoolVar(
 		&ro.Attest, "attest", false, "output sboms in an intoto attestation",
 	)
+
+	cmd.PersistentFlags().BoolVar(
+		&ro.IgnoreExtraCodebases, "ignore-other-codebases", false, "don't fail if more than one codebase found",
+	)
 }
 
 func addExtract(parent *cobra.Command) {
@@ -85,6 +90,8 @@ to read its dependency data.
 
 			// Add all the source files from codebases
 			unpacker.Options.IndexFiles = true
+
+			unpacker.Options.FailOnSingleMulti = !opts.IgnoreExtraCodebases
 
 			nodelist, err := unpacker.ExtractCodebase(opts.Path)
 			if err != nil {
