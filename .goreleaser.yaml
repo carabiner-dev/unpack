@@ -19,7 +19,7 @@ gomod:
 builds:
   - id: release
     no_unique_dist_dir: true
-    binary: unpack-{{ .Os }}-{{ .Arch }}
+    binary: unpack-{{ .Tag }}-{{ .Os }}-{{ .Arch }}
     main: .
     goos:
       - darwin
@@ -38,7 +38,7 @@ builds:
 
 archives:
   - formats: binary
-    name_template: bnd-{{ .Os }}-{{ .Arch }}
+    name_template: unpack-{{ .Tag }}-{{ .Os }}-{{ .Arch }}
     allow_different_binary_count: true
 checksum:
   disable: true
