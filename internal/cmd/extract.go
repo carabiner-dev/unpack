@@ -36,6 +36,10 @@ func (ro *extractOptions) Validate() error {
 		errs = append(errs, errors.New("invalid format"))
 	}
 
+	if ro.Attest && (ro.Format != "spdx" && ro.Format != "cyclonedx") {
+		errs = append(errs, fmt.Errorf("attestations can only be generated when output set to SPDX or CycloneDX"))
+	}
+
 	return errors.Join(errs...)
 }
 

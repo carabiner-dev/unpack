@@ -30,7 +30,16 @@ Same but output in an SPDX SBOM:
 
 %s extract --format=spdx /path/to/code 
 
-`, appname, appname),
+
+Extract the dependency data from an SBOM:
+
+%s sbom /path/to/sbom.spdx.json
+
+Same but output the SBOM data in another format:
+
+%s sbom --format=cyclonedx /path/to/sbom.spdx.json 
+
+`, appname, appname, appname, appname),
 	}
 
 	rootCmd.PersistentFlags().StringVar(
@@ -56,6 +65,7 @@ func Execute() {
 	rootCmd := rootCommand()
 
 	addExtract(rootCmd)
+	addSBOM(rootCmd)
 	rootCmd.AddCommand(version.WithFont("doom"))
 
 	if err := rootCmd.Execute(); err != nil {
