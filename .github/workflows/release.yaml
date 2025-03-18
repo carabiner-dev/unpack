@@ -65,6 +65,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          go run . extract . -f spdx > /tmp/unpack-${{ steps.tag.outputs.tag_name }}.spdx.json
+          go run . extract . --ignore-other-codebases -f spdx > /tmp/unpack-${{ steps.tag.outputs.tag_name }}.spdx.json
           gh release upload ${{ steps.tag.outputs.tag_name }} /tmp/unpack-${{ steps.tag.outputs.tag_name }}.spdx.json
           
