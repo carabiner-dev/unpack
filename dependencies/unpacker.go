@@ -6,7 +6,9 @@ package dependencies
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"os"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/source/golang"
@@ -144,4 +146,18 @@ func (unpacker *Unpacker) RegisterDecomposer(d api.Decomposer) {
 
 func (unpacker *Unpacker) UnregisterDecomposer(d api.Decomposer) {
 	delete(unpacker.decomposers, fmt.Sprintf("%T", d))
+}
+
+// ExtractFromCodeBaseWithContext
+func (unpacker *Unpacker) ExtractSBOMFromFile(path string) (*sbom.NodeList, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("opening SBOM file: %w", err)
+	}
+	return unpacker.ExtractSBOM(context.Background(), f)
+}
+
+// ExtractFromCodeBaseWithContext
+func (unpacker *Unpacker) ExtractSBOM(ctx context.Context, r io.ReadSeeker) (*sbom.NodeList, error) {
+	return unpacker.impl.ExtractSBOM(ctx, r)
 }

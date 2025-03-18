@@ -10,7 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/in-toto/attestation v1.1.2-0.20250128181946-c0b4d86cf712
 	github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
-	github.com/protobom/protobom v0.5.2
+	github.com/protobom/protobom v0.5.3-0.20250317031408-8c5ee7c0f5d2
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0

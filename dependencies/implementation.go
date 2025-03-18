@@ -6,6 +6,7 @@ package dependencies
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/carabiner-dev/unpack/code"
 	"github.com/carabiner-dev/unpack/filesystem"
 	"github.com/carabiner-dev/unpack/internal/git"
+	"github.com/protobom/protobom/pkg/reader"
 	"github.com/protobom/protobom/pkg/sbom"
 	"sigs.k8s.io/release-utils/util"
 )
@@ -30,6 +32,9 @@ type unpackerImplementation interface {
 	// ExtractCodeBases runs the found codebases throuhg the decomposers and returns
 	// the resulting nodelists.
 	ExtractCodeBases(context.Context, *Options, map[api.Decomposer][]string) ([]*sbom.NodeList, error)
+
+	// ExtractSBOM unpacks the dependencies freom a software bill of materials in a standard format.
+	ExtractSBOM(context.Context, io.ReadSeeker) (*sbom.NodeList, error)
 }
 
 type defaultImplementation struct{}
@@ -132,4 +137,14 @@ func (di *defaultImplementation) ExtractCodeBases(
 		}
 	}
 	return ret, nil
+}
+
+// ExtractSBOM reads dependency data from an SBOM
+func (di *defaultImplementation) ExtractSBOM(_ context.Context, r io.ReadSeeker) (*sbom.NodeList, error) {
+	protoreader := reader.New()
+	doc, err := protoreader.ParseStream(r)
+	if err != nil {
+		return nil, fmt.Errorf("parsing SBOM data: %w", err)
+	}
+	return doc.NodeList, nil
 }
