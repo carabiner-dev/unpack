@@ -176,8 +176,8 @@ github.com/prometheus/common v0.42.0 h1:EKsfXEYo4JpWMHH5cg+KOUWeuJSov1Id8zGR8eeI
 github.com/prometheus/common v0.42.0/go.mod h1:xBwqVerjNdUDjgODMpudtOMwlOwf2SaTr1yjz4b7Zbc=
 github.com/prometheus/procfs v0.9.0 h1:wzCHvIvM5SxWqYvwgVL7yJY8Lz3PKn49KQtpgMYJfhI=
 github.com/prometheus/procfs v0.9.0/go.mod h1:+pB4zwohETzFnmlpe6yd2lSc+0/46IYZRB/chUwxUZY=
-github.com/protobom/protobom v0.5.2-0.20250224074831-5612e368b95d h1:O4A77VqfNonRuBzoDWhMYjfIMz7PD2bsbntaWezj69g=
-github.com/protobom/protobom v0.5.2-0.20250224074831-5612e368b95d/go.mod h1:io5yUKGWBqGa2sx1n7aVPg+tG13Hun9oMz4Y+EjNjjc=
+github.com/protobom/protobom v0.5.2 h1:GQacWLer4tDskyjQpqbglXkT3ZlNy7AJCw/S2XZkVS8=
+github.com/protobom/protobom v0.5.2/go.mod h1:io5yUKGWBqGa2sx1n7aVPg+tG13Hun9oMz4Y+EjNjjc=
 github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
