@@ -25,7 +25,6 @@ var Default = Options{
 	Algorithms: []intoto.HashAlgorithm{
 		intoto.AlgorithmSHA1,
 		intoto.AlgorithmSHA256,
-		//intoto.AlgorithmSHA512,
 	},
 	Processors: []string{"hash"},
 }
@@ -68,9 +67,6 @@ func WithFilesystem(filesystem fs.FS) Function {
 
 func WithFileProcessor(id string) Function {
 	return func(o *Options) error {
-		// if _, ok := FileProcessors[id]; !ok {
-		// 	return fmt.Errorf("unknown file processor: %q", id)
-		// }
 		if !slices.Contains(o.Processors, id) {
 			o.Processors = append(o.Processors, id)
 		}

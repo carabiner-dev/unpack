@@ -77,9 +77,9 @@ func (d *Decomposer) IndexFS(source fs.FS) (*sbom.NodeList, error) {
 
 	logrus.Debugf("Scanning %d files", len(fileList))
 
-	var t = throttler.New(5, len(fileList))
-	var nl = sbom.NewNodeList()
-	var mtx = sync.Mutex{}
+	t := throttler.New(5, len(fileList))
+	nl := sbom.NewNodeList()
+	mtx := sync.Mutex{}
 
 	// Read the files in parallel
 	for _, path := range fileList {

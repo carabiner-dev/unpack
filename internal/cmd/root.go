@@ -21,7 +21,16 @@ func rootCommand() *cobra.Command {
 		Use:               appname,
 		SilenceUsage:      false,
 		PersistentPreRunE: initLogging,
-		Example:           fmt.Sprintf(``),
+		Example: fmt.Sprintf(`
+Extract the dependency data of a code base im a tree: 
+
+%s extract /path/to/code
+
+Same but output in an SPDX SBOM:
+
+%s extract --format=spdx /path/to/code 
+
+`, appname, appname),
 	}
 
 	rootCmd.PersistentFlags().StringVar(

@@ -65,7 +65,7 @@ func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 func addExtract(parent *cobra.Command) {
 	opts := &extractOptions{}
 
-	var extractCmd = &cobra.Command{
+	extractCmd := &cobra.Command{
 		Short: "read dependency data from codebases, artifacts and more",
 		Long: fmt.Sprintf(`%s: dependency data extractor
 

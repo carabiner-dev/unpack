@@ -32,7 +32,7 @@ type Options struct {
 	// or multiple projects in the same directory.
 	//
 	// By default this is on as turning it off causes unpacker to behave in a
-	// non-deterministic way as it can return diferent data depending on the
+	// non-deterministic way as it can return different data depending on the
 	// order of the configured decomposers
 	FailOnSingleMulti bool
 

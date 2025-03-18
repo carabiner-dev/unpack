@@ -31,9 +31,5 @@ func (er *Executable) Check() bool {
 		return true
 	}
 	_, err := exec.LookPath(er.Command)
-	if err != nil {
-		return false
-	}
-
-	return true
+	return err == nil
 }

@@ -55,7 +55,6 @@ func TestParseGoGraph(t *testing.T) {
 func TestConvertTree(t *testing.T) {
 	t.Parallel()
 	d := Decomposer{}
-	// data, err := os.ReadFile("testdata/output.txt")
 	data, err := os.ReadFile("testdata/onepackage.txt")
 
 	require.NoError(t, err)

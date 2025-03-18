@@ -33,8 +33,7 @@ func (pi PathIndex) FindFileLocations(filename string) ([]string, error) {
 	return ret, nil
 }
 
-type Indexer struct {
-}
+type Indexer struct{}
 
 // CatalogFiles traverses a filesystem and returns an index of all directories
 // with their files

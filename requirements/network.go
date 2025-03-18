@@ -40,7 +40,7 @@ func (nr *Network) Check() bool {
 	if err != nil {
 		return false
 	}
-	_ = conn.Close() // nolint
+	_ = conn.Close()
 
 	return true
 }

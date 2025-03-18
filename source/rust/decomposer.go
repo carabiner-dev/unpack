@@ -27,8 +27,10 @@ func New() *Decomposer {
 
 type Decomposer struct{}
 
-var packageNameRegexString = `^(\d+)(\S+)\s(\S+)`
-var packageNameRegex *regexp.Regexp
+var (
+	packageNameRegexString = `^(\d+)(\S+)\s(\S+)`
+	packageNameRegex       *regexp.Regexp
+)
 
 // These options not yet wired in
 type Options struct {
@@ -51,30 +53,29 @@ func (d *Decomposer) Requirements(_ *api.DecomposerOptions) []api.Requirement {
 }
 
 func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
-	var dopts = d.DefaultOptions().(Options)
+	dopts, ok := d.DefaultOptions().(Options)
+	if !ok {
+		return nil, fmt.Errorf("unable to cast default options")
+	}
 	if lo := opts.GetDriverOptions(d); lo != nil {
-		var ok bool
 		dopts, ok = lo.(Options)
 		if !ok {
 			return nil, fmt.Errorf("invalid decomposer options type")
 		}
 	}
-	var nl = sbom.NewNodeList()
+	nl := sbom.NewNodeList()
 	switch {
 	case dopts.GenerateNormalDependencies:
 		if err := d.parseDependencyTree(opts, nl, "normal"); err != nil {
 			return nil, err
-
 		}
 	case dopts.GenerateDevDependencies:
 		if err := d.parseDependencyTree(opts, nl, "dev"); err != nil {
 			return nil, err
-
 		}
 	case dopts.GenerateBuildDependencies:
 		if err := d.parseDependencyTree(opts, nl, "dev"); err != nil {
 			return nil, err
-
 		}
 	}
 	return nl, nil
@@ -122,8 +123,8 @@ func (d *Decomposer) parseCargoOutput(opts *api.DecomposerOptions, nl *sbom.Node
 		packageNameRegex = regexp.MustCompile(packageNameRegexString)
 	}
 
-	var currentLevel = 0
-	var depladder = map[int]*sbom.Node{}
+	currentLevel := 0
+	depladder := map[int]*sbom.Node{}
 
 	for scanner.Scan() {
 		if scanner.Text() == "" {

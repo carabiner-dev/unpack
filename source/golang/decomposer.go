@@ -89,7 +89,9 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 
 // convertTrees reads the tree map parsed from the go graph output and
 // converts it to a protobom NodeList, capturing the graph structure.
-func (d *Decomposer) convertTrees(opts *api.DecomposerOptions, root string, trees *map[string][]string) (nl *sbom.NodeList, err error) {
+func (d *Decomposer) convertTrees(
+	opts *api.DecomposerOptions, root string, trees *map[string][]string, //nolint:gocritic
+) (nl *sbom.NodeList, err error) {
 	// Create the new NodeList
 	nl = sbom.NewNodeList()
 
@@ -114,8 +116,7 @@ func (d *Decomposer) convertTrees(opts *api.DecomposerOptions, root string, tree
 	// If the optiosn specify a new version, set it here. Not before traversing
 	// the tree because recursion breaks:
 	if opts.Version != "" {
-		rootNode.Identifiers[int32(sbom.SoftwareIdentifierType_PURL)] =
-			goStringToPurl(fmt.Sprintf("%s@%s", root, opts.Version))
+		rootNode.Identifiers[int32(sbom.SoftwareIdentifierType_PURL)] = goStringToPurl(fmt.Sprintf("%s@%s", root, opts.Version))
 	}
 
 	if opts.CommitHash != "" {
@@ -133,10 +134,10 @@ func (d *Decomposer) convertTrees(opts *api.DecomposerOptions, root string, tree
 // convertTree takes a nodelist a component entry. It expects the component
 // to already be expressed in a node in the node list (from its ancestor).
 //
-// The function returns the list of the components decendants to keep recursing.
+// The function returns the list of the components descendants to keep recursing.
 // An empty list means the component is a leaf and no more recursion is needed.
 func (d *Decomposer) convertTree(
-	nl *sbom.NodeList, components []string, trees *map[string][]string, seen *map[string]struct{},
+	nl *sbom.NodeList, components []string, trees *map[string][]string, seen *map[string]struct{}, //nolint:gocritic
 ) error {
 	// Cycle all the components
 	for _, component := range components {
@@ -163,7 +164,7 @@ func (d *Decomposer) convertTree(
 				return fmt.Errorf("unable to parse go graph entry: %q", subcomponent)
 			}
 
-			var subComponentNodes = nl.GetNodesByIdentifier("purl", goStringToPurl(subcomponent))
+			subComponentNodes := nl.GetNodesByIdentifier("purl", goStringToPurl(subcomponent))
 
 			var node *sbom.Node
 			if len(subComponentNodes) > 0 {
@@ -197,7 +198,6 @@ func (d *Decomposer) convertTree(
 		if err := d.convertTree(nl, (*trees)[component], trees, seen); err != nil {
 			return err
 		}
-
 	}
 	return nil
 }
@@ -219,8 +219,7 @@ func (d *Decomposer) readMainModule(opts *api.DecomposerOptions) (string, error)
 }
 
 // parseGoGraphparses the go graph as returned from the go command
-func (d *Decomposer) parseGoGraph(data string) (*map[string][]string, error) {
-	// Forst we
+func (d *Decomposer) parseGoGraph(data string) (*map[string][]string, error) { //nolint:gocritic,unparam
 	trees := map[string][]string{}
 	scanner := bufio.NewScanner(strings.NewReader(data))
 	for scanner.Scan() {

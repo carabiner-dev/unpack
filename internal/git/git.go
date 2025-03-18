@@ -22,7 +22,7 @@ func getHeadHash(repo *git.Repository) (string, error) {
 }
 
 // RepoVersion
-func RepoVersion(path string) (tag string, commit string, err error) {
+func RepoVersion(path string) (tag, commit string, err error) {
 	repo, err := git.PlainOpen(path)
 	if err != nil {
 		return "", "", fmt.Errorf("opening repository: %w", err)
@@ -63,18 +63,18 @@ func RepoVersion(path string) (tag string, commit string, err error) {
 	return version, headHash, nil
 }
 
-func GetLatestTag(path string) (string, string, error) {
+func GetLatestTag(path string) (tag, commit string, err error) {
 	repo, err := git.PlainOpen(path)
 	if err != nil {
 		return "", "", fmt.Errorf("opening repository: %w", err)
 	}
 
-	tag, commit, err := getLatestTagFromRepository(repo)
+	tag, ocommit, err := getLatestTagFromRepository(repo)
 	if err != nil {
 		return "", "", err
 	}
 
-	return tag, commit.Hash.String(), nil
+	return tag, ocommit.Hash.String(), nil
 }
 
 // getCommitsFromTag returns the number of commits HEAD is from a tag
@@ -105,8 +105,8 @@ func getCommitsFromTag(repo *git.Repository, tagName string) (int, error) {
 		return 0, fmt.Errorf("creating commit iterator: %w", err)
 	}
 
-	var i = 0
-	var found = false
+	i := 0
+	found := false
 	err = cIter.ForEach(func(c *object.Commit) error {
 		if c.Hash.String() == tagCommit.Hash.String() {
 			found = true

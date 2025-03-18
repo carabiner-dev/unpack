@@ -62,5 +62,4 @@ func TestGetLatestTagFromRepository(t *testing.T) {
 		require.Equal(t, "v1.0.1-1+2bce182a", version)
 		require.Equal(t, "2bce182a96aa594f7f84858a9de52f7f44fdba17", hash)
 	})
-
 }
