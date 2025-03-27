@@ -2,6 +2,8 @@ module github.com/carabiner-dev/unpack
 
 go 1.24.0
 
+toolchain go1.24.1
+
 require (
 	github.com/carabiner-dev/ampel v0.0.0-20250301200309-05a953dadbc3
 	github.com/carabiner-dev/hasher v0.1.0
@@ -14,8 +16,8 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
-	google.golang.org/protobuf v1.36.5
-	sigs.k8s.io/release-utils v0.11.0
+	google.golang.org/protobuf v1.36.6
+	sigs.k8s.io/release-utils v0.11.1
 )
 
 require (
