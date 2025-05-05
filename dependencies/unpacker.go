@@ -10,10 +10,11 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/protobom/protobom/pkg/sbom"
+
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/source/golang"
 	"github.com/carabiner-dev/unpack/source/rust"
-	"github.com/protobom/protobom/pkg/sbom"
 )
 
 func NewUnpacker() *Unpacker {

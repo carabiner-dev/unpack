@@ -188,7 +188,7 @@ func (d *Decomposer) convertTree(
 			}
 
 			// Add the node. This
-			if err := nl.RelateNodeAtID(node, nodes[0].Id, sbom.Edge_dependsOn); err != nil {
+			if err := nl.RelateNodeAtID(node, nodes[0].GetId(), sbom.Edge_dependsOn); err != nil {
 				return fmt.Errorf("error relating node: %w", err)
 			}
 		}

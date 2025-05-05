@@ -13,6 +13,7 @@ import (
 )
 
 func TestParseCargoOutput(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name          string
 		input         string
@@ -63,8 +64,8 @@ func TestParseCargoOutput(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			require.Len(t, nl.Nodes, tc.expectedLen)
-			require.Len(t, nl.RootElements, tc.expectedRoots)
+			require.Len(t, nl.GetNodes(), tc.expectedLen)
+			require.Len(t, nl.GetRootElements(), tc.expectedRoots)
 		})
 	}
 }

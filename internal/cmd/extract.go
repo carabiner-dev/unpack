@@ -10,9 +10,15 @@ import (
 	"slices"
 
 	"github.com/carabiner-dev/protograph"
-	"github.com/carabiner-dev/unpack/dependencies"
 	"github.com/protobom/protobom/pkg/formats"
 	"github.com/spf13/cobra"
+
+	"github.com/carabiner-dev/unpack/dependencies"
+)
+
+const (
+	formatSPDX = "spdx"
+	formatCDX  = "cyclonedx"
 )
 
 type extractOptions struct {
@@ -23,7 +29,7 @@ type extractOptions struct {
 	IgnoreExtraCodebases bool
 }
 
-var validFormats = []string{"spdx", "cyclonedx", "cdx", "tree"}
+var validFormats = []string{formatSPDX, formatCDX, "cdx", "tree"}
 
 // Validates the options in context with arguments
 func (ro *extractOptions) Validate() error {
@@ -36,7 +42,7 @@ func (ro *extractOptions) Validate() error {
 		errs = append(errs, errors.New("invalid format"))
 	}
 
-	if ro.Attest && (ro.Format != "spdx" && ro.Format != "cyclonedx") {
+	if ro.Attest && (ro.Format != formatSPDX && ro.Format != formatCDX) {
 		errs = append(errs, fmt.Errorf("attestations can only be generated when output set to SPDX or CycloneDX"))
 	}
 
@@ -115,9 +121,9 @@ to read its dependency data.
 					return err
 				}
 				return nil
-			case "spdx":
+			case formatSPDX:
 				format = formats.SPDX23JSON
-			case "cdx", "cyclonedx":
+			case "cdx", formatCDX:
 				format = formats.CDX16JSON
 			default:
 				return fmt.Errorf("invalid format")

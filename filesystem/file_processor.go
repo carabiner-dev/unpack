@@ -6,9 +6,10 @@ package filesystem
 import (
 	"io/fs"
 
+	"github.com/protobom/protobom/pkg/sbom"
+
 	"github.com/carabiner-dev/unpack/filesystem/options"
 	"github.com/carabiner-dev/unpack/filesystem/processors"
-	"github.com/protobom/protobom/pkg/sbom"
 )
 
 type FileProcessor interface {

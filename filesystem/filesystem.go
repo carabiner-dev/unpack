@@ -99,7 +99,7 @@ func (d *Decomposer) IndexFS(source fs.FS) (*sbom.NodeList, error) {
 		t.Throttle()
 	}
 
-	logrus.Debugf("Nodelist got %d nodes", len(nl.Nodes))
+	logrus.Debugf("Nodelist got %d nodes", len(nl.GetNodes()))
 
 	// If the throttler picked up errors when running, fail here
 	if err := t.Err(); err != nil {
@@ -170,7 +170,7 @@ func (d *Decomposer) ignorePatterns(source fs.FS, dirPath string) ([]gitignore.P
 		}
 		return nil, fmt.Errorf("opening gitignore file: %w", err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	// When using .gitignore files, we alwas add the .git directory
 	// to match git's behavior

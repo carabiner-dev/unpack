@@ -5,10 +5,10 @@ import (
 	"io"
 	"io/fs"
 
+	chasher "github.com/carabiner-dev/hasher"
 	intoto "github.com/in-toto/attestation/go/v1"
 	"github.com/protobom/protobom/pkg/sbom"
 
-	chasher "github.com/carabiner-dev/hasher"
 	"github.com/carabiner-dev/unpack/filesystem/options"
 )
 
@@ -29,18 +29,19 @@ func (p *Hasher) Process(opts *options.Options, source fs.FS, node *sbom.Node) e
 	}
 
 	// Open the file
-	f, err := source.Open(node.FileName)
+	f, err := source.Open(node.GetFileName())
 	if err != nil {
-		return fmt.Errorf("opening %q: %w", node.FileName, err)
+		return fmt.Errorf("opening %q: %w", node.GetFileName(), err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	hashes, err := p.Hasher.HashReaders([]io.Reader{f})
 	if err != nil {
-		return fmt.Errorf("hashing %q: %w", node.FileName, err)
+		return fmt.Errorf("hashing %q: %w", node.GetFileName(), err)
 	}
 
 	// We need to translate here
+	//nolint:exhaustive
 	for algo, val := range (*hashes)[0] {
 		var at sbom.HashAlgorithm
 		switch algo {

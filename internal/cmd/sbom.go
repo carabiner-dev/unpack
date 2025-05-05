@@ -10,9 +10,10 @@ import (
 	"slices"
 
 	"github.com/carabiner-dev/protograph"
-	"github.com/carabiner-dev/unpack/dependencies"
 	"github.com/protobom/protobom/pkg/formats"
 	"github.com/spf13/cobra"
+
+	"github.com/carabiner-dev/unpack/dependencies"
 )
 
 type sbomOptions struct {

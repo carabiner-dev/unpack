@@ -9,10 +9,11 @@ import (
 	"sort"
 	"testing"
 
-	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/google/uuid"
 	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/require"
+
+	api "github.com/carabiner-dev/unpack/api/v1"
 )
 
 func TestReadMainModule(t *testing.T) {
@@ -37,6 +38,7 @@ func TestReadMainModule(t *testing.T) {
 }
 
 func TestParseGoGraph(t *testing.T) {
+	t.Parallel()
 	d := Decomposer{}
 	data, err := os.ReadFile("testdata/output.txt")
 	require.NoError(t, err)
@@ -102,19 +104,19 @@ func TestConvertTree(t *testing.T) {
 		// Extract the nodelist data
 		reslist := []string{}
 		for _, n := range nl.GetNodes() {
-			reslist = append(reslist, fmt.Sprintf("%s@%s", n.Name, n.Version))
+			reslist = append(reslist, fmt.Sprintf("%s@%s", n.GetName(), n.GetVersion()))
 		}
 
 		sort.Strings(reslist)
 		sort.Strings(list)
 		require.Equal(t, list, reslist)
 
-		require.Len(t, nl.Edges, 1)
-		require.Len(t, nl.RootElements, 1)
-		require.Equal(t, nl.RootElements[0], nl.Edges[0].From)
-		require.Len(t, nl.Edges[0].To, 17)
+		require.Len(t, nl.GetEdges(), 1)
+		require.Len(t, nl.GetRootElements(), 1)
+		require.Equal(t, nl.GetRootElements()[0], nl.GetEdges()[0].GetFrom())
+		require.Len(t, nl.GetEdges()[0].GetTo(), 17)
 
-		require.Equal(t, string(nl.GetRootNodes()[0].Purl()), "pkg:golang/github.com/knqyf263/go-rpmdb@v0.1.1")
+		require.Equal(t, "pkg:golang/github.com/knqyf263/go-rpmdb@v0.1.1", string(nl.GetRootNodes()[0].Purl()))
 	})
 
 	t.Run("no-deps", func(t *testing.T) {
@@ -137,6 +139,7 @@ func TestConvertTrees(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("two-branches", func(t *testing.T) {
+		t.Parallel()
 		root := "sigs.k8s.io/bom"
 		nl, err := d.convertTrees(&api.DecomposerOptions{}, root, trees)
 		require.NoError(t, err)
@@ -152,10 +155,10 @@ func TestConvertTrees(t *testing.T) {
 		//      |- github.com/davecgh/go-spew@v1.1.0
 		//     ...
 		//
-		require.Equal(t, nl.Nodes[0].Name, root)
-		require.Len(t, nl.Edges, 2)
-		require.Len(t, nl.RootElements, 1)
-		require.Equal(t, nl.RootElements[0], nl.Edges[0].From)
-		require.Len(t, nl.Edges[1].To, 17)
+		require.Equal(t, nl.GetNodes()[0].GetName(), root)
+		require.Len(t, nl.GetEdges(), 2)
+		require.Len(t, nl.GetRootElements(), 1)
+		require.Equal(t, nl.GetRootElements()[0], nl.GetEdges()[0].GetFrom())
+		require.Len(t, nl.GetEdges()[1].GetTo(), 17)
 	})
 }

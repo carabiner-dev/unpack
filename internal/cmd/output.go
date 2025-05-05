@@ -13,9 +13,8 @@ import (
 	"github.com/carabiner-dev/ampel/pkg/attestation"
 	"github.com/carabiner-dev/ampel/pkg/formats/predicate/generic"
 	intoto "github.com/carabiner-dev/ampel/pkg/formats/statement/intoto"
-	gintoto "github.com/in-toto/attestation/go/v1"
-
 	"github.com/google/uuid"
+	gintoto "github.com/in-toto/attestation/go/v1"
 	"github.com/protobom/protobom/pkg/formats"
 	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/protobom/protobom/pkg/writer"
@@ -37,11 +36,11 @@ func (bc *bcloser) Write(d []byte) (int, error) {
 
 // nodeLlistToAttestation writes the nodelist to an attestation
 func nodeListToAttestation(wr io.WriteCloser, format formats.Format, nl *sbom.NodeList) error {
-	predicateType := ""
+	var predicateType string
 	switch format.Type() {
-	case "spdx":
+	case formatSPDX:
 		predicateType = "https://spdx.dev/Document"
-	case "cyclonedx":
+	case formatCDX:
 		predicateType = "https://cyclonedx.org/bom"
 	default:
 		return fmt.Errorf("unsupported format to attest")
@@ -67,17 +66,17 @@ func nodeListToAttestation(wr io.WriteCloser, format formats.Format, nl *sbom.No
 		}
 
 		// If the subject still has no hashes, then it's a codebase. Use the commit hash
-		if len(sub.Digest) == 0 && n.GetExternalReferences() != nil {
+		if len(sub.GetDigest()) == 0 && n.GetExternalReferences() != nil {
 			for _, ref := range n.GetExternalReferences() {
-				if ref.Type == sbom.ExternalReference_VCS {
-					for algo, h := range ref.Hashes {
+				if ref.GetType() == sbom.ExternalReference_VCS {
+					for algo, h := range ref.GetHashes() {
 						sub.Digest[strings.ToLower(sbom.HashAlgorithm_name[algo])] = h
 					}
 				}
 			}
 		}
 
-		sub.DownloadLocation = n.UrlDownload
+		sub.DownloadLocation = n.GetUrlDownload()
 		sub.Name = string(n.Purl())
 		att.Subject = append(att.Subject, &sub)
 	}

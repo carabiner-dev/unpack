@@ -4,8 +4,9 @@
 package v1
 
 import (
-	"github.com/carabiner-dev/unpack/code"
 	"github.com/protobom/protobom/pkg/sbom"
+
+	"github.com/carabiner-dev/unpack/code"
 )
 
 // Decomposer is an interface that abstracts the logic of dependency extraction

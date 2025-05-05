@@ -13,6 +13,7 @@ import (
 )
 
 func TestReadtTree(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		path    string
@@ -62,9 +63,9 @@ func TestProcessFile(t *testing.T) {
 			}
 			require.NoError(t, err)
 
-			require.Equal(t, tc.path, n.FileName)
-			require.Len(t, n.Hashes, 1)
-			require.Equal(t, n.Hashes[3], tc.hash)
+			require.Equal(t, tc.path, n.GetFileName())
+			require.Len(t, n.GetHashes(), 1)
+			require.Equal(t, n.GetHashes()[3], tc.hash)
 		})
 	}
 }
@@ -130,7 +131,7 @@ func TestIndexFS(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			require.Len(t, nl.Nodes, tc.expectedLen)
+			require.Len(t, nl.GetNodes(), tc.expectedLen)
 		})
 	}
 }

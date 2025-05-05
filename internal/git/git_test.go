@@ -3,10 +3,9 @@ package git
 import (
 	"testing"
 
-	"sigs.k8s.io/release-utils/tar"
-
 	"github.com/go-git/go-git/v5"
 	"github.com/stretchr/testify/require"
+	"sigs.k8s.io/release-utils/tar"
 )
 
 func TestGetLatestTagFromRepository(t *testing.T) {

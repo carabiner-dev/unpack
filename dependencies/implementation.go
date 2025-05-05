@@ -10,13 +10,14 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/protobom/protobom/pkg/reader"
+	"github.com/protobom/protobom/pkg/sbom"
+	"sigs.k8s.io/release-utils/util"
+
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/code"
 	"github.com/carabiner-dev/unpack/filesystem"
 	"github.com/carabiner-dev/unpack/internal/git"
-	"github.com/protobom/protobom/pkg/reader"
-	"github.com/protobom/protobom/pkg/sbom"
-	"sigs.k8s.io/release-utils/util"
 )
 
 type unpackerImplementation interface {
@@ -108,7 +109,7 @@ func (di *defaultImplementation) ExtractCodeBases(
 
 			// This should never happen but we need it to
 			// prevent a panic below
-			if len(nl.RootElements) == 0 {
+			if len(nl.GetRootElements()) == 0 {
 				return nil, fmt.Errorf("no root element found on resulting nodelist")
 			}
 
@@ -125,10 +126,10 @@ func (di *defaultImplementation) ExtractCodeBases(
 					return nil, fmt.Errorf("indexing filesystem: %w", err)
 				}
 
-				opts.logger.Debug(fmt.Sprintf("read data from %d files", len(nlFiles.RootElements)))
+				opts.logger.Debug(fmt.Sprintf("read data from %d files", len(nlFiles.GetRootElements())))
 
 				// Mix the resulting nodes into the code nodelist
-				err = nl.RelateNodeListAtID(nlFiles, nl.RootElements[0], sbom.Edge_contains)
+				err = nl.RelateNodeListAtID(nlFiles, nl.GetRootElements()[0], sbom.Edge_contains)
 				if err != nil {
 					return nil, fmt.Errorf("adding file nodes: %w", err)
 				}
@@ -146,5 +147,5 @@ func (di *defaultImplementation) ExtractSBOM(_ context.Context, r io.ReadSeeker)
 	if err != nil {
 		return nil, fmt.Errorf("parsing SBOM data: %w", err)
 	}
-	return doc.NodeList, nil
+	return doc.GetNodeList(), nil
 }

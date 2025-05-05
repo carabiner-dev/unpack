@@ -123,7 +123,7 @@ func (d *Decomposer) parseCargoOutput(opts *api.DecomposerOptions, nl *sbom.Node
 		packageNameRegex = regexp.MustCompile(packageNameRegexString)
 	}
 
-	currentLevel := 0
+	var currentLevel int
 	depladder := map[int]*sbom.Node{}
 
 	for scanner.Scan() {
@@ -168,7 +168,7 @@ func (d *Decomposer) parseCargoOutput(opts *api.DecomposerOptions, nl *sbom.Node
 		}
 		depladder[level] = node
 		if currentLevel > 0 {
-			if err := nl.RelateNodeAtID(node, depladder[level-1].Id, edgeType); err != nil {
+			if err := nl.RelateNodeAtID(node, depladder[level-1].GetId(), edgeType); err != nil {
 				return fmt.Errorf("linking %q to nodelist: %w", purl, err)
 			}
 		} else {
