@@ -6,7 +6,7 @@ require (
 	github.com/carabiner-dev/ampel v0.0.1-pre9
 	github.com/carabiner-dev/hasher v0.2.2
 	github.com/carabiner-dev/protograph v0.0.0-20250223042216-b2bc7a0c5cb6
-	github.com/go-git/go-git/v5 v5.16.1
+	github.com/go-git/go-git/v5 v5.16.2
 	github.com/google/uuid v1.6.0
 	github.com/in-toto/attestation v1.1.2-0.20250128181946-c0b4d86cf712
 	github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
