@@ -8,7 +8,7 @@ require (
 	github.com/carabiner-dev/protograph v0.0.0-20250223042216-b2bc7a0c5cb6
 	github.com/go-git/go-git/v5 v5.16.1
 	github.com/google/uuid v1.6.0
-	github.com/in-toto/attestation v1.1.2-0.20250128181946-c0b4d86cf712
+	github.com/in-toto/attestation v1.1.2
 	github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
 	github.com/protobom/protobom v0.5.3-0.20250317031408-8c5ee7c0f5d2
 	github.com/sirupsen/logrus v1.9.3
