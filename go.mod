@@ -6,7 +6,7 @@ require (
 	github.com/carabiner-dev/ampel v0.0.1-pre9
 	github.com/carabiner-dev/hasher v0.2.2
 	github.com/carabiner-dev/protograph v0.0.0-20250223042216-b2bc7a0c5cb6
-	github.com/go-git/go-git/v5 v5.16.2
+	github.com/go-git/go-git/v5 v5.16.3
 	github.com/google/uuid v1.6.0
 	github.com/in-toto/attestation v1.1.2
 	github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
@@ -14,7 +14,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.10.1
 	github.com/stretchr/testify v1.11.1
-	google.golang.org/protobuf v1.36.8
+	google.golang.org/protobuf v1.36.10
 	sigs.k8s.io/release-utils v0.12.0
 )
 
