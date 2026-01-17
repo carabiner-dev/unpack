@@ -61,9 +61,9 @@ func ParseCargoLockData(data []byte) (*CargoLock, error) {
 
 // BuildPackageIndex creates a map from package key to package for quick lookups.
 // It also creates an index by name only for packages with unique names.
-func (cl *CargoLock) BuildPackageIndex() (map[PackageKey]*LockPackage, map[string][]*LockPackage) {
-	byKey := make(map[PackageKey]*LockPackage)
-	byName := make(map[string][]*LockPackage)
+func (cl *CargoLock) BuildPackageIndex() (byKey map[PackageKey]*LockPackage, byName map[string][]*LockPackage) {
+	byKey = make(map[PackageKey]*LockPackage)
+	byName = make(map[string][]*LockPackage)
 
 	for i := range cl.Packages {
 		pkg := &cl.Packages[i]
