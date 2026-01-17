@@ -22,6 +22,7 @@ const (
 )
 
 type extractOptions struct {
+	IgnorePatterns       []string
 	Path                 string
 	Format               string
 	IndexFiles           bool
@@ -53,6 +54,10 @@ func (ro *extractOptions) Validate() error {
 func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVarP(
 		&ro.Path, "path", "p", "", "path to the artifact to unpack",
+	)
+
+	cmd.PersistentFlags().StringSliceVarP(
+		&ro.IgnorePatterns, "ignore", "i", []string{}, "path patterns to ignore from analysis and indexing",
 	)
 
 	cmd.PersistentFlags().StringVarP(
@@ -99,7 +104,11 @@ to read its dependency data.
 			unpacker := dependencies.NewUnpacker()
 
 			// Add all the source files from codebases
-			unpacker.Options.IndexFiles = true
+			unpacker.Options.IndexFiles = opts.IndexFiles
+
+			// Add any extra paths to ignore
+			unpacker.Options.IgnorePatterns = opts.IgnorePatterns
+			///unpacker.Options.UseGitIgnore = opts.UseGitIgnore
 
 			unpacker.Options.FailOnSingleMulti = !opts.IgnoreExtraCodebases
 

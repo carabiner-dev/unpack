@@ -3,8 +3,10 @@
 
 package v1
 
+import "context"
+
 // Requirement
 type Requirement interface {
 	Description() string
-	Check() bool
+	Check(context.Context) bool
 }

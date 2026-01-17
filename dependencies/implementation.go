@@ -49,7 +49,10 @@ func (di *defaultImplementation) IndexPaths(
 		return ret, nil
 	}
 	for _, path := range src.Paths {
-		idx, err := indexer.CatalogDirectories(path)
+		idx, err := indexer.CatalogDirectories(
+			path, code.WithUseGitignore(opts.UseGitIgnore),
+			code.WithExtraIgnorePattners(opts.IgnorePatterns),
+		)
 		if err != nil {
 			return nil, fmt.Errorf("indexing %q: %w", path, err)
 		}
@@ -117,6 +120,7 @@ func (di *defaultImplementation) ExtractCodeBases(
 			if opts.IndexFiles {
 				opts.logger.Debug(fmt.Sprintf("indexing all files in %s", cbPath))
 				fsd, err := filesystem.New()
+				fsd.Options.IgnorePatterns = append(fsd.Options.IgnorePatterns, opts.IgnorePatterns...)
 				if err != nil {
 					return nil, fmt.Errorf("creating fs decomposer: %w", err)
 				}

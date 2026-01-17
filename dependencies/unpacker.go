@@ -50,12 +50,20 @@ type Options struct {
 	// for the root nodes.
 	ReadGitVersion bool
 
+	// IgnorePatterns are additional paths to ignore (in addition to thise in .gitignore)
+	IgnorePatterns []string
+
+	// UseGitIgnore instructs the unpacker to use load patterns from the gitignore
+	// file when available .
+	UseGitIgnore bool
+
 	logger *slog.Logger
 }
 
 var DefaultOptions = Options{
 	FailOnSingleMulti: true,
 	ReadGitVersion:    true,
+	UseGitIgnore:      true,
 	logger:            slog.Default(),
 }
 
