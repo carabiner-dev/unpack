@@ -1,0 +1,68 @@
+[package]
+name = "edera_falco_plugin"
+description = "An Edera plugin for the Falco runtime security system"
+version = "0.0.1"
+license = "Apache-2.0"
+homepage = "https://github.com/edera-dev/falco_plugin"
+repository = "https://github.com/edera-dev/falco_plugin"
+edition = "2024"
+keywords = ["falco", "libscap", "eBPF", "plugin", "bindings"]
+exclude = [
+        ".github",
+        ".release-plz.toml",
+        "**/*.orig"
+]
+
+[lib]
+# NOTE - this plugin MUST be built as
+# as `cdylib` to be used. Unfortunately,
+# `cdylib` crate types are incompatible with
+# `x86_64-unknown-linux-musl` rust targets.
+#
+# Therefore, this crate's release builds MUST
+# currently be built against a dynamically-linked GNU target
+# to produce usable `.so` binaries.
+#
+# See: https://github.com/rust-lang/rust/issues/59302 for details.
+# 
+# RUSTFLAGS="-C target-feature=-crt-static" is a bad workaround,
+# because when used with a musl target it not only results in
+# a non-loadable plugin binary, it applies to the other crates
+# in the workspace as well, which we do not want.
+# 
+# To hack around this for dev builds, we specify multiple crate types:
+# `rlib` and `cdylib`. If you specify just `cdylib`, `musl` target builds
+# will error out. If you specify both types, then `musl` target builds will
+# generate an (unusable/invalid) `rlib` binary, but will just warn instead of
+# error on the `cdylib` build not being supported, which is what we want.
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+anyhow = "1.0.99"
+async-stream = "0.3.6"
+aya = "0.13"
+caps = "0.5.5"
+dns-lookup = "3.0.1"
+falco_plugin = { version = "0.5.1" }
+falco_plugin_api = { version = "0.5.1" }
+falco_event = { version = "0.5.1" }
+env_logger = "0.11.8"
+hyper = "1.8.0"
+hyper-util = "0.1.19"
+libc = "0.2.179"
+libscap-bindings = { version = "0.0.2", default-features = false }
+log = "0.4.29"
+nix = { version = "0.30.1", features = ["signal"] }
+pin-project-lite = "0.2.16"
+prost = "0.14.1"
+strum_macros = "0.27"
+tokio = { version = "1.49.0", features = ["full"] }
+tokio-stream = { version="0.1.18", features = ["sync"] }
+tonic = "0.14.2"
+tower = "0.5.2"
+url = "2.5.7"
+uuid = { version = "1.19.0", features = ["v4"] }
+pbjson = "0.9.0"
+pbjson-types = "0.9.0"
+serde = { version = "1.0.219", features = ["derive"] }
+tonic-prost = { version = "0.14.2" }
