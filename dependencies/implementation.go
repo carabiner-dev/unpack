@@ -12,7 +12,7 @@ import (
 
 	"github.com/protobom/protobom/pkg/reader"
 	"github.com/protobom/protobom/pkg/sbom"
-	"sigs.k8s.io/release-utils/util"
+	"sigs.k8s.io/release-utils/helpers"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/code"
@@ -93,7 +93,7 @@ func (di *defaultImplementation) ExtractCodeBases(
 		for _, cbPath := range codebases {
 			// If this is a git repo, compute the version from the tag data
 			var ver, hashHex string
-			if opts.ReadGitVersion && util.IsDir(filepath.Join(cbPath, ".git")) {
+			if opts.ReadGitVersion && helpers.IsDir(filepath.Join(cbPath, ".git")) {
 				var err error
 				ver, hashHex, err = git.RepoVersion(filepath.Join(cbPath, ".git"))
 				if err != nil {
