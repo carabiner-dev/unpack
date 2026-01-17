@@ -10,9 +10,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/carabiner-dev/ampel/pkg/attestation"
-	"github.com/carabiner-dev/ampel/pkg/formats/predicate/generic"
-	intoto "github.com/carabiner-dev/ampel/pkg/formats/statement/intoto"
+	"github.com/carabiner-dev/attestation"
+	"github.com/carabiner-dev/collector/predicate/generic"
+	intoto "github.com/carabiner-dev/collector/statement/intoto"
 	"github.com/google/uuid"
 	gintoto "github.com/in-toto/attestation/go/v1"
 	"github.com/protobom/protobom/pkg/formats"
