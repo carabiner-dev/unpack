@@ -36,6 +36,9 @@ type unpackerImplementation interface {
 
 	// ExtractSBOM unpacks the dependencies freom a software bill of materials in a standard format.
 	ExtractSBOM(context.Context, io.ReadSeeker) (*sbom.NodeList, error)
+
+	// RelativePath computes the relative path from base to target.
+	RelativePath(base, target string) (string, error)
 }
 
 type defaultImplementation struct{}
@@ -152,4 +155,24 @@ func (di *defaultImplementation) ExtractSBOM(_ context.Context, r io.ReadSeeker)
 		return nil, fmt.Errorf("parsing SBOM data: %w", err)
 	}
 	return doc.GetNodeList(), nil
+}
+
+// RelativePath computes the relative path from base to target.
+// Returns "." for the root directory, otherwise returns the relative path without "./" prefix.
+func (di *defaultImplementation) RelativePath(base, target string) (string, error) {
+	absBase, err := filepath.Abs(base)
+	if err != nil {
+		return "", fmt.Errorf("getting absolute path for base: %w", err)
+	}
+	absTarget, err := filepath.Abs(target)
+	if err != nil {
+		return "", fmt.Errorf("getting absolute path for target: %w", err)
+	}
+
+	relPath, err := filepath.Rel(absBase, absTarget)
+	if err != nil {
+		return "", fmt.Errorf("computing relative path: %w", err)
+	}
+
+	return relPath, nil
 }

@@ -24,12 +24,11 @@ func GenerateCodebaseID(language, relativePath string) string {
 
 // ParseCodebaseID parses a codebase ID into its language and path components.
 func ParseCodebaseID(id string) (language, path string, err error) {
-	idx := strings.Index(id, ":")
-	if idx == -1 {
+	language, path, ok := strings.Cut(id, ":")
+	if !ok {
 		return "", "", errors.New("invalid codebase ID format: missing colon separator")
 	}
-	language = id[:idx]
-	path = id[idx+1:]
+
 	if language == "" {
 		return "", "", errors.New("invalid codebase ID format: empty language")
 	}

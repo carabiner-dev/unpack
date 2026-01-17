@@ -28,6 +28,7 @@ type extractOptions struct {
 	IndexFiles           bool
 	Attest               bool
 	IgnoreExtraCodebases bool
+	Codebase             string
 }
 
 var validFormats = []string{formatSPDX, formatCDX, "cdx", "tree"}
@@ -75,6 +76,10 @@ func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().BoolVar(
 		&ro.IgnoreExtraCodebases, "ignore-other-codebases", false, "don't fail if more than one codebase found",
 	)
+
+	cmd.PersistentFlags().StringVarP(
+		&ro.Codebase, "codebase", "c", "", "extract only a specific codebase by ID (e.g., 'golang:services/api')",
+	)
 }
 
 func addExtract(parent *cobra.Command) {
@@ -111,6 +116,9 @@ to read its dependency data.
 			///unpacker.Options.UseGitIgnore = opts.UseGitIgnore
 
 			unpacker.Options.FailOnSingleMulti = !opts.IgnoreExtraCodebases
+
+			// Filter to a specific codebase if provided
+			unpacker.Options.CodebaseFilter = opts.Codebase
 
 			nodelist, err := unpacker.ExtractCodebase(opts.Path)
 			if err != nil {
