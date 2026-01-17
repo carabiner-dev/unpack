@@ -4,6 +4,7 @@
 package requirements
 
 import (
+	"context"
 	"fmt"
 	"net"
 
@@ -31,12 +32,13 @@ func (nr *Network) Description() string {
 }
 
 // Check verifies the binaries can be run
-func (nr *Network) Check() bool {
+func (nr *Network) Check(ctx context.Context) bool {
 	if nr.Proto == "" || nr.Port == 0 || nr.Host == "" {
 		return true
 	}
 
-	conn, err := net.Dial(nr.Proto, net.JoinHostPort(nr.Host, fmt.Sprintf("%d", nr.Port)))
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, nr.Proto, net.JoinHostPort(nr.Host, fmt.Sprintf("%d", nr.Port)))
 	if err != nil {
 		return false
 	}

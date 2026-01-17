@@ -4,6 +4,7 @@
 package requirements
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 
@@ -26,7 +27,7 @@ func (er *Executable) Description() string {
 }
 
 // Check verifies the binaries can be run
-func (er *Executable) Check() bool {
+func (er *Executable) Check(_ context.Context) bool {
 	if er.Command == "" {
 		return true
 	}
