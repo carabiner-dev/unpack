@@ -4,19 +4,12 @@
 package rust
 
 import (
-	"bufio"
 	"fmt"
-	"regexp"
-	"strconv"
-	"strings"
 
-	"github.com/google/uuid"
 	"github.com/protobom/protobom/pkg/sbom"
-	"sigs.k8s.io/release-utils/command"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/code"
-	"github.com/carabiner-dev/unpack/requirements"
 )
 
 var _ api.Decomposer = (*Decomposer)(nil)
@@ -27,180 +20,62 @@ func New() *Decomposer {
 
 type Decomposer struct{}
 
-var (
-	packageNameRegexString = `^(\d+)(\S+)\s(\S+)`
-	packageNameRegex       *regexp.Regexp
-)
-
-// These options not yet wired in
+// Options configures the Rust dependency extraction.
 type Options struct {
-	// These options match the cargo dependency names
-	GenerateNormalDependencies bool
-	GenerateBuildDependencies  bool
-	GenerateDevDependencies    bool
+	// IncludeDevDependencies includes dev dependencies in the output.
+	IncludeDevDependencies bool
+
+	// IncludeBuildDependencies includes build dependencies in the output.
+	IncludeBuildDependencies bool
 }
 
-// TODO(puerco): Enrich from https://crates.io/api/v1/crates/quote/1.0.35
+// DefaultOptions returns the default options for the Rust decomposer.
+func (d *Decomposer) DefaultOptions() any {
+	return Options{
+		IncludeDevDependencies:   false,
+		IncludeBuildDependencies: false,
+	}
+}
 
 // Requirements returns the requirements for the decomposer.
-// The rust decomposer needs the cargo binary to be installed.
+// No external binary required - uses pure Go implementation.
 func (d *Decomposer) Requirements(_ *api.DecomposerOptions) []api.Requirement {
-	return []api.Requirement{
-		&requirements.Executable{
-			Command: "cargo",
-		},
-	}
+	return nil
 }
 
+// Extract parses Cargo.toml and Cargo.lock files and builds the complete
+// dependency graph as a protobom NodeList.
 func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
-	dopts, ok := d.DefaultOptions().(Options)
-	if !ok {
-		return nil, fmt.Errorf("unable to cast default options")
+	workDir := opts.WorkDir
+	if workDir == "" {
+		workDir = "."
 	}
-	if lo := opts.GetDriverOptions(d); lo != nil {
-		dopts, ok = lo.(Options)
-		if !ok {
-			return nil, fmt.Errorf("invalid decomposer options type")
-		}
+
+	// Parse Cargo.toml
+	cargoToml, err := ParseCargoToml(workDir)
+	if err != nil {
+		return nil, fmt.Errorf("parsing Cargo.toml: %w", err)
 	}
-	nl := sbom.NewNodeList()
-	switch {
-	case dopts.GenerateNormalDependencies:
-		if err := d.parseDependencyTree(opts, nl, "normal"); err != nil {
-			return nil, err
-		}
-	case dopts.GenerateDevDependencies:
-		if err := d.parseDependencyTree(opts, nl, "dev"); err != nil {
-			return nil, err
-		}
-	case dopts.GenerateBuildDependencies:
-		if err := d.parseDependencyTree(opts, nl, "dev"); err != nil {
-			return nil, err
-		}
+
+	// Parse Cargo.lock
+	cargoLock, err := ParseCargoLock(workDir)
+	if err != nil {
+		return nil, fmt.Errorf("parsing Cargo.lock: %w", err)
 	}
+
+	// Build the dependency tree
+	tree := NewDependencyTree(cargoToml, cargoLock)
+
+	// Build the protobom NodeList
+	nl, err := tree.Build(opts)
+	if err != nil {
+		return nil, fmt.Errorf("building dependency graph: %w", err)
+	}
+
 	return nl, nil
 }
 
-// parseDependencyTree extracts dependencies from the rust source. This function
-// takes a dependency type string: "normal", "dev", or "build" matching the cargo
-// types.
-func (d *Decomposer) parseDependencyTree(opts *api.DecomposerOptions, nl *sbom.NodeList, depType string) error {
-	var typeParam string
-
-	// Switch these to make sure we dont exec an unknown param:
-	switch depType {
-	case "normal", "dev", "build":
-		typeParam = fmt.Sprintf("--edges=%s", depType)
-	default:
-		return fmt.Errorf("wrong dependency type")
-	}
-
-	// Build the command
-	var cmd *command.Command
-	if opts.WorkDir == "" {
-		cmd = command.New("cargo", "tree", "--prefix=depth", "--no-dedupe", typeParam)
-	} else {
-		cmd = command.NewWithWorkDir(opts.WorkDir, "cargo", "tree", "--prefix=depth", "--no-dedupe", typeParam)
-	}
-
-	// Extract the dependency data
-	output, err := cmd.RunSilentSuccessOutput()
-	if err != nil {
-		return fmt.Errorf("waiting for cargo output: %w", err)
-	}
-
-	seen := map[string]*sbom.Node{}
-
-	if err := d.parseCargoOutput(opts, nl, output.OutputTrimNL(), sbom.Edge_dependsOn, seen); err != nil {
-		return fmt.Errorf("parsing cargo data: %w", err)
-	}
-	return nil
-}
-
-func (d *Decomposer) parseCargoOutput(opts *api.DecomposerOptions, nl *sbom.NodeList, data string, edgeType sbom.Edge_Type, seen map[string]*sbom.Node) error {
-	scanner := bufio.NewScanner(strings.NewReader(data))
-	if packageNameRegex == nil {
-		packageNameRegex = regexp.MustCompile(packageNameRegexString)
-	}
-
-	var currentLevel int
-	depladder := map[int]*sbom.Node{}
-
-	for scanner.Scan() {
-		if scanner.Text() == "" {
-			continue
-		}
-
-		matches := packageNameRegex.FindStringSubmatch(scanner.Text())
-		if matches == nil {
-			return fmt.Errorf("unable to parse cargo output %q %+v", scanner.Text(), matches)
-		}
-
-		version := matches[3]
-		name := matches[2]
-		level, err := strconv.Atoi(matches[1])
-		if err != nil {
-			return fmt.Errorf("error reading depth level")
-		}
-		currentLevel = level
-		purl := fmt.Sprintf("pkg:cargo/%s@%s", name, version)
-
-		// Reuse a node or generate a new one
-		var node *sbom.Node
-		if n, ok := seen[purl]; ok {
-			node = n
-		} else {
-			node = &sbom.Node{
-				Id:          uuid.NewString(),
-				Type:        sbom.Node_PACKAGE,
-				Name:        name,
-				Version:     version,
-				FileName:    name,
-				UrlDownload: fmt.Sprintf("https://crates.io/api/v1/crates/%s/%s/download", name, version),
-				Identifiers: map[int32]string{
-					int32(sbom.SoftwareIdentifierType_PURL): purl,
-				},
-				PrimaryPurpose: []sbom.Purpose{
-					sbom.Purpose_LIBRARY,
-				},
-			}
-			seen[purl] = node
-		}
-		depladder[level] = node
-		if currentLevel > 0 {
-			if err := nl.RelateNodeAtID(node, depladder[level-1].GetId(), edgeType); err != nil {
-				return fmt.Errorf("linking %q to nodelist: %w", purl, err)
-			}
-		} else {
-			// This sets the version from git, but cargo manages the version
-			// from the Cargo.toml file
-			//
-			// if opts.Version != "" {
-			// 	node.Version = opts.Version
-			// 	node.Identifiers[int32(sbom.SoftwareIdentifierType_PURL)] = fmt.Sprintf("pkg:cargo/%s@%s", name, opts.Version)
-			// }
-
-			if opts.CommitHash != "" {
-				node.ExternalReferences = append(node.ExternalReferences, &sbom.ExternalReference{
-					Hashes: map[int32]string{
-						int32(sbom.HashAlgorithm_SHA1): opts.CommitHash,
-					},
-					Type: sbom.ExternalReference_VCS,
-				})
-			}
-
-			nl.AddRootNode(node)
-		}
-	}
-	return nil
-}
-
-func (d *Decomposer) DefaultOptions() any {
-	return Options{
-		GenerateNormalDependencies: true,
-	}
-}
-
+// FindCodeBases locates Rust codebases by looking for Cargo.lock files.
 func (d *Decomposer) FindCodeBases(index *code.PathIndex) ([]string, error) {
 	return index.FindFileLocations("Cargo.lock")
 }
