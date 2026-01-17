@@ -66,6 +66,7 @@ func Execute() {
 
 	addExtract(rootCmd)
 	addSBOM(rootCmd)
+	addCodebases(rootCmd)
 	rootCmd.AddCommand(version.WithFont("doom"))
 
 	if err := rootCmd.Execute(); err != nil {

@@ -57,6 +57,10 @@ type Options struct {
 	// file when available .
 	UseGitIgnore bool
 
+	// CodebaseFilter filters to a specific codebase by ID (e.g., "golang:./services/api").
+	// If empty, all codebases are included.
+	CodebaseFilter string
+
 	logger *slog.Logger
 }
 
@@ -98,6 +102,14 @@ func (unpacker *Unpacker) ExtractWithContext(ctx context.Context, sources Source
 		return nil, fmt.Errorf("scaning for codebases: %w", err)
 	}
 
+	// Apply codebase filter if specified
+	if unpacker.Options.CodebaseFilter != "" {
+		codebases, err = unpacker.filterCodebases(codebases, sources.Paths)
+		if err != nil {
+			return nil, fmt.Errorf("filtering codebases: %w", err)
+		}
+	}
+
 	nodelists, err := unpacker.impl.ExtractCodeBases(ctx, &unpacker.Options, codebases)
 	if err != nil {
 		return nil, fmt.Errorf("extracting data from codebases: %w", err)
@@ -105,6 +117,55 @@ func (unpacker *Unpacker) ExtractWithContext(ctx context.Context, sources Source
 
 	// Extract from the codebases
 	return nodelists, nil
+}
+
+// filterCodebases filters the codebase map to only include the codebase matching the filter ID.
+func (unpacker *Unpacker) filterCodebases(codebases map[api.Decomposer][]string, basePaths []string) (map[api.Decomposer][]string, error) {
+	filterLang, filterPath, err := ParseCodebaseID(unpacker.Options.CodebaseFilter)
+	if err != nil {
+		return nil, fmt.Errorf("parsing codebase filter: %w", err)
+	}
+
+	// Build reverse lookup from decomposer to language name
+	decomposerToLanguage := make(map[api.Decomposer]string)
+	for lang, d := range unpacker.decomposers {
+		decomposerToLanguage[d] = lang
+	}
+
+	// Determine the base path for relative path calculations
+	basePath := "."
+	if len(basePaths) > 0 {
+		basePath = basePaths[0]
+	}
+
+	filtered := make(map[api.Decomposer][]string)
+	found := false
+
+	for decomposer, paths := range codebases {
+		language := decomposerToLanguage[decomposer]
+		if language != filterLang {
+			continue
+		}
+
+		for _, absPath := range paths {
+			relPath, err := unpacker.impl.RelativePath(basePath, absPath)
+			if err != nil {
+				return nil, fmt.Errorf("computing relative path: %w", err)
+			}
+
+			if relPath == filterPath {
+				filtered[decomposer] = []string{absPath}
+				found = true
+				break
+			}
+		}
+	}
+
+	if !found {
+		return nil, fmt.Errorf("codebase %q not found", unpacker.Options.CodebaseFilter)
+	}
+
+	return filtered, nil
 }
 
 // ExtractFromCodeBaseWithContext
@@ -155,6 +216,51 @@ func (unpacker *Unpacker) RegisterDecomposer(d api.Decomposer) {
 
 func (unpacker *Unpacker) UnregisterDecomposer(d api.Decomposer) {
 	delete(unpacker.decomposers, fmt.Sprintf("%T", d))
+}
+
+// ListCodebases discovers and lists all codebases found in the given path.
+func (unpacker *Unpacker) ListCodebases(ctx context.Context, path string) ([]CodebaseInfo, error) {
+	// Index the specified path
+	codeIndices, err := unpacker.impl.IndexPaths(ctx, &unpacker.Options, Sources{
+		Paths: []string{path},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("indexing path: %w", err)
+	}
+
+	// Scan for codebases
+	codebaseMap, err := unpacker.impl.ScanPaths(ctx, &unpacker.Options, unpacker.decomposers, codeIndices)
+	if err != nil {
+		return nil, fmt.Errorf("scanning for codebases: %w", err)
+	}
+
+	// Build reverse lookup from decomposer to language name
+	decomposerToLanguage := make(map[api.Decomposer]string)
+	for lang, d := range unpacker.decomposers {
+		decomposerToLanguage[d] = lang
+	}
+
+	// Convert to CodebaseInfo list
+	var result []CodebaseInfo
+	for decomposer, paths := range codebaseMap {
+		language := decomposerToLanguage[decomposer]
+		for _, absPath := range paths {
+			// Calculate relative path
+			relPath, err := unpacker.impl.RelativePath(path, absPath)
+			if err != nil {
+				return nil, fmt.Errorf("computing relative path: %w", err)
+			}
+
+			result = append(result, CodebaseInfo{
+				ID:       GenerateCodebaseID(language, relPath),
+				Language: language,
+				Path:     relPath,
+				AbsPath:  absPath,
+			})
+		}
+	}
+
+	return result, nil
 }
 
 // ExtractFromCodeBaseWithContext
