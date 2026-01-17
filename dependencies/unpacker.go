@@ -157,6 +157,51 @@ func (unpacker *Unpacker) UnregisterDecomposer(d api.Decomposer) {
 	delete(unpacker.decomposers, fmt.Sprintf("%T", d))
 }
 
+// ListCodebases discovers and lists all codebases found in the given path.
+func (unpacker *Unpacker) ListCodebases(ctx context.Context, path string) ([]CodebaseInfo, error) {
+	// Index the specified path
+	codeIndices, err := unpacker.impl.IndexPaths(ctx, &unpacker.Options, Sources{
+		Paths: []string{path},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("indexing path: %w", err)
+	}
+
+	// Scan for codebases
+	codebaseMap, err := unpacker.impl.ScanPaths(ctx, &unpacker.Options, unpacker.decomposers, codeIndices)
+	if err != nil {
+		return nil, fmt.Errorf("scanning for codebases: %w", err)
+	}
+
+	// Build reverse lookup from decomposer to language name
+	decomposerToLanguage := make(map[api.Decomposer]string)
+	for lang, d := range unpacker.decomposers {
+		decomposerToLanguage[d] = lang
+	}
+
+	// Convert to CodebaseInfo list
+	var result []CodebaseInfo
+	for decomposer, paths := range codebaseMap {
+		language := decomposerToLanguage[decomposer]
+		for _, absPath := range paths {
+			// Calculate relative path
+			relPath, err := unpacker.impl.RelativePath(path, absPath)
+			if err != nil {
+				return nil, fmt.Errorf("computing relative path: %w", err)
+			}
+
+			result = append(result, CodebaseInfo{
+				ID:       GenerateCodebaseID(language, relPath),
+				Language: language,
+				Path:     relPath,
+				AbsPath:  absPath,
+			})
+		}
+	}
+
+	return result, nil
+}
+
 // ExtractFromCodeBaseWithContext
 func (unpacker *Unpacker) ExtractSBOMFromFile(path string) (*sbom.NodeList, error) {
 	f, err := os.Open(path)
