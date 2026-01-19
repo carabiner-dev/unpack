@@ -110,12 +110,16 @@ func TestDecomposerExtractLarger(t *testing.T) {
 
 // TestCompareWithCargoTree verifies our parsing matches cargo tree output.
 // This test requires cargo to be installed and will be skipped if not available.
+// Set UNPACK_FORCE_TESTS=1 to fail instead of skip when cargo is missing (for CI).
 func TestCompareWithCargoTree(t *testing.T) {
 	t.Parallel()
 
 	// Check if cargo is available
 	//nolint:errcheck
 	if _, err := command.New("cargo", "--version").RunSilentSuccessOutput(); err != nil {
+		if os.Getenv("UNPACK_FORCE_TESTS") != "" {
+			t.Fatal("cargo not available and UNPACK_FORCE_TESTS is set")
+		}
 		t.Skip("cargo not available, skipping comparison test")
 	}
 

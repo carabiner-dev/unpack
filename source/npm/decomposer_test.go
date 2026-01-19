@@ -347,12 +347,18 @@ func TestDecomposerExtractWithCommitHash(t *testing.T) {
 // TestCompareWithNpmLs verifies our parsing matches npm ls output.
 // This test requires npm to be installed and node_modules to exist.
 // Run `npm ci` in testdata directories first to enable this test.
+// Set UNPACK_FORCE_TESTS=1 to fail instead of skip when npm/node_modules is missing (for CI).
 func TestCompareWithNpmLs(t *testing.T) {
 	t.Parallel()
+
+	forceTests := os.Getenv("UNPACK_FORCE_TESTS") != ""
 
 	// Check if npm is available
 	//nolint:errcheck
 	if _, err := command.New("npm", "--version").RunSilentSuccessOutput(); err != nil {
+		if forceTests {
+			t.Fatal("npm not available and UNPACK_FORCE_TESTS is set")
+		}
 		t.Skip("npm not available, skipping comparison test")
 	}
 
@@ -375,6 +381,9 @@ func TestCompareWithNpmLs(t *testing.T) {
 			// Check if node_modules exists (npm ci/install has been run)
 			nodeModulesPath := filepath.Join(absPath, "node_modules")
 			if _, err := os.Stat(nodeModulesPath); os.IsNotExist(err) {
+				if forceTests {
+					t.Fatalf("node_modules not found in %s and UNPACK_FORCE_TESTS is set - run 'npm ci' first", tc.workDir)
+				}
 				t.Skipf("node_modules not found - run 'npm ci' in %s to enable this test", tc.workDir)
 			}
 
