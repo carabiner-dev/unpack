@@ -1,0 +1,10 @@
+{
+  "name": "kubernetes.io",
+  "version": "1.0.0",
+  "description": "Kubernetes website",
+  "devDependencies": {
+    "autoprefixer": "^10.4.20",
+    "docsy": "github:google/docsy#v0.6.x",
+    "postcss-cli": "^11.0.0"
+  }
+}
