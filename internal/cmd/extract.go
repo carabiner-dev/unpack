@@ -55,7 +55,7 @@ func (ro *extractOptions) Validate() error {
 // AddFlags adds the subcommands flags
 func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVarP(
-		&ro.Path, "path", "p", "", "path to the artifact to unpack",
+		&ro.Path, "path", "p", ".", "path to the artifact to unpack",
 	)
 
 	cmd.PersistentFlags().StringSliceVarP(
@@ -67,7 +67,7 @@ func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 	)
 
 	cmd.PersistentFlags().BoolVar(
-		&ro.IndexFiles, "files", true, "Index all files in codebases",
+		&ro.IndexFiles, "files", dependencies.DefaultOptions.IndexFiles, "Index all files in codebases",
 	)
 
 	cmd.PersistentFlags().BoolVar(
@@ -117,9 +117,6 @@ to the current directory.
 				if looksLikeCodebaseID(arg) {
 					// Treat as codebase ID, default path to current directory
 					opts.Codebase = arg
-					if opts.Path == "" {
-						opts.Path = "."
-					}
 				} else {
 					// Treat as path
 					opts.Path = arg

@@ -73,6 +73,7 @@ var DefaultOptions = Options{
 	FailOnSingleMulti: true,
 	ReadGitVersion:    true,
 	UseGitIgnore:      true,
+	IndexFiles:        false,
 	logger:            slog.Default(),
 }
 
