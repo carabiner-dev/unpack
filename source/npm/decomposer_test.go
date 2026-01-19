@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: Copyright 2025 Carabiner Systems, Inc
 // SPDX-License-Identifier: Apache-2.0
 
-//nolint:goconst
 package npm
 
 import (
@@ -224,10 +223,10 @@ func TestDecomposerExtract(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		workDir     string
-		wantName    string
-		minNodes    int
+		name     string
+		workDir  string
+		wantName string
+		minNodes int
 	}{
 		{
 			name:     "k8s.io",

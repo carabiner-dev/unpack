@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/carabiner-dev/protograph"
 	"github.com/protobom/protobom/pkg/formats"
@@ -90,16 +91,46 @@ func addExtract(parent *cobra.Command) {
 		Long: fmt.Sprintf(`%s: dependency data extractor
 
 Unpack extract takes a dependency source as an argument and applies a decomposer
-to read its dependency data. 
+to read its dependency data.
+
+By default, dependencies are displayed as an ASCII tree in the terminal but 
+the data can be exported as JSON or an SPDX or CycloneDX sbom.
+
+Usage patterns:
+  %[1]s extract /path/to/project           Extract from a specific path
+  %[1]s extract golang:.                   Extract using codebase ID (path defaults to .)
+  %[1]s extract --codebase=golang:.        Same as above, using flag
+  %[1]s extract -c rust:tools/parser       Filter to specific codebase in current directory
+
+When a codebase ID is provided (format: language:path), the search path defaults
+to the current directory.
 
 `, appname),
-		Use:               "extract [flags] source",
+		Use:               "extract [flags] [path | codebase-id]",
 		SilenceUsage:      false,
 		PersistentPreRunE: initLogging,
-		PreRunE: func(cmd *cobra.Command, args []string) error {
+		PreRunE: func(_ *cobra.Command, args []string) error {
 			if len(args) > 0 {
-				opts.Path = args[0]
+				arg := args[0]
+				// Check if the argument looks like a codebase ID
+				// (contains a language, ":" and a relative path)
+				if looksLikeCodebaseID(arg) {
+					// Treat as codebase ID, default path to current directory
+					opts.Codebase = arg
+					if opts.Path == "" {
+						opts.Path = "."
+					}
+				} else {
+					// Treat as path
+					opts.Path = arg
+				}
 			}
+
+			// If --codebase is set but no path, default to current directory
+			if opts.Codebase != "" && opts.Path == "" {
+				opts.Path = "."
+			}
+
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -162,4 +193,20 @@ to read its dependency data.
 
 	opts.AddFlags(extractCmd)
 	parent.AddCommand(extractCmd)
+}
+
+// looksLikeCodebaseID checks if the argument appears to be a codebase ID.
+// A codebase ID has the format "language:path" where language is a known decomposer.
+func looksLikeCodebaseID(arg string) bool {
+	language, path, found := strings.Cut(arg, ":")
+	if !found {
+		return false
+	}
+
+	// Must have both language and path parts
+	if language == "" || path == "" {
+		return false
+	}
+
+	return true
 }
