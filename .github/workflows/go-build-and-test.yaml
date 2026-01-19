@@ -24,6 +24,8 @@ jobs:
         cache: true
 
     - name: Test
+      env:
+          UNPACK_FORCE_TESTS: 1
       run: |
         go get -d ./...
         go test -v ./...
