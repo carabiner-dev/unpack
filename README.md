@@ -1,83 +1,106 @@
-# unpack: Your Handy Dependency Extractor
+# Unpack: The Dependency-Aware File Unpacker
 
-A collection of dependency analysis libraries and CLI tool to extract dependency 
-data from codebases, artifacts and software bills of materials (SBOMs).
+[![Go Build and Test](https://github.com/carabiner-dev/unpack/actions/workflows/go-build-and-test.yaml/badge.svg)](https://github.com/carabiner-dev/unpack/actions/workflows/go-build-and-test.yaml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/carabiner-dev/unpack)](https://goreportcard.com/report/github.com/carabiner-dev/unpack)
+[![LICENSE](https://img.shields.io/github/license/carabiner-dev/unpack)](./LICENSE)
 
-The project can output the dependency data to the native SBOM formats as well as
-visualize them on screen:
+**Unpack** is a versatile CLI tool and library for analyzing software components. It goes beyond simple file extraction, providing deep insights into dependencies within codebases, artifacts, and Software Bills of Materials (SBOMs).
 
-```
-> unpack extract . 
+Whether you're a developer, security researcher, or compliance officer, Unpack helps you understand the composition of your software.
 
-pkg:golang/github.com/carabiner-dev/unpack@v0.1.0-pre3.1+0400cac1
-  ├ pkg:golang/github.com/titanous/rocacheck@v0.0.0-20171023193734-afe73141d399
-  ├ pkg:golang/google.golang.org/protobuf@v1.36.5
-  │   ├ pkg:golang/github.com/google/go-cmp@v0.5.5
-  │   ├ pkg:golang/golang.org/x/xerrors@v0.0.0-20191204190536-9bdfabe68543
-  │   ├ pkg:golang/go@1.21
-  │   └ pkg:golang/github.com/golang/protobuf@v1.5.0
-  ├ pkg:golang/github.com/cloudflare/circl@v1.6.0
-  │   ├ pkg:golang/github.com/bwesterb/go-ristretto@v1.2.3
-  │   ├ pkg:golang/golang.org/x/crypto@v0.11.1-0.20230711161743-2e82bdd1719d
-  │   ├ pkg:golang/golang.org/x/sys@v0.10.0
-  │   └ pkg:golang/go@1.22.0
-  ├ pkg:golang/github.com/skeema/knownhosts@v1.3.1
-  │   ├ pkg:golang/golang.org/x/crypto@v0.32.0
-  │   ├ pkg:golang/golang.org/x/sys@v0.29.0
-  │   └ pkg:golang/go@1.22
-  ...
-```
+## Key Features
 
-:warning: `unpack` is still an experimental project. We have initial support to extract data
-from go and rust codebases (more are on the way). It has support for dependency
-extraction from SBOMs via the native 
-[protobom unserializers](http://github.com/protobom/protobom/).
+- **Dependency Extraction**: Analyzes source code to discover dependencies for various languages.
+- **SBOM Parsing**: Reads and understands major SBOM formats like SPDX and CycloneDX.
+- **Multiple Output Formats**: Displays dependencies as a visual tree or exports to standard SBOM formats.
+- **Extensible Architecture**: Easily extendable to support new languages and package managers.
+- **Attestation Support**: Wraps SBOM outputs in an in-toto attestation for verifiable supply chain security.
 
-## Install
+---
 
-We have started building binaries for the project, but we only have prereleases
-at the moment. Feel free to try them out, 
-[downlad the latest prerelease](https://github.com/carabiner-dev/unpack/releases/latest).
+:warning: `unpack` is an experimental project. We are actively developing it and welcome feedback. Initial support focuses on Go, Rust, and NPM codebases, with more on the way. Dependency extraction from SBOMs is powered by the native [protobom unserializers](http://github.com/protobom/protobom/).
 
-If you want to try the latest and greatest, (am possibly the buggiest! :upside_down_face: )
-install directly with the go compiler:
+---
+
+## Installation
+
+### From Pre-releases
+Pre-release binaries are available for Linux, macOS, and Windows.
+
+[**Download the latest prerelease**](https://github.com/carabiner-dev/unpack/releases/latest)
+
+### From Source
+To install the latest development version directly from the source, use the Go compiler:
 
 ```bash
-go install github.com/carabiner-dev/unpack@HEAD
+go install github.com/carabiner-dev/unpack@main
 ```
 
 ## Usage
 
-### Extract Source Dependency Data
+Unpack provides two main commands: `extract` and `sbom`.
 
-To extract dependency data from code bases use `unpack extract`:
+### `unpack extract`: Analyze Source Code
 
+Use `extract` to discover dependencies directly from a source code repository.
+
+**Example: Basic Tree View**
 ```bash
-# Extract the dependency data of a code base im a tree: 
-unpack extract /path/to/code
-
-# Same but output in an SPDX SBOM:
-unpack extract --format=spdx /path/to/code 
-
-# Same SPDX document, but wrapped in an intoto attestation
-unpack extract --attest --format=spdx /path/to/code 
+# Analyze the codebase in the current directory and display a dependency tree
+unpack extract .
+```
+```
+pkg:golang/github.com/carabiner-dev/unpack@v0.1.0-pre3.1+0400cac1
+  ├ pkg:golang/github.com/titanous/rocacheck@v0.0.0-20171023193734-afe73141d399
+  ├ pkg:golang/google.golang.org/protobuf@v1.36.5
+  │   ├ pkg:golang/github.com/google/go-cmp@v0.5.5
+  ...
 ```
 
-### Extract SBOM Dependency Data
+**Example: Generate an SPDX SBOM**
+```bash
+# Output the dependency graph as an SPDX JSON file
+unpack extract --format=spdx-json /path/to/your/code > my-project.spdx.json
+```
 
-To extract data from an SBOM, use `unpack sbom`:
+**Example: Create a Signed Attestation**
+```bash
+# Generate an SPDX SBOM and wrap it in a signed in-toto attestation
+unpack extract --attest --format=spdx-json /path/to/your/code
+```
+
+### `unpack sbom`: Process Existing SBOMs
+
+Use `sbom` to read, convert, and re-export existing SBOM files.
 
 ```bash
-# Extract the dependency data from an SBOM:
+# Read an SPDX SBOM and display its contents as a tree
 unpack sbom /path/to/sbom.spdx.json
 
-# Same but output the SBOM data in another format:
-unpack sbom --format=cyclonedx /path/to/sbom.spdx.json 
+# Convert an SPDX SBOM to the CycloneDX format
+unpack sbom --format=cyclonedx-json /path/to/sbom.spdx.json
 ```
 
-## Patches Welcome!
+## Supported Platforms
 
-This tool and its libraries are released under the Apache 2.0 license by
-Carbiner Systems, Inc. Feel free to contribute improvements or report any
-problems you find by opening a new issue. We love feedback and love to make
-the project useful for you.
+Unpack currently supports dependency extraction for the following ecosystems:
+
+- **Go Modules** (`go.mod`)
+- **Rust Cargo** (`Cargo.lock`)
+- **NPM** (`package-lock.json`)
+
+Support for more ecosystems is planned.
+
+## Contributing
+
+We welcome contributions! Whether it's reporting a bug, suggesting a feature, or submitting a pull request, your feedback is valuable.
+
+- **Open an Issue**: If you find a problem or have an idea for an improvement, please [open a new issue](https://github.com/carabiner-dev/unpack/issues).
+- **Pull Requests**: Feel free to fork the repository and submit a pull request with your changes.
+
+## License
+
+This tool and its libraries are released under the **Apache 2.0 License**. See the [LICENSE](./LICENSE) file for more details.
+
+---
+*Developed and maintained by Carabiner Systems, Inc.*
