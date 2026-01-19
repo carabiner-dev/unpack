@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -83,6 +84,11 @@ Examples:
 			if len(args) > 0 {
 				opts.Path = args[0]
 			}
+
+			if opts.Path == "" {
+				opts.Path = "."
+			}
+
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -90,32 +96,36 @@ Examples:
 				return err
 			}
 
-			unpacker := dependencies.NewUnpacker()
-			unpacker.Options.IgnorePatterns = opts.IgnorePatterns
-
-			codebases, err := unpacker.ListCodebases(cmd.Context(), opts.Path)
-			if err != nil {
-				return fmt.Errorf("listing codebases: %w", err)
-			}
-
-			if len(codebases) == 0 {
-				fmt.Fprintln(os.Stderr, "No codebases found")
-				return nil
-			}
-
-			switch opts.Format {
-			case codebasesFormatTable:
-				return outputCodebasesTable(codebases)
-			case codebasesFormatJSON:
-				return outputCodebasesJSON(codebases)
-			default:
-				return fmt.Errorf("invalid format: %s", opts.Format)
-			}
+			return listCodebases(cmd.Context(), opts)
 		},
 	}
 
 	opts.AddFlags(lsCmd)
 	parent.AddCommand(lsCmd)
+}
+
+func listCodebases(ctx context.Context, opts *codebasesOptions) error {
+	unpacker := dependencies.NewUnpacker()
+	unpacker.Options.IgnorePatterns = opts.IgnorePatterns
+
+	codebases, err := unpacker.ListCodebases(ctx, opts.Path)
+	if err != nil {
+		return fmt.Errorf("listing codebases: %w", err)
+	}
+
+	if len(codebases) == 0 {
+		fmt.Fprintln(os.Stderr, "No codebases found")
+		return nil
+	}
+
+	switch opts.Format {
+	case codebasesFormatTable:
+		return outputCodebasesTable(codebases)
+	case codebasesFormatJSON:
+		return outputCodebasesJSON(codebases)
+	default:
+		return fmt.Errorf("invalid format: %s", opts.Format)
+	}
 }
 
 func outputCodebasesTable(codebases []dependencies.CodebaseInfo) error {
