@@ -5,6 +5,8 @@ package npm
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/protobom/protobom/pkg/sbom"
 
@@ -30,6 +32,10 @@ type Options struct {
 
 	// IncludePeerDependencies includes peer dependencies in the output.
 	IncludePeerDependencies bool
+
+	// IgnoreNodeModulesCodebases instructs the decomposer to ignore any codebases
+	// in node_modules directories (package-lock files from pulled dependencies)
+	IgnoreNodeModulesCodebases bool
 }
 
 // DefaultOptions returns the default options for the npm decomposer.
@@ -38,6 +44,7 @@ func (d *Decomposer) DefaultOptions() any {
 		IncludeDevDependencies:      false,
 		IncludeOptionalDependencies: false,
 		IncludePeerDependencies:     false,
+		IgnoreNodeModulesCodebases:  true,
 	}
 }
 
@@ -81,5 +88,17 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 
 // FindCodeBases locates npm codebases by looking for package-lock.json files.
 func (d *Decomposer) FindCodeBases(index *code.PathIndex) ([]string, error) {
-	return index.FindFileLocations("package-lock.json")
+	// FInd the node codebases from the indexer
+	allCodebases, err := index.FindFileLocations("package-lock.json")
+	if err != nil {
+		return nil, err
+	}
+	filteredCodebases := []string{}
+	for _, c := range allCodebases {
+		if strings.Contains(c, string(filepath.Separator)+"%snode_modules%s"+string(filepath.Separator)) {
+			continue
+		}
+		filteredCodebases = append(filteredCodebases, c)
+	}
+	return filteredCodebases, nil
 }

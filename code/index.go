@@ -19,6 +19,14 @@ import (
 
 const gitIgnoreFile = ".gitignore"
 
+// DefaultIgnorePatterns are default patterns we add to the gitignores from
+// the project and any patterns passed by the user
+var DefaultIgnorePatterns = []string{
+	// This prevents indexing code included in any pulled
+	// JS modules pulled by npm.
+	"node_modules/",
+}
+
 // PathIndex lists all directories with their files
 type PathIndex map[string][]string
 
@@ -52,6 +60,10 @@ type indexerOptions struct {
 
 	// Additional gitignore patterns to consider
 	ExtraIgnorePatterns []string
+
+	// NoDefaultIgnores prevents the indexer from applying the default ignore
+	// patterns when indexing files
+	NoDefaultIgnores bool
 }
 
 type optFn func(*indexerOptions)
@@ -59,6 +71,12 @@ type optFn func(*indexerOptions)
 func WithExtraIgnorePattners(patterns []string) optFn {
 	return func(io *indexerOptions) {
 		io.ExtraIgnorePatterns = patterns
+	}
+}
+
+func WithNoDefaultIgnores(sino bool) optFn {
+	return func(io *indexerOptions) {
+		io.NoDefaultIgnores = sino
 	}
 }
 
@@ -114,6 +132,11 @@ func (i *Indexer) CatalogDirectories(path string, funcs ...optFn) (*PathIndex, e
 // from the gitignore file.
 func (i *Indexer) ignorePatterns(dirPath string) ([]gitignore.Pattern, error) {
 	patterns := []gitignore.Pattern{}
+	if !i.options.NoDefaultIgnores {
+		for _, s := range DefaultIgnorePatterns {
+			patterns = append(patterns, gitignore.ParsePattern(s, nil))
+		}
+	}
 	for _, s := range i.options.ExtraIgnorePatterns {
 		patterns = append(patterns, gitignore.ParsePattern(s, nil))
 	}
