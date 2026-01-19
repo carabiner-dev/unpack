@@ -5,6 +5,7 @@ package dependencies
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,6 +18,8 @@ import (
 	"github.com/carabiner-dev/unpack/source/npm"
 	"github.com/carabiner-dev/unpack/source/rust"
 )
+
+var ErrMultipleCodebases = errors.New("multiple codebases found")
 
 func NewUnpacker() *Unpacker {
 	return &Unpacker{
@@ -192,7 +195,7 @@ func (unpacker *Unpacker) ExtractCodebaseWithContext(ctx context.Context, path s
 	default:
 		// Fail if FailOnSingleMulti is set:
 		if unpacker.Options.FailOnSingleMulti {
-			return nil, fmt.Errorf("multiple codebases found in %q", path)
+			return nil, ErrMultipleCodebases
 		}
 
 		unpacker.Options.logger.WarnContext(

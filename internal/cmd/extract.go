@@ -151,8 +151,19 @@ to the current directory.
 			// Filter to a specific codebase if provided
 			unpacker.Options.CodebaseFilter = opts.Codebase
 
+			// Run the extract process:
 			nodelist, err := unpacker.ExtractCodebase(opts.Path)
 			if err != nil {
+				// .. if it failed because there is more than one codebase,
+				//  show the users the found codebases
+				if errors.Is(err, dependencies.ErrMultipleCodebases) {
+					fmt.Fprintf(os.Stderr, "Error: Multiple codebases found:\n")
+					return listCodebases(cmd.Context(), &codebasesOptions{
+						Path:           opts.Path,
+						IgnorePatterns: opts.IgnorePatterns,
+						Format:         codebasesFormatTable,
+					})
+				}
 				return err
 			}
 
