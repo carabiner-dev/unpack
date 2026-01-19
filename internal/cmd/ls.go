@@ -58,12 +58,12 @@ func (o *codebasesOptions) AddFlags(cmd *cobra.Command) {
 	)
 }
 
-func addCodebases(parent *cobra.Command) {
+func addLs(parent *cobra.Command) {
 	opts := &codebasesOptions{}
 
-	codebasesCmd := &cobra.Command{
+	lsCmd := &cobra.Command{
 		Short: "list discovered codebases in a path",
-		Long: fmt.Sprintf(`%s codebases: list discovered codebases
+		Long: fmt.Sprintf(`%s ls: list discovered codebases
 
 Scans a directory for codebases and lists them with IDs that can be used
 with the extract command's --codebase flag to target specific codebases.
@@ -73,9 +73,10 @@ Examples:
   golang:.              (root directory Go project)
   golang:services/api
   rust:tools/parser
+  npm:frontend
 
 `, appname),
-		Use:               "codebases [flags] path",
+		Use:               "ls [flags] path",
 		SilenceUsage:      false,
 		PersistentPreRunE: initLogging,
 		PreRunE: func(_ *cobra.Command, args []string) error {
@@ -113,8 +114,8 @@ Examples:
 		},
 	}
 
-	opts.AddFlags(codebasesCmd)
-	parent.AddCommand(codebasesCmd)
+	opts.AddFlags(lsCmd)
+	parent.AddCommand(lsCmd)
 }
 
 func outputCodebasesTable(codebases []dependencies.CodebaseInfo) error {
