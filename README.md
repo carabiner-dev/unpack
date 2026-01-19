@@ -81,6 +81,32 @@ unpack sbom /path/to/sbom.spdx.json
 unpack sbom --format=cyclonedx-json /path/to/sbom.spdx.json
 ```
 
+### `unpack ls`: List Discovered Codebases
+
+Use `ls` to scan a directory and list the codebases found, along with their IDs. These IDs can then be used with the `extract` command.
+
+**Example: List codebases in a directory (table format)**
+```bash
+# List all discovered codebases in the current directory
+unpack ls .
+```
+```
+ID                     LANGUAGE   PATH
+golang:.               golang     .
+npm:frontend           npm        frontend
+rust:backend/api       rust       backend/api
+```
+
+**Example: List codebases in JSON format**
+```bash
+unpack ls --format=json /path/to/project
+```
+
+**Example: List codebases ignoring specific patterns**
+```bash
+unpack ls --ignore "*/testdata/*" --ignore "temp/" .
+```
+
 ## Supported Platforms
 
 Unpack currently supports dependency extraction for the following ecosystems:
