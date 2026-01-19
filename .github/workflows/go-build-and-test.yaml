@@ -11,15 +11,19 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ["1.24", "1.25"]
+
     steps:
     - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       with:
         persist-credentials: false
 
-    - name: Set up Go
+    - name: Set up Go ${{matrix.go-version}}
       uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
       with:
-        go-version: '1.25'
+        go-version: ${{matrix.go-version}}
         check-latest: true
         cache: true
 
@@ -27,5 +31,11 @@ jobs:
       env:
           UNPACK_FORCE_TESTS: 1
       run: |
+        cd source/npm/testdata/demorepo/
+        npm ci
+        cd -
+        cd source/npm/testdata/k8s.io/
+        npm ci
+        cd -
         go get -d ./...
         go test -v ./...
