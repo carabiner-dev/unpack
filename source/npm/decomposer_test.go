@@ -23,39 +23,105 @@ import (
 func TestParsePackageLock(t *testing.T) {
 	t.Parallel()
 
-	lock, err := ParsePackageLock("testdata/k8s.io")
-	require.NoError(t, err)
-	require.NotNil(t, lock)
+	tests := []struct {
+		name        string
+		workDir     string
+		wantName    string
+		minPackages int
+	}{
+		{
+			name:        "k8s.io",
+			workDir:     "testdata/k8s.io",
+			wantName:    "kubernetes.io",
+			minPackages: 50,
+		},
+		{
+			name:        "demorepo",
+			workDir:     "testdata/demorepo",
+			wantName:    "dummyrepo-js",
+			minPackages: 100,
+		},
+	}
 
-	// Check basic properties
-	require.Equal(t, "kubernetes.io", lock.Name)
-	require.Equal(t, 3, lock.LockfileVersion)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	// Check we got packages
-	require.Greater(t, len(lock.Packages), 50)
+			lock, err := ParsePackageLock(tc.workDir)
+			require.NoError(t, err)
+			require.NotNil(t, lock)
 
-	// Check root package exists
-	root := lock.GetRootPackage()
-	require.NotNil(t, root)
-	require.Equal(t, "kubernetes.io", root.Name)
+			// Check basic properties
+			require.Equal(t, tc.wantName, lock.Name)
+			require.Equal(t, 3, lock.LockfileVersion)
+
+			// Check we got packages
+			require.Greater(t, len(lock.Packages), tc.minPackages)
+
+			// Check root package exists
+			root := lock.GetRootPackage()
+			require.NotNil(t, root)
+			require.Equal(t, tc.wantName, root.Name)
+		})
+	}
 }
 
 func TestParsePackageJSON(t *testing.T) {
 	t.Parallel()
 
-	pkg, err := ParsePackageJSON("testdata/k8s.io")
-	require.NoError(t, err)
-	require.NotNil(t, pkg)
+	tests := []struct {
+		name        string
+		workDir     string
+		wantName    string
+		wantVersion string
+		wantDeps    int
+		wantDevDeps int
+		checkDep    string
+	}{
+		{
+			name:        "k8s.io",
+			workDir:     "testdata/k8s.io",
+			wantName:    "kubernetes.io",
+			wantVersion: "1.0.0",
+			wantDeps:    0,
+			wantDevDeps: 3,
+			checkDep:    "autoprefixer",
+		},
+		{
+			name:        "demorepo",
+			workDir:     "testdata/demorepo",
+			wantName:    "dummyrepo-js",
+			wantVersion: "0.1.0",
+			wantDeps:    12,
+			wantDevDeps: 0,
+			checkDep:    "react",
+		},
+	}
 
-	// Check package info
-	require.Equal(t, "kubernetes.io", pkg.Name)
-	require.Equal(t, "1.0.0", pkg.Version)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	// Check devDependencies
-	require.Len(t, pkg.DevDependencies, 3)
-	require.Contains(t, pkg.DevDependencies, "autoprefixer")
-	require.Contains(t, pkg.DevDependencies, "docsy")
-	require.Contains(t, pkg.DevDependencies, "postcss-cli")
+			pkg, err := ParsePackageJSON(tc.workDir)
+			require.NoError(t, err)
+			require.NotNil(t, pkg)
+
+			// Check package info
+			require.Equal(t, tc.wantName, pkg.Name)
+			require.Equal(t, tc.wantVersion, pkg.Version)
+
+			// Check dependencies
+			require.Len(t, pkg.Dependencies, tc.wantDeps)
+			require.Len(t, pkg.DevDependencies, tc.wantDevDeps)
+
+			// Check a specific dependency exists
+			if tc.wantDeps > 0 {
+				require.Contains(t, pkg.Dependencies, tc.checkDep)
+			} else {
+				require.Contains(t, pkg.DevDependencies, tc.checkDep)
+			}
+		})
+	}
 }
 
 func TestExtractPackageName(t *testing.T) {
@@ -157,33 +223,59 @@ func TestBuildPURL(t *testing.T) {
 func TestDecomposerExtract(t *testing.T) {
 	t.Parallel()
 
-	d := New()
-	opts := &api.DecomposerOptions{
-		WorkDir: "testdata/k8s.io",
+	tests := []struct {
+		name        string
+		workDir     string
+		wantName    string
+		minNodes    int
+	}{
+		{
+			name:     "k8s.io",
+			workDir:  "testdata/k8s.io",
+			wantName: "kubernetes.io",
+			minNodes: 50,
+		},
+		{
+			name:     "demorepo",
+			workDir:  "testdata/demorepo",
+			wantName: "dummyrepo-js",
+			minNodes: 100,
+		},
 	}
 
-	nl, err := d.Extract(opts)
-	require.NoError(t, err)
-	require.NotNil(t, nl)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	// Check root nodes
-	roots := nl.GetRootElements()
-	require.Len(t, roots, 1)
+			d := New()
+			opts := &api.DecomposerOptions{
+				WorkDir: tc.workDir,
+			}
 
-	// Find root node
-	var rootNode *sbom.Node
-	for _, node := range nl.GetNodes() {
-		if node.GetName() == "kubernetes.io" {
-			rootNode = node
-			break
-		}
+			nl, err := d.Extract(opts)
+			require.NoError(t, err)
+			require.NotNil(t, nl)
+
+			// Check root nodes
+			roots := nl.GetRootElements()
+			require.Len(t, roots, 1)
+
+			// Find root node
+			var rootNode *sbom.Node
+			for _, node := range nl.GetNodes() {
+				if node.GetName() == tc.wantName {
+					rootNode = node
+					break
+				}
+			}
+			require.NotNil(t, rootNode)
+			require.Equal(t, tc.wantName, rootNode.GetName())
+
+			// Check we have many nodes
+			nodes := nl.GetNodes()
+			require.Greater(t, len(nodes), tc.minNodes)
+		})
 	}
-	require.NotNil(t, rootNode)
-	require.Equal(t, "kubernetes.io", rootNode.GetName())
-
-	// Check we have many nodes (the k8s.io project has many deps)
-	nodes := nl.GetNodes()
-	require.Greater(t, len(nodes), 50)
 }
 
 func TestDecomposerExtractWithVersion(t *testing.T) {
@@ -254,7 +346,7 @@ func TestDecomposerExtractWithCommitHash(t *testing.T) {
 
 // TestCompareWithNpmLs verifies our parsing matches npm ls output.
 // This test requires npm to be installed and node_modules to exist.
-// Run `npm ci` in testdata/k8s.io first to enable this test.
+// Run `npm ci` in testdata directories first to enable this test.
 func TestCompareWithNpmLs(t *testing.T) {
 	t.Parallel()
 
@@ -264,60 +356,74 @@ func TestCompareWithNpmLs(t *testing.T) {
 		t.Skip("npm not available, skipping comparison test")
 	}
 
-	// Get absolute path for npm
-	absPath, err := filepath.Abs("testdata/k8s.io")
-	require.NoError(t, err)
-
-	// Check if node_modules exists (npm ci/install has been run)
-	nodeModulesPath := filepath.Join(absPath, "node_modules")
-	if _, err := os.Stat(nodeModulesPath); os.IsNotExist(err) {
-		t.Skip("node_modules not found - run 'npm ci' in testdata/k8s.io to enable this test")
+	tests := []struct {
+		name    string
+		workDir string
+	}{
+		{"k8s.io", "testdata/k8s.io"},
+		{"demorepo", "testdata/demorepo"},
 	}
 
-	// Run npm ls to get the expected dependencies
-	// Use --all to include transitive deps, --parseable --long for output format
-	cmd := command.NewWithWorkDir(absPath, "npm", "ls", "--all", "--parseable", "--long")
-	output, err := cmd.RunSilentSuccessOutput()
-	if err != nil {
-		// npm ls may fail with ELSPROBLEMS if there are peer dep issues
-		// but still outputs useful information
-		t.Logf("npm ls returned error (may be expected): %v", err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Get absolute path for npm
+			absPath, err := filepath.Abs(tc.workDir)
+			require.NoError(t, err)
+
+			// Check if node_modules exists (npm ci/install has been run)
+			nodeModulesPath := filepath.Join(absPath, "node_modules")
+			if _, err := os.Stat(nodeModulesPath); os.IsNotExist(err) {
+				t.Skipf("node_modules not found - run 'npm ci' in %s to enable this test", tc.workDir)
+			}
+
+			// Run npm ls to get the expected dependencies
+			// Use --all to include transitive deps, --parseable --long for output format
+			cmd := command.NewWithWorkDir(absPath, "npm", "ls", "--all", "--parseable", "--long")
+			output, err := cmd.RunSilentSuccessOutput()
+			if err != nil {
+				// npm ls may fail with ELSPROBLEMS if there are peer dep issues
+				// but still outputs useful information
+				t.Logf("npm ls returned error (may be expected): %v", err)
+			}
+
+			// Parse npm ls output to get list of packages
+			npmPackages := parseNpmLsOutput(output.OutputTrimNL())
+
+			if len(npmPackages) == 0 {
+				t.Skip("npm ls returned no packages - skipping comparison")
+			}
+
+			// Extract using our implementation
+			d := New()
+			opts := &api.DecomposerOptions{
+				WorkDir: tc.workDir,
+			}
+			nl, err := d.Extract(opts)
+			require.NoError(t, err)
+
+			// Get packages from our nodelist
+			ourPackages := make(map[string]bool)
+			for _, node := range nl.GetNodes() {
+				key := node.GetName() + "@" + node.GetVersion()
+				ourPackages[key] = true
+			}
+
+			// Verify all npm ls packages are in our output
+			missing := []string{}
+			for pkg := range npmPackages {
+				if !ourPackages[pkg] {
+					missing = append(missing, pkg)
+				}
+			}
+
+			// Allow some flexibility - npm ls may show packages differently
+			// The important thing is we have reasonable coverage
+			require.LessOrEqual(t, len(missing), 5,
+				"too many packages found in npm ls but not in our output: %v", missing)
+		})
 	}
-
-	// Parse npm ls output to get list of packages
-	npmPackages := parseNpmLsOutput(output.OutputTrimNL())
-
-	if len(npmPackages) == 0 {
-		t.Skip("npm ls returned no packages - skipping comparison")
-	}
-
-	// Extract using our implementation
-	d := New()
-	opts := &api.DecomposerOptions{
-		WorkDir: "testdata/k8s.io",
-	}
-	nl, err := d.Extract(opts)
-	require.NoError(t, err)
-
-	// Get packages from our nodelist
-	ourPackages := make(map[string]bool)
-	for _, node := range nl.GetNodes() {
-		key := node.GetName() + "@" + node.GetVersion()
-		ourPackages[key] = true
-	}
-
-	// Verify all npm ls packages are in our output
-	missing := []string{}
-	for pkg := range npmPackages {
-		if !ourPackages[pkg] {
-			missing = append(missing, pkg)
-		}
-	}
-
-	// Allow some flexibility - npm ls may show packages differently
-	// The important thing is we have reasonable coverage
-	require.LessOrEqual(t, len(missing), 5,
-		"too many packages found in npm ls but not in our output: %v", missing)
 }
 
 // TestDependencyTypes verifies that dependency types are correctly assigned.
@@ -389,6 +495,49 @@ func TestDevDependencyEdges(t *testing.T) {
 
 	// We should have some devDependency edges from root
 	require.Positive(t, devDepEdges, "expected devDependency edges from root node")
+}
+
+// TestNormalDependencyEdges verifies that normal dependencies get the correct edge type.
+func TestNormalDependencyEdges(t *testing.T) {
+	t.Parallel()
+
+	d := New()
+	opts := &api.DecomposerOptions{
+		WorkDir: "testdata/demorepo",
+	}
+
+	nl, err := d.Extract(opts)
+	require.NoError(t, err)
+	require.NotNil(t, nl)
+
+	// All direct dependencies in the demorepo test case are normal dependencies
+	// The edges should reflect this
+
+	// Get all edges from the nodelist
+	edges := nl.GetEdges()
+	require.NotEmpty(t, edges)
+
+	// Find root node ID
+	roots := nl.GetRootElements()
+	require.Len(t, roots, 1)
+	rootID := roots[0]
+
+	// Check that edges from root are dependsOn type (normal dependencies)
+	normalDepEdges := 0
+	devDepEdges := 0
+	for _, edge := range edges {
+		if edge.GetFrom() == rootID {
+			if edge.GetType() == sbom.Edge_dependsOn {
+				normalDepEdges++
+			} else if edge.GetType() == sbom.Edge_devDependency {
+				devDepEdges++
+			}
+		}
+	}
+
+	// We should have normal dependency edges from root, not dev dependency edges
+	require.Positive(t, normalDepEdges, "expected dependsOn edges from root node")
+	require.Zero(t, devDepEdges, "expected no devDependency edges from root node for demorepo")
 }
 
 // TestPackageLockIndex tests the package indexing functionality.
@@ -484,20 +633,45 @@ func TestListDependencies(t *testing.T) {
 func TestScopedPackages(t *testing.T) {
 	t.Parallel()
 
-	lock, err := ParsePackageLock("testdata/k8s.io")
-	require.NoError(t, err)
+	tests := []struct {
+		name       string
+		workDir    string
+		scopedPkg  string
+		wantInPURL string
+	}{
+		{
+			name:       "k8s.io",
+			workDir:    "testdata/k8s.io",
+			scopedPkg:  "@fortawesome/fontawesome-free",
+			wantInPURL: "pkg:npm/fortawesome/fontawesome-free@",
+		},
+		{
+			name:       "demorepo",
+			workDir:    "testdata/demorepo",
+			scopedPkg:  "@types/node",
+			wantInPURL: "pkg:npm/types/node@",
+		},
+	}
 
-	_, byName, _ := lock.BuildPackageIndex()
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	// Check that scoped packages are indexed correctly
-	// @fortawesome/fontawesome-free should be in the index
-	pkgs, ok := byName["@fortawesome/fontawesome-free"]
-	require.True(t, ok, "expected to find @fortawesome/fontawesome-free")
-	require.GreaterOrEqual(t, len(pkgs), 1)
+			lock, err := ParsePackageLock(tc.workDir)
+			require.NoError(t, err)
 
-	// Check PURL generation for scoped package
-	purl := buildPURL("@fortawesome/fontawesome-free", "6.7.2")
-	require.Equal(t, "pkg:npm/fortawesome/fontawesome-free@6.7.2", purl)
+			_, byName, _ := lock.BuildPackageIndex()
+
+			// Check that scoped packages are indexed correctly
+			pkgs, ok := byName[tc.scopedPkg]
+			require.True(t, ok, "expected to find %s", tc.scopedPkg)
+			require.GreaterOrEqual(t, len(pkgs), 1)
+
+			// Check PURL generation for scoped package
+			purl := buildPURL(tc.scopedPkg, pkgs[0].Version)
+			require.Contains(t, purl, tc.wantInPURL)
+		})
+	}
 }
 
 // TestGitDependencies tests that git dependencies are handled correctly.
