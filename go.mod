@@ -1,11 +1,11 @@
 module github.com/carabiner-dev/unpack
 
-go 1.25.7
+go 1.25.8
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/carabiner-dev/attestation v0.2.0
-	github.com/carabiner-dev/collector v0.2.8
+	github.com/carabiner-dev/attestation v0.2.1
+	github.com/carabiner-dev/collector v0.2.9
 	github.com/carabiner-dev/hasher v0.2.3
 	github.com/carabiner-dev/protograph v0.0.0-20260117204235-4dc9de9c0db5
 	github.com/go-git/go-git/v5 v5.17.0
