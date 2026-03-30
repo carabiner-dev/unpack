@@ -8,7 +8,7 @@ require (
 	github.com/carabiner-dev/collector v0.2.8
 	github.com/carabiner-dev/hasher v0.2.3
 	github.com/carabiner-dev/protograph v0.0.0-20260117204235-4dc9de9c0db5
-	github.com/go-git/go-git/v5 v5.17.0
+	github.com/go-git/go-git/v5 v5.17.1
 	github.com/google/uuid v1.6.0
 	github.com/in-toto/attestation v1.2.0
 	github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
@@ -37,7 +37,7 @@ require (
 	github.com/clipperhouse/displaywidth v0.6.0 // indirect
 	github.com/clipperhouse/stringish v0.1.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
-	github.com/cloudflare/circl v1.6.2 // indirect
+	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
