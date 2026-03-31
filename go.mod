@@ -8,7 +8,7 @@ require (
 	github.com/carabiner-dev/collector v0.2.8
 	github.com/carabiner-dev/hasher v0.2.3
 	github.com/carabiner-dev/protograph v0.0.0-20260117204235-4dc9de9c0db5
-	github.com/go-git/go-git/v5 v5.17.0
+	github.com/go-git/go-git/v5 v5.17.2
 	github.com/google/uuid v1.6.0
 	github.com/in-toto/attestation v1.2.0
 	github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
@@ -18,7 +18,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/mod v0.34.0
 	google.golang.org/protobuf v1.36.11
-	sigs.k8s.io/release-utils v0.12.3
+	sigs.k8s.io/release-utils v0.12.4
 )
 
 require (
@@ -34,10 +34,10 @@ require (
 	github.com/carabiner-dev/predicates v0.1.0 // indirect
 	github.com/carabiner-dev/signer v0.3.7 // indirect
 	github.com/carabiner-dev/vcslocator v0.4.0 // indirect
-	github.com/clipperhouse/displaywidth v0.6.0 // indirect
-	github.com/clipperhouse/stringish v0.1.1 // indirect
-	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
-	github.com/cloudflare/circl v1.6.2 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/clipperhouse/displaywidth v0.10.0 // indirect
+	github.com/clipperhouse/uax29/v2 v2.6.0 // indirect
+	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -55,9 +55,9 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 // indirect
-	github.com/olekukonko/errors v1.1.0 // indirect
-	github.com/olekukonko/ll v0.1.3 // indirect
-	github.com/olekukonko/tablewriter v1.1.2 // indirect
+	github.com/olekukonko/errors v1.2.0 // indirect
+	github.com/olekukonko/ll v0.1.6 // indirect
+	github.com/olekukonko/tablewriter v1.1.4 // indirect
 	github.com/openvex/go-vex v0.2.7 // indirect
 	github.com/package-url/packageurl-go v0.1.4 // indirect
 	github.com/pjbgf/sha1cd v0.5.0 // indirect
