@@ -33,7 +33,7 @@ func (ro *sbomOptions) Validate() error {
 		errs = append(errs, errors.New("invalid format"))
 	}
 
-	if ro.Attest && (ro.Format != "spdx" && ro.Format != "cyclonedx") {
+	if ro.Attest && (ro.Format != formatSPDX && ro.Format != formatCDX) {
 		errs = append(errs, fmt.Errorf("attestations can only be generated when output set to SPDX or CycloneDX"))
 	}
 
@@ -47,7 +47,7 @@ func (ro *sbomOptions) AddFlags(cmd *cobra.Command) {
 	)
 
 	cmd.PersistentFlags().StringVarP(
-		&ro.Format, "format", "f", "tree", fmt.Sprintf("format for the output %+v", validFormats),
+		&ro.Format, "format", "f", formatTree, fmt.Sprintf("format for the output %+v", validFormats),
 	)
 
 	cmd.PersistentFlags().BoolVar(
@@ -95,15 +95,15 @@ Unpack sbom takes an SBOM document and returns dependency data from its contents
 			var format formats.Format
 
 			switch opts.Format {
-			case "tree":
+			case formatTree:
 				pg := protograph.New()
 				if err := pg.GraphNodeList(nodelist); err != nil {
 					return err
 				}
 				return nil
-			case "spdx":
+			case formatSPDX:
 				format = formats.SPDX23JSON
-			case "cdx", "cyclonedx":
+			case formatCDXS, formatCDX:
 				format = formats.CDX16JSON
 			default:
 				return fmt.Errorf("invalid format")

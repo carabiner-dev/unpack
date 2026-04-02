@@ -23,6 +23,8 @@ import (
 const (
 	formatSPDX = "spdx"
 	formatCDX  = "cyclonedx"
+	formatCDXS = "cdx"
+	formatTree = "tree"
 )
 
 type extractOptions struct {
@@ -38,7 +40,7 @@ type extractOptions struct {
 	OutputPrefix         string
 }
 
-var validFormats = []string{formatSPDX, formatCDX, "cdx", "tree"}
+var validFormats = []string{formatSPDX, formatCDX, formatCDXS, formatTree}
 
 // Validates the options in context with arguments
 func (ro *extractOptions) Validate() error {
@@ -56,7 +58,7 @@ func (ro *extractOptions) Validate() error {
 	}
 
 	// Tree view can handle only one codebase
-	if ro.Format == "tree" && ro.MultipleOutputs {
+	if ro.Format == formatTree && ro.MultipleOutputs {
 		errs = append(errs, errors.New("cannot specify multi and tree view at the same time"))
 	}
 
@@ -74,7 +76,7 @@ func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 	)
 
 	cmd.PersistentFlags().StringVarP(
-		&ro.Format, "format", "f", "tree", fmt.Sprintf("format for the output %+v", validFormats),
+		&ro.Format, "format", "f", formatTree, fmt.Sprintf("format for the output %+v", validFormats),
 	)
 
 	cmd.PersistentFlags().BoolVar(
@@ -245,7 +247,7 @@ func handleCodeBase(ctx context.Context, opts *extractOptions, unpacker *depende
 	var format formats.Format
 
 	switch opts.Format {
-	case "tree":
+	case formatTree:
 		pg := protograph.New()
 		if err := pg.GraphNodeList(nodelist); err != nil {
 			return err
@@ -253,7 +255,7 @@ func handleCodeBase(ctx context.Context, opts *extractOptions, unpacker *depende
 		return nil
 	case formatSPDX:
 		format = formats.SPDX23JSON
-	case "cdx", formatCDX:
+	case formatCDXS, formatCDX:
 		format = formats.CDX16JSON
 	default:
 		return fmt.Errorf("invalid format")
@@ -269,7 +271,11 @@ func handleCodeBase(ctx context.Context, opts *extractOptions, unpacker *depende
 		if err != nil {
 			return fmt.Errorf("creating output file %s: %w", p, err)
 		}
-		defer f.Close()
+		defer func() {
+			if cerr := f.Close(); cerr != nil {
+				fmt.Fprintf(os.Stderr, "error closing %s: %v\n", p, cerr)
+			}
+		}()
 		wr = f
 		fmt.Fprintf(os.Stderr, "%s\n", p)
 	} else {
@@ -297,7 +303,7 @@ func codebaseOutputFilename(opts *extractOptions, id string) string {
 	switch opts.Format {
 	case formatSPDX:
 		ext = ".spdx.json"
-	case "cdx", formatCDX:
+	case formatCDXS, formatCDX:
 		ext = ".cdx.json"
 	default:
 		ext = ".json"
