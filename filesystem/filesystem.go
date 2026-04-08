@@ -208,7 +208,7 @@ func (d *Decomposer) applyIgnorePatterns(
 
 	// Cycle all files, removing those matched:
 	for _, file := range fileList {
-		if matcher.Match(strings.Split(file, string(filepath.Separator)), false) {
+		if matcher.Match(strings.Split(file, "/"), false) {
 			logrus.Debugf("File ignored by .gitignore: %s", file)
 		} else {
 			filteredList = append(filteredList, file)
