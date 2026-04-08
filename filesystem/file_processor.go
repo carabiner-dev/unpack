@@ -16,7 +16,11 @@ type FileProcessor interface {
 	Process(*options.Options, fs.FS, *sbom.Node) error
 }
 
-// FileProcessors is the list of available file processors
-var FileProcessors = map[string]FileProcessor{
-	"hash": processors.NewHasher(),
+// FileProcessorFactory is a function that creates a new FileProcessor instance.
+type FileProcessorFactory func() FileProcessor
+
+// FileProcessors is the list of available file processor factories.
+// Each call produces a fresh instance to avoid shared mutable state.
+var FileProcessors = map[string]FileProcessorFactory{
+	"hash": func() FileProcessor { return processors.NewHasher() },
 }

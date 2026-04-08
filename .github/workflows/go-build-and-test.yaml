@@ -29,13 +29,17 @@ jobs:
 
   test:
     needs: resolve-versions
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         go-version: ${{ fromJSON(needs.resolve-versions.outputs.go-versions) }}
+        os: [ubuntu-latest, macos-latest, windows-latest]
       fail-fast: false
 
     steps:
+    - name: Preserve line endings
+      run: git config --global core.autocrlf false
+
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         persist-credentials: false
@@ -46,15 +50,14 @@ jobs:
         go-version: ${{ matrix.go-version }}
         cache: false
 
+    - name: Install npm test dependencies
+      run: |
+        npm ci --prefix source/npm/testdata/demorepo/
+        npm ci --prefix source/npm/testdata/k8s.io/
+
     - name: Test
       env:
           UNPACK_FORCE_TESTS: 1
       run: |
-        cd source/npm/testdata/demorepo/
-        npm ci
-        cd -
-        cd source/npm/testdata/k8s.io/
-        npm ci
-        cd -
         go get -d ./...
         go test -v ./...

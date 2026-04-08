@@ -23,3 +23,5 @@ go.work.sum
 
 # env file
 .env
+source/npm/testdata/demorepo/node_modules/
+source/npm/testdata/k8s.io/node_modules/

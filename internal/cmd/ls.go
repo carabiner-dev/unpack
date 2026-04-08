@@ -10,8 +10,9 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"text/tabwriter"
+	"strings"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	"github.com/carabiner-dev/unpack/dependencies"
@@ -129,12 +130,33 @@ func listCodebases(ctx context.Context, opts *codebasesOptions) error {
 }
 
 func outputCodebasesTable(codebases []dependencies.CodebaseInfo) error {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "ID\tLANGUAGE\tPATH") //nolint:errcheck
+	bold := color.New(color.Bold)
+
+	// Compute column widths
+	idWidth, langWidth, pathWidth := len("ID"), len("LANGUAGE"), len("PATH")
 	for _, cb := range codebases {
-		fmt.Fprintf(w, "%s\t%s\t%s\n", cb.ID, cb.Language, cb.Path) //nolint:errcheck
+		if len(cb.ID) > idWidth {
+			idWidth = len(cb.ID)
+		}
+		if len(cb.Language) > langWidth {
+			langWidth = len(cb.Language)
+		}
+		if len(cb.Path) > pathWidth {
+			pathWidth = len(cb.Path)
+		}
 	}
-	return w.Flush()
+
+	pad := 3
+	rowFmt := fmt.Sprintf("%%-%ds%%-%ds%%s\n", idWidth+pad, langWidth+pad)
+
+	// Print bold headers and divider directly to avoid tabwriter ANSI issues
+	bold.Printf(rowFmt, "ID", "LANGUAGE", "PATH") //nolint:errcheck,gosec
+	fmt.Printf(rowFmt, strings.Repeat("─", idWidth), strings.Repeat("─", langWidth), strings.Repeat("─", pathWidth))
+
+	for _, cb := range codebases {
+		fmt.Printf(rowFmt, cb.ID, cb.Language, cb.Path)
+	}
+	return nil
 }
 
 type codebaseJSONOutput struct {

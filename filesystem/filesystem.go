@@ -208,7 +208,7 @@ func (d *Decomposer) applyIgnorePatterns(
 
 	// Cycle all files, removing those matched:
 	for _, file := range fileList {
-		if matcher.Match(strings.Split(file, string(filepath.Separator)), false) {
+		if matcher.Match(strings.Split(file, "/"), false) {
 			logrus.Debugf("File ignored by .gitignore: %s", file)
 		} else {
 			filteredList = append(filteredList, file)
@@ -227,10 +227,11 @@ func (d *Decomposer) processFile(source fs.FS, path string) (*sbom.Node, error) 
 	node.PrimaryPurpose = append(node.PrimaryPurpose, sbom.Purpose_SOURCE)
 
 	for _, procId := range d.Options.Processors {
-		p, ok := FileProcessors[procId]
+		factory, ok := FileProcessors[procId]
 		if !ok {
 			return nil, fmt.Errorf("unknown file processor %s", procId)
 		}
+		p := factory()
 		if err := p.Process(&d.Options, source, node); err != nil {
 			return nil, fmt.Errorf("processor %s returned an error %w", procId, err)
 		}

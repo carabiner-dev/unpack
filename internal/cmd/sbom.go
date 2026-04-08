@@ -10,6 +10,7 @@ import (
 	"slices"
 
 	"github.com/carabiner-dev/protograph"
+	"github.com/carabiner-dev/signer"
 	"github.com/protobom/protobom/pkg/formats"
 	"github.com/spf13/cobra"
 
@@ -20,6 +21,7 @@ type sbomOptions struct {
 	Path   string
 	Format string
 	Attest bool
+	Sign   bool
 }
 
 // Validates the options in context with arguments
@@ -31,6 +33,11 @@ func (ro *sbomOptions) Validate() error {
 
 	if !slices.Contains(validFormats, ro.Format) {
 		errs = append(errs, errors.New("invalid format"))
+	}
+
+	// --sign implies --attest
+	if ro.Sign {
+		ro.Attest = true
 	}
 
 	if ro.Attest && (ro.Format != formatSPDX && ro.Format != formatCDX) {
@@ -52,6 +59,10 @@ func (ro *sbomOptions) AddFlags(cmd *cobra.Command) {
 
 	cmd.PersistentFlags().BoolVar(
 		&ro.Attest, "attest", false, "output sboms in an intoto attestation",
+	)
+
+	cmd.PersistentFlags().BoolVar(
+		&ro.Sign, "sign", false, "sign the attestation into a sigstore bundle (implies --attest)",
 	)
 }
 
@@ -109,9 +120,13 @@ Unpack sbom takes an SBOM document and returns dependency data from its contents
 				return fmt.Errorf("invalid format")
 			}
 
-			if opts.Attest {
+			switch {
+			case opts.Sign:
+				s := signer.NewSigner()
+				err = nodeListToSignedAttestation(s, os.Stdout, format, nodelist)
+			case opts.Attest:
 				err = nodeListToAttestation(os.Stdout, format, nodelist)
-			} else {
+			default:
 				err = nodeListToSbom(os.Stdout, format, nodelist)
 			}
 

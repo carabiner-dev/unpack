@@ -13,6 +13,7 @@ import (
 	"github.com/carabiner-dev/attestation"
 	"github.com/carabiner-dev/collector/predicate/generic"
 	intoto "github.com/carabiner-dev/collector/statement/intoto"
+	"github.com/carabiner-dev/signer"
 	"github.com/google/uuid"
 	gintoto "github.com/in-toto/attestation/go/v1"
 	"github.com/protobom/protobom/pkg/formats"
@@ -101,6 +102,29 @@ func nodeListToAttestation(wr io.WriteCloser, format formats.Format, nl *sbom.No
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(att); err != nil {
 		return fmt.Errorf("marshaling attestation: %w", err)
+	}
+
+	return nil
+}
+
+// nodeListToSignedAttestation creates an in-toto attestation from the nodelist
+// and signs it into a sigstore bundle using the provided signer.
+func nodeListToSignedAttestation(s *signer.Signer, wr io.WriteCloser, format formats.Format, nl *sbom.NodeList) error {
+	// First, render the attestation to a buffer
+	buf := &bcloser{Buffer: bytes.Buffer{}}
+	if err := nodeListToAttestation(buf, format, nl); err != nil {
+		return fmt.Errorf("rendering attestation: %w", err)
+	}
+
+	// Sign the attestation statement into a sigstore bundle
+	bndl, err := s.SignStatement(buf.Buffer.Bytes())
+	if err != nil {
+		return fmt.Errorf("signing attestation: %w", err)
+	}
+
+	// Write the bundle to the output
+	if err := s.WriteBundle(bndl, wr); err != nil {
+		return fmt.Errorf("writing signed bundle: %w", err)
 	}
 
 	return nil
