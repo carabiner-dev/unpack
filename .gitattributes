@@ -1,0 +1,2 @@
+# Ensure consistent line endings for test fixtures across platforms
+**/testdata/** text eol=lf
