@@ -15,6 +15,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/source/golang"
+	"github.com/carabiner-dev/unpack/source/maven"
 	"github.com/carabiner-dev/unpack/source/npm"
 	"github.com/carabiner-dev/unpack/source/rust"
 )
@@ -29,6 +30,7 @@ func NewUnpacker() *Unpacker {
 			"rust":   rust.New(),
 			"golang": golang.New(),
 			"npm":    npm.New(),
+			"maven":  maven.New(),
 		},
 	}
 }

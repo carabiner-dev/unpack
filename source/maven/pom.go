@@ -63,7 +63,7 @@ type Parent struct {
 // Dependency represents a Maven dependency declaration.
 type Dependency struct {
 	GroupID    string      `xml:"groupId"`
-	ArtifactID string     `xml:"artifactId"`
+	ArtifactID string      `xml:"artifactId"`
 	Version    string      `xml:"version"`
 	Scope      string      `xml:"scope"`
 	Type       string      `xml:"type"`
@@ -71,6 +71,15 @@ type Dependency struct {
 	Optional   string      `xml:"optional"`
 	Exclusions []Exclusion `xml:"exclusions>exclusion"`
 }
+
+const (
+	ScopeCompile  = "compile"
+	ScopeRuntime  = "runtime"
+	ScopeTest     = "test"
+	ScopeProvided = "provided"
+	ScopeSystem   = "system"
+	ScopeImport   = "import"
+)
 
 // IsOptional returns true if the dependency is marked optional.
 func (d *Dependency) IsOptional() bool {
@@ -80,7 +89,7 @@ func (d *Dependency) IsOptional() bool {
 // EffectiveScope returns the dependency's scope, defaulting to "compile".
 func (d *Dependency) EffectiveScope() string {
 	if d.Scope == "" {
-		return "compile"
+		return ScopeCompile
 	}
 	return d.Scope
 }
