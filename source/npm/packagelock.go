@@ -23,16 +23,17 @@ type PackageLock struct {
 
 // LockPackage represents a package entry in package-lock.json.
 type LockPackage struct {
-	Name         string            `json:"name,omitempty"`
-	Version      string            `json:"version"`
-	Resolved     string            `json:"resolved,omitempty"`
-	Integrity    string            `json:"integrity,omitempty"`
-	License      string            `json:"license,omitempty"`
-	Dev          bool              `json:"dev,omitempty"`
-	Optional     bool              `json:"optional,omitempty"`
-	Peer         bool              `json:"peer,omitempty"`
-	DevOptional  bool              `json:"devOptional,omitempty"`
-	Dependencies map[string]string `json:"dependencies,omitempty"`
+	Name                 string            `json:"name,omitempty"`
+	Version              string            `json:"version"`
+	Resolved             string            `json:"resolved,omitempty"`
+	Integrity            string            `json:"integrity,omitempty"`
+	License              string            `json:"license,omitempty"`
+	Dev                  bool              `json:"dev,omitempty"`
+	Optional             bool              `json:"optional,omitempty"`
+	Peer                 bool              `json:"peer,omitempty"`
+	DevOptional          bool              `json:"devOptional,omitempty"`
+	Dependencies         map[string]string `json:"dependencies,omitempty"`
+	OptionalDependencies map[string]string `json:"optionalDependencies,omitempty"`
 
 	// For tracking during tree building
 	path string

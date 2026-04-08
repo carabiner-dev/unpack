@@ -121,13 +121,22 @@ func (dt *DependencyTree) buildSubtree(nl *sbom.NodeList, pkg *LockPackage, pare
 	visited[parentPath] = true
 
 	// Get the package's dependencies from the lock file
-	if pkg.Dependencies == nil {
+	if pkg.Dependencies == nil && pkg.OptionalDependencies == nil {
 		return nil
 	}
 
-	// Sort dependency names for deterministic output
-	depNames := make([]string, 0, len(pkg.Dependencies))
+	// Collect all dependencies (regular + optional) for processing
+	allDeps := make(map[string]sbom.Edge_Type, len(pkg.Dependencies)+len(pkg.OptionalDependencies))
 	for name := range pkg.Dependencies {
+		allDeps[name] = sbom.Edge_dependsOn
+	}
+	for name := range pkg.OptionalDependencies {
+		allDeps[name] = sbom.Edge_optionalDependency
+	}
+
+	// Sort dependency names for deterministic output
+	depNames := make([]string, 0, len(allDeps))
+	for name := range allDeps {
 		depNames = append(depNames, name)
 	}
 	sort.Strings(depNames)
@@ -151,8 +160,8 @@ func (dt *DependencyTree) buildSubtree(nl *sbom.NodeList, pkg *LockPackage, pare
 			dt.nodeCache[depPath] = depNode
 		}
 
-		// All transitive dependencies use dependsOn edge type
-		if err := nl.RelateNodeAtID(depNode, parentNode.GetId(), sbom.Edge_dependsOn); err != nil {
+		edgeType := allDeps[depName]
+		if err := nl.RelateNodeAtID(depNode, parentNode.GetId(), edgeType); err != nil {
 			return fmt.Errorf("relating %s to %s: %w", depName, pkg.Name, err)
 		}
 
