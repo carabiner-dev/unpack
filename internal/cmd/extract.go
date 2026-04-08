@@ -15,6 +15,7 @@ import (
 
 	"github.com/carabiner-dev/protograph"
 	"github.com/carabiner-dev/signer"
+	"github.com/fatih/color"
 	"github.com/protobom/protobom/pkg/formats"
 	"github.com/spf13/cobra"
 
@@ -91,7 +92,7 @@ func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 	)
 
 	cmd.PersistentFlags().BoolVar(
-		&ro.Attest, "attest", false, "output sboms in an intoto attestation",
+		&ro.Attest, "attest", false, "output sboms in an intoto attestation (defaults to format=spdx)",
 	)
 
 	cmd.PersistentFlags().BoolVar(
@@ -149,7 +150,7 @@ to the current directory.
 		Use:               "extract [flags] [path | codebase-id]",
 		SilenceUsage:      false,
 		PersistentPreRunE: initLogging,
-		PreRunE: func(_ *cobra.Command, args []string) error {
+		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
 				arg := args[0]
 				// Check if the argument looks like a codebase ID
@@ -166,6 +167,12 @@ to the current directory.
 			// If --codebase is set but no path, default to current directory
 			if opts.Codebase != "" && opts.Path == "" {
 				opts.Path = "."
+			}
+
+			// Default to SPDX when --attest or --sign is used and
+			// --format was not explicitly specified.
+			if (opts.Attest || opts.Sign) && !cmd.Flags().Changed("format") {
+				opts.Format = formatSPDX
 			}
 
 			return nil
@@ -202,6 +209,29 @@ to the current directory.
 				return fmt.Errorf("listing codebases: %w", err)
 			}
 
+			// If a specific codebase was requested, filter to just that one
+			if opts.Codebase != "" {
+				var filtered []dependencies.CodebaseInfo
+				for _, cb := range codebases {
+					if cb.ID == opts.Codebase {
+						filtered = append(filtered, cb)
+						break
+					}
+				}
+				if len(filtered) == 0 {
+					fmt.Fprintln(os.Stderr)
+					fmt.Fprintf(os.Stderr, "%s codebase %q not found.\n", color.RedString("Error:"), opts.Codebase)
+					fmt.Fprintln(os.Stderr, "Available codebases:")
+					fmt.Fprintln(os.Stderr)
+					return listCodebases(cmd.Context(), &codebasesOptions{
+						Path:           opts.Path,
+						IgnorePatterns: opts.IgnorePatterns,
+						Format:         codebasesFormatTable,
+					})
+				}
+				codebases = filtered
+			}
+
 			// Lets handle the cases here
 			if len(codebases) == 0 {
 				return errors.New("no codebases found in specified path")
@@ -209,7 +239,10 @@ to the current directory.
 
 			if len(codebases) > 1 {
 				if !opts.IgnoreExtraCodebases && !opts.MultipleOutputs {
-					fmt.Fprintf(os.Stderr, "Error: Multiple codebases found:\n")
+					fmt.Fprintln(os.Stderr)
+					fmt.Fprintf(os.Stderr, "%s Multiple codebases found.\n", color.RedString("Error:"))
+					fmt.Fprintln(os.Stderr, "Run unpack extract <codebase ID>")
+					fmt.Fprintln(os.Stderr)
 					return listCodebases(cmd.Context(), &codebasesOptions{
 						Path:           opts.Path,
 						IgnorePatterns: opts.IgnorePatterns,
@@ -248,7 +281,7 @@ func handleCodeBase(ctx context.Context, opts *extractOptions, s *signer.Signer,
 		// .. if it failed because there is more than one codebase,
 		//  show the users the found codebases
 		if errors.Is(err, dependencies.ErrMultipleCodebases) {
-			fmt.Fprintf(os.Stderr, "Error: Multiple codebases found:\n")
+			fmt.Fprintf(os.Stderr, "%s Multiple codebases found:\n", color.RedString("Error:"))
 			return listCodebases(ctx, &codebasesOptions{
 				Path:           opts.Path,
 				IgnorePatterns: opts.IgnorePatterns,
