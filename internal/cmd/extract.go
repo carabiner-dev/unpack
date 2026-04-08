@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/carabiner-dev/protograph"
+	"github.com/carabiner-dev/signer"
 	"github.com/protobom/protobom/pkg/formats"
 	"github.com/spf13/cobra"
 
@@ -33,6 +34,7 @@ type extractOptions struct {
 	Format               string
 	IndexFiles           bool
 	Attest               bool
+	Sign                 bool
 	IgnoreExtraCodebases bool
 	MultipleOutputs      bool
 	Codebase             string
@@ -51,6 +53,11 @@ func (ro *extractOptions) Validate() error {
 
 	if !slices.Contains(validFormats, ro.Format) {
 		errs = append(errs, errors.New("invalid format"))
+	}
+
+	// --sign implies --attest
+	if ro.Sign {
+		ro.Attest = true
 	}
 
 	if ro.Attest && (ro.Format != formatSPDX && ro.Format != formatCDX) {
@@ -85,6 +92,10 @@ func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 
 	cmd.PersistentFlags().BoolVar(
 		&ro.Attest, "attest", false, "output sboms in an intoto attestation",
+	)
+
+	cmd.PersistentFlags().BoolVar(
+		&ro.Sign, "sign", false, "sign the attestation into a sigstore bundle (implies --attest)",
 	)
 
 	cmd.PersistentFlags().BoolVar(
@@ -207,8 +218,15 @@ to the current directory.
 				}
 			}
 
+			// Create the signer once if --sign is enabled so that the
+			// OIDC flow is not repeated for each codebase.
+			var s *signer.Signer
+			if opts.Sign {
+				s = signer.NewSigner()
+			}
+
 			for _, cb := range codebases {
-				if err := handleCodeBase(cmd.Context(), opts, unpacker, cb.ID); err != nil {
+				if err := handleCodeBase(cmd.Context(), opts, s, unpacker, cb.ID); err != nil {
 					return err
 				}
 			}
@@ -221,7 +239,7 @@ to the current directory.
 	parent.AddCommand(extractCmd)
 }
 
-func handleCodeBase(ctx context.Context, opts *extractOptions, unpacker *dependencies.Unpacker, id string) error {
+func handleCodeBase(ctx context.Context, opts *extractOptions, s *signer.Signer, unpacker *dependencies.Unpacker, id string) error {
 	// Set the codebase filter to target this specific codebase and
 	// extract using the base path (not the codebase ID).
 	unpacker.Options.CodebaseFilter = id
@@ -282,9 +300,12 @@ func handleCodeBase(ctx context.Context, opts *extractOptions, unpacker *depende
 		wr = os.Stdout
 	}
 
-	if opts.Attest {
+	switch {
+	case opts.Sign:
+		err = nodeListToSignedAttestation(s, wr, format, nodelist)
+	case opts.Attest:
 		err = nodeListToAttestation(wr, format, nodelist)
-	} else {
+	default:
 		err = nodeListToSbom(wr, format, nodelist)
 	}
 
