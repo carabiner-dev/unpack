@@ -4,10 +4,14 @@
 package maven
 
 import (
+	"bytes"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+
+	"golang.org/x/text/encoding/ianaindex"
 )
 
 // POM represents a Maven POM file.
@@ -179,10 +183,27 @@ func ParsePomXML(dir string) (*POM, error) {
 }
 
 // ParsePomXMLData parses POM content from raw bytes.
+// Handles non-UTF-8 encodings (e.g., ISO-8859-1) commonly found in Maven POMs.
 func ParsePomXMLData(data []byte) (*POM, error) {
+	decoder := xml.NewDecoder(bytes.NewReader(data))
+	decoder.CharsetReader = charsetReader
+
 	var pom POM
-	if err := xml.Unmarshal(data, &pom); err != nil {
+	if err := decoder.Decode(&pom); err != nil {
 		return nil, fmt.Errorf("parsing pom.xml: %w", err)
 	}
 	return &pom, nil
+}
+
+// charsetReader returns a reader that converts from the named charset to UTF-8.
+func charsetReader(charset string, input io.Reader) (io.Reader, error) {
+	enc, err := ianaindex.IANA.Encoding(charset)
+	if err != nil {
+		return nil, fmt.Errorf("unsupported charset %q: %w", charset, err)
+	}
+	if enc == nil {
+		// nil encoding means UTF-8
+		return input, nil
+	}
+	return enc.NewDecoder().Reader(input), nil
 }
