@@ -164,7 +164,31 @@ func (dt *DependencyTree) Build() error {
 					depPOM = effective
 				}
 				licenses = depPOM.Licenses
-				transitiveDeps = depPOM.Dependencies
+
+				// Apply the dep's own dependencyManagement to its dependencies
+				// so that version-less deps get their versions filled in.
+				depManaged := make(map[string]*Dependency)
+				if depPOM.DependencyManagement != nil {
+					for i := range depPOM.DependencyManagement.Dependencies {
+						d := &depPOM.DependencyManagement.Dependencies[i]
+						depManaged[d.Key()] = d
+					}
+				}
+				for i := range depPOM.Dependencies {
+					d := depPOM.Dependencies[i]
+					if m, ok := depManaged[d.Key()]; ok {
+						if d.Version == "" && m.Version != "" {
+							d.Version = m.Version
+						}
+						if d.Scope == "" && m.Scope != "" {
+							d.Scope = m.Scope
+						}
+						if len(d.Exclusions) == 0 && len(m.Exclusions) > 0 {
+							d.Exclusions = m.Exclusions
+						}
+					}
+					transitiveDeps = append(transitiveDeps, d)
+				}
 			}
 		}
 
