@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -29,7 +30,9 @@ const (
 func TestCompareWithMvnDependencyTree(t *testing.T) {
 	t.Parallel()
 
-	forceTests := os.Getenv("UNPACK_FORCE_TESTS") != ""
+	// Docker is only reliably available on Linux CI runners, so only force
+	// the test there. macOS and Windows runners don't ship Docker.
+	forceTests := os.Getenv("UNPACK_FORCE_TESTS") != "" && runtime.GOOS == "linux"
 
 	// Check if Docker is available
 	if err := command.New("docker", "version").RunSilentSuccess(); err != nil {
