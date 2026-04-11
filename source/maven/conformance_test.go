@@ -32,7 +32,7 @@ func TestCompareWithMvnDependencyTree(t *testing.T) {
 	forceTests := os.Getenv("UNPACK_FORCE_TESTS") != ""
 
 	// Check if Docker is available
-	if _, err := command.New("docker", "version").RunSilentSuccessOutput(); err != nil {
+	if err := command.New("docker", "version").RunSilentSuccess(); err != nil {
 		if forceTests {
 			t.Fatal("docker not available and UNPACK_FORCE_TESTS is set")
 		}
@@ -168,7 +168,7 @@ var depTreeLineRe = regexp.MustCompile(
 // and returns a map of "groupId:artifactId:version" -> scope.
 func parseMvnDependencyTree(output string) map[string]string {
 	deps := make(map[string]string)
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		matches := depTreeLineRe.FindStringSubmatch(line)
 		if matches == nil {
 			continue
@@ -193,7 +193,6 @@ func purlToCoordKey(purl string) string {
 		return ""
 	}
 	rest := strings.TrimPrefix(purl, "pkg:maven/")
-	// rest = "com.google.guava/guava@33.0.0-jre"
 	parts := strings.SplitN(rest, "/", 2)
 	if len(parts) != 2 {
 		return ""

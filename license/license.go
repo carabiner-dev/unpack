@@ -46,11 +46,11 @@ type mappingEntry struct {
 
 // catalog holds the parsed license data and lookup maps.
 type catalog struct {
-	version  string
-	byID     map[string]*spdxLicense // "Apache-2.0" -> license
-	byName   map[string]*spdxLicense // lowercase name -> license
-	byURL    map[string]*spdxLicense // normalized URL -> license
-	byAlias  map[string]string       // lowercase alias name -> SPDX expression
+	version string
+	byID    map[string]*spdxLicense // "Apache-2.0" -> license
+	byName  map[string]*spdxLicense // lowercase name -> license
+	byURL   map[string]*spdxLicense // normalized URL -> license
+	byAlias map[string]string       // lowercase alias name -> SPDX expression
 }
 
 var (

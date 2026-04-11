@@ -96,7 +96,7 @@ func TestNormalizeUnknown(t *testing.T) {
 
 func TestNormalizeEmpty(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "", Normalize("", ""))
+	require.Empty(t, Normalize("", ""))
 }
 
 func TestNormalizeCaseInsensitive(t *testing.T) {
