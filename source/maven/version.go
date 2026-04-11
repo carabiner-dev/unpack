@@ -20,7 +20,7 @@ type Coordinate struct {
 }
 
 // String returns "groupId:artifactId:version".
-func (c Coordinate) String() string {
+func (c *Coordinate) String() string {
 	return fmt.Sprintf("%s:%s:%s", c.GroupID, c.ArtifactID, c.Version)
 }
 

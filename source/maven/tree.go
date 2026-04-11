@@ -329,9 +329,9 @@ func (dt *DependencyTree) ToNodeList(opts *api.DecomposerOptions) (*sbom.NodeLis
 		PrimaryPurpose: []sbom.Purpose{sbom.Purpose_APPLICATION},
 	}
 
-	// Add licenses from root POM
+	// Add licenses from root POM, normalized to SPDX identifiers
 	for _, lic := range dt.rootPOM.Licenses {
-		rootNode.Licenses = append(rootNode.Licenses, lic.Name)
+		rootNode.Licenses = append(rootNode.Licenses, NormalizeLicense(lic))
 	}
 
 	if opts != nil && opts.CommitHash != "" {
@@ -416,7 +416,7 @@ func (dt *DependencyTree) createDependencyNode(rd *ResolvedDependency) *sbom.Nod
 	}
 
 	for _, lic := range rd.Licenses {
-		node.Licenses = append(node.Licenses, lic.Name)
+		node.Licenses = append(node.Licenses, NormalizeLicense(lic))
 	}
 
 	return node
