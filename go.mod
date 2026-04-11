@@ -9,7 +9,7 @@ require (
 	github.com/carabiner-dev/hasher v0.2.3
 	github.com/carabiner-dev/protograph v0.0.0-20260117204235-4dc9de9c0db5
 	github.com/carabiner-dev/signer v0.4.3
-	github.com/fatih/color v1.18.0
+	github.com/fatih/color v1.19.0
 	github.com/go-git/go-git/v5 v5.17.2
 	github.com/google/uuid v1.6.0
 	github.com/in-toto/attestation v1.2.0
