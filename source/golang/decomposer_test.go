@@ -370,7 +370,7 @@ func TestExtract(t *testing.T) {
 	require.Equal(t, "example.com/simple", rootNodes[0].GetName())
 
 	// Check we have nodes for dependencies
-	require.Len(t, nl.GetNodes(), 3) // root + 2 deps
+	require.Len(t, nl.GetNodes(), 4) // root + 2 deps + stdlib
 }
 
 func TestRequirements(t *testing.T) {
