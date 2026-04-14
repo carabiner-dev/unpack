@@ -328,7 +328,7 @@ func TestConvertTrees(t *testing.T) {
 	t.Run("two-branches", func(t *testing.T) {
 		t.Parallel()
 		root := "sigs.k8s.io/bom"
-		nl, err := d.convertTrees(&api.DecomposerOptions{}, root, trees)
+		nl, err := d.convertTrees(&api.DecomposerOptions{}, root, trees, "")
 		require.NoError(t, err)
 		require.NotNil(t, nl)
 
