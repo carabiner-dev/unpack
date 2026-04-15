@@ -32,9 +32,9 @@ func TestNormalizeByURL(t *testing.T) {
 	}{
 		{"apache", "https://www.apache.org/licenses/LICENSE-2.0", "Apache-2.0"},
 		{"apache txt", "http://www.apache.org/licenses/LICENSE-2.0.txt", "Apache-2.0"},
-		{"mit", "https://opensource.org/licenses/MIT", "MIT"},
+		{"mit", "https://opensource.org/license/MIT", "MIT"},
 		{"epl", "https://www.eclipse.org/legal/epl-2.0/", "EPL-2.0"},
-		{"bsd 3", "https://opensource.org/licenses/BSD-3-Clause", "BSD-3-Clause"},
+		{"bsd 3", "https://opensource.org/license/BSD-3-Clause", "BSD-3-Clause"},
 		{"trailing slash", "https://www.apache.org/licenses/LICENSE-2.0/", "Apache-2.0"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -86,7 +86,7 @@ func TestNormalizeByCDXMapping(t *testing.T) {
 
 func TestNormalizeURLTakesPrecedence(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "MIT", Normalize("Some Random Name", "https://opensource.org/licenses/MIT"))
+	require.Equal(t, "MIT", Normalize("Some Random Name", "https://opensource.org/license/MIT"))
 }
 
 func TestNormalizeUnknown(t *testing.T) {

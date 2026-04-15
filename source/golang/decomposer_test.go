@@ -328,7 +328,7 @@ func TestConvertTrees(t *testing.T) {
 	t.Run("two-branches", func(t *testing.T) {
 		t.Parallel()
 		root := "sigs.k8s.io/bom"
-		nl, err := d.convertTrees(&api.DecomposerOptions{}, root, trees)
+		nl, err := d.convertTrees(&api.DecomposerOptions{}, root, trees, "")
 		require.NoError(t, err)
 		require.NotNil(t, nl)
 
@@ -370,7 +370,7 @@ func TestExtract(t *testing.T) {
 	require.Equal(t, "example.com/simple", rootNodes[0].GetName())
 
 	// Check we have nodes for dependencies
-	require.Len(t, nl.GetNodes(), 3) // root + 2 deps
+	require.Len(t, nl.GetNodes(), 4) // root + 2 deps + stdlib
 }
 
 func TestRequirements(t *testing.T) {

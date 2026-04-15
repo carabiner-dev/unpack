@@ -83,7 +83,11 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 
 	// 3. Convert to NodeList
 	root := modFile.Module.Mod.Path
-	nl, err := d.convertTrees(opts, root, trees)
+	var goVersion string
+	if modFile.Go != nil {
+		goVersion = modFile.Go.Version
+	}
+	nl, err := d.convertTrees(opts, root, trees, goVersion)
 	if err != nil {
 		return nil, fmt.Errorf("converting graph trees: %w", err)
 	}
@@ -391,7 +395,7 @@ func isLocalReplace(path string) bool {
 // convertTrees reads the tree map parsed from the go graph output and
 // converts it to a protobom NodeList, capturing the graph structure.
 func (d *Decomposer) convertTrees(
-	opts *api.DecomposerOptions, root string, trees *map[string][]string, //nolint:gocritic
+	opts *api.DecomposerOptions, root string, trees *map[string][]string, goVersion string, //nolint:gocritic
 ) (nl *sbom.NodeList, err error) {
 	// Create the new NodeList
 	nl = sbom.NewNodeList()
@@ -418,6 +422,27 @@ func (d *Decomposer) convertTrees(
 	// the tree because recursion breaks:
 	if opts.Version != "" {
 		rootNode.Identifiers[int32(sbom.SoftwareIdentifierType_PURL)] = goStringToPurl(fmt.Sprintf("%s@%s", root, opts.Version))
+	}
+
+	// Add the Go stdlib as a dependency, using the Go version declared in go.mod
+	if goVersion != "" {
+		stdlibPurl := fmt.Sprintf("pkg:golang/stdlib@%s", goVersion)
+		stdlibNode := &sbom.Node{
+			Id:      uuid.NewString(),
+			Type:    sbom.Node_PACKAGE,
+			Name:    "stdlib",
+			Version: goVersion,
+			Identifiers: map[int32]string{
+				int32(sbom.SoftwareIdentifierType_PURL): stdlibPurl,
+			},
+			Licenses: []string{"BSD-3-Clause"},
+			PrimaryPurpose: []sbom.Purpose{
+				sbom.Purpose_LIBRARY,
+			},
+		}
+		if err := nl.RelateNodeAtID(stdlibNode, rootNode.GetId(), sbom.Edge_dependsOn); err != nil {
+			return nil, fmt.Errorf("relating stdlib node: %w", err)
+		}
 	}
 
 	if opts.CommitHash != "" {
