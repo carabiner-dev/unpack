@@ -1,6 +1,6 @@
 module github.com/carabiner-dev/unpack
 
-go 1.25.8
+go 1.25.9
 
 require (
 	github.com/BurntSushi/toml v1.6.0
@@ -8,7 +8,7 @@ require (
 	github.com/carabiner-dev/collector v0.3.3
 	github.com/carabiner-dev/hasher v0.2.3
 	github.com/carabiner-dev/protograph v0.0.0-20260117204235-4dc9de9c0db5
-	github.com/carabiner-dev/signer v0.4.3
+	github.com/carabiner-dev/signer v0.4.4
 	github.com/fatih/color v1.19.0
 	github.com/go-git/go-git/v5 v5.17.2
 	github.com/google/uuid v1.6.0
@@ -135,8 +135,8 @@ require (
 	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/term v0.41.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/term v0.42.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260311181403-84a4fc48630c // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260311181403-84a4fc48630c // indirect
 	google.golang.org/grpc v1.79.2 // indirect
