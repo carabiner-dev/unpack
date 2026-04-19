@@ -18,6 +18,11 @@ func TestCoordinatePURL(t *testing.T) {
 	}{
 		{"basic", Coordinate{GroupID: "com.google.guava", ArtifactID: "guava", Version: "33.0.0-jre"}, "pkg:maven/com.google.guava/guava@33.0.0-jre"},
 		{"no version", Coordinate{GroupID: "g", ArtifactID: "a"}, "pkg:maven/g/a"},
+		{"with type", Coordinate{GroupID: "g", ArtifactID: "a", Version: "1.0", Type: "war"}, "pkg:maven/g/a@1.0?type=war"},
+		{"jar type omitted", Coordinate{GroupID: "g", ArtifactID: "a", Version: "1.0", Type: "jar"}, "pkg:maven/g/a@1.0"},
+		{"with classifier", Coordinate{GroupID: "g", ArtifactID: "a", Version: "1.0", Classifier: "sources"}, "pkg:maven/g/a@1.0?classifier=sources"},
+		{"with repo url", Coordinate{GroupID: "g", ArtifactID: "a", Version: "1.0", RepoURL: "https://repo.example.com/maven2"}, "pkg:maven/g/a@1.0?repository_url=https://repo.example.com/maven2"},
+		{"all qualifiers", Coordinate{GroupID: "g", ArtifactID: "a", Version: "1.0", Type: "aar", Classifier: "debug", RepoURL: "https://example.com/repo"}, "pkg:maven/g/a@1.0?type=aar&classifier=debug&repository_url=https://example.com/repo"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

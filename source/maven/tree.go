@@ -167,6 +167,7 @@ func (dt *DependencyTree) Build() error {
 			Version:    version,
 			Type:       dep.EffectiveType(),
 			Classifier: dep.Classifier,
+			RepoURL:    dt.nonDefaultRepoURL(),
 		}
 
 		// Fetch the dependency's POM for license info and transitive deps
@@ -471,6 +472,15 @@ func (dt *DependencyTree) createDependencyNode(rd *ResolvedDependency) *sbom.Nod
 	}
 
 	return node
+}
+
+// nonDefaultRepoURL returns the resolver's repo URL if it differs from Maven Central,
+// or empty string otherwise.
+func (dt *DependencyTree) nonDefaultRepoURL() string {
+	if dt.resolver != nil && dt.resolver.RepoURL != defaultRepoURL {
+		return dt.resolver.RepoURL
+	}
+	return ""
 }
 
 // edgeTypeForCoord returns the appropriate edge type for a dependency.

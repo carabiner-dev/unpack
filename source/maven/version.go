@@ -17,6 +17,7 @@ type Coordinate struct {
 	Version    string
 	Classifier string
 	Type       string
+	RepoURL    string // non-empty only when different from Maven Central
 }
 
 // String returns "groupId:artifactId:version".
@@ -24,11 +25,26 @@ func (c *Coordinate) String() string {
 	return fmt.Sprintf("%s:%s:%s", c.GroupID, c.ArtifactID, c.Version)
 }
 
-// PURL returns the Package URL for this coordinate.
+// PURL returns the Package URL for this coordinate, including qualifiers
+// for type (if not jar), classifier (if set), and repository_url (if set).
 func (c *Coordinate) PURL() string {
 	purl := fmt.Sprintf("pkg:maven/%s/%s", c.GroupID, c.ArtifactID)
 	if c.Version != "" {
 		purl += "@" + c.Version
+	}
+
+	var qualifiers []string
+	if c.Type != "" && c.Type != "jar" {
+		qualifiers = append(qualifiers, "type="+c.Type)
+	}
+	if c.Classifier != "" {
+		qualifiers = append(qualifiers, "classifier="+c.Classifier)
+	}
+	if c.RepoURL != "" {
+		qualifiers = append(qualifiers, "repository_url="+c.RepoURL)
+	}
+	if len(qualifiers) > 0 {
+		purl += "?" + strings.Join(qualifiers, "&")
 	}
 	return purl
 }
