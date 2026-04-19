@@ -122,10 +122,10 @@ func (r *Resolver) FetchAvailableVersions(groupID, artifactID string) ([]string,
 	return meta.Versions, nil
 }
 
-// artifactURL constructs the Maven repository URL for a JAR artifact.
-func (r *Resolver) artifactURL(groupID, artifactID, version string) string {
-	groupPath := strings.ReplaceAll(groupID, ".", "/")
-	return fmt.Sprintf("%s/%s/%s/%s/%s-%s.jar", r.RepoURL, groupPath, artifactID, version, artifactID, version)
+// artifactURL constructs the Maven repository URL for an artifact.
+func (r *Resolver) artifactURL(coord Coordinate) string {
+	groupPath := strings.ReplaceAll(coord.GroupID, ".", "/")
+	return fmt.Sprintf("%s/%s/%s/%s/%s", r.RepoURL, groupPath, coord.ArtifactID, coord.Version, coord.ArtifactFilename())
 }
 
 // hashSuffix pairs a file extension with its algorithm name.
@@ -151,7 +151,7 @@ func (r *Resolver) FetchAllArtifactHashes(coords []Coordinate) map[string]map[st
 	// Build the list of URLs to fetch: 2 per coordinate (sha1, sha256)
 	urls := make([]string, 0, len(coords)*len(supportedHashes))
 	for _, c := range coords {
-		base := r.artifactURL(c.GroupID, c.ArtifactID, c.Version)
+		base := r.artifactURL(c)
 		for _, h := range supportedHashes {
 			urls = append(urls, base+h.suffix)
 		}

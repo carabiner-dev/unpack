@@ -165,6 +165,8 @@ func (dt *DependencyTree) Build() error {
 			GroupID:    dep.GroupID,
 			ArtifactID: dep.ArtifactID,
 			Version:    version,
+			Type:       dep.EffectiveType(),
+			Classifier: dep.Classifier,
 		}
 
 		// Fetch the dependency's POM for license info and transitive deps
@@ -443,10 +445,10 @@ func (dt *DependencyTree) ToNodeList(opts *api.DecomposerOptions) (*sbom.NodeLis
 // createDependencyNode creates a protobom Node for a resolved dependency.
 func (dt *DependencyTree) createDependencyNode(rd *ResolvedDependency) *sbom.Node {
 	groupPath := strings.ReplaceAll(rd.Coordinate.GroupID, ".", "/")
-	downloadURL := fmt.Sprintf("%s/%s/%s/%s/%s-%s.jar",
+	downloadURL := fmt.Sprintf("%s/%s/%s/%s/%s",
 		defaultRepoURL, groupPath,
 		rd.Coordinate.ArtifactID, rd.Coordinate.Version,
-		rd.Coordinate.ArtifactID, rd.Coordinate.Version,
+		rd.Coordinate.ArtifactFilename(),
 	)
 
 	node := &sbom.Node{

@@ -38,6 +38,19 @@ func (c *Coordinate) Key() string {
 	return c.GroupID + ":" + c.ArtifactID
 }
 
+// ArtifactFilename returns the Maven artifact filename following the convention:
+// {artifactId}-{version}[-{classifier}].{type}
+func (c *Coordinate) ArtifactFilename() string {
+	ext := c.Type
+	if ext == "" {
+		ext = "jar"
+	}
+	if c.Classifier != "" {
+		return fmt.Sprintf("%s-%s-%s.%s", c.ArtifactID, c.Version, c.Classifier, ext)
+	}
+	return fmt.Sprintf("%s-%s.%s", c.ArtifactID, c.Version, ext)
+}
+
 // qualifierRank returns the ordering rank for known Maven qualifiers.
 // Lower values sort earlier. Unknown qualifiers get a high rank.
 func qualifierRank(q string) int {
