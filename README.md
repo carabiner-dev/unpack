@@ -107,13 +107,17 @@ unpack ls --format=json /path/to/project
 unpack ls --ignore "*/testdata/*" --ignore "temp/" .
 ```
 
-## Supported Platforms
+## Supported Ecosystems
 
-Unpack currently supports dependency extraction for the following ecosystems:
+Unpack includes decomposers for four package ecosystems. See the
+[decomposer documentation](docs/decomposers/README.md) for details.
 
-- **Go Modules** (`go.mod`)
-- **Rust Cargo** (`Cargo.lock`)
-- **NPM** (`package-lock.json`)
+| Ecosystem | Lock file | Manifest | Remote enrichment |
+| --- | --- | --- | --- |
+| [Go](docs/decomposers/golang.md) | `go.sum` | `go.mod` | Go module proxy |
+| [Maven](docs/decomposers/maven.md) | _(none)_ | `pom.xml` | Maven Central |
+| [npm](docs/decomposers/npm.md) | `package-lock.json` | `package.json` | _(none)_ |
+| [Rust](docs/decomposers/rust.md) | `Cargo.lock` | `Cargo.toml` | crates.io API |
 
 Support for more ecosystems is planned.
 
@@ -126,7 +130,6 @@ We welcome contributions! Whether it's reporting a bug, suggesting a feature, or
 
 ## License
 
-This tool and its libraries are released under the **Apache 2.0 License**. See the [LICENSE](./LICENSE) file for more details.
-
----
-*Developed and maintained by Carabiner Systems, Inc.*
+This tool and its libraries are released under the Apache 2.0 License and copyright by
+Carabiner Systems, Inc. See the [LICENSE](./LICENSE) file for more details. Feel free to
+open issues to report problems or request features. Patches are welcome!
