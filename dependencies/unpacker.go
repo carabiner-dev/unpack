@@ -68,6 +68,10 @@ type Options struct {
 	// If empty, all codebases are included.
 	CodebaseFilter string
 
+	// Networking controls how much network access decomposers are allowed.
+	// Defaults to NetworkEssential.
+	Networking api.NetworkLevel
+
 	logger *slog.Logger
 }
 

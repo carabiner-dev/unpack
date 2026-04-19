@@ -19,6 +19,7 @@ import (
 	"github.com/protobom/protobom/pkg/formats"
 	"github.com/spf13/cobra"
 
+	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/dependencies"
 )
 
@@ -33,6 +34,7 @@ type extractOptions struct {
 	IgnorePatterns       []string
 	Path                 string
 	Format               string
+	Networking           string
 	IndexFiles           bool
 	Attest               bool
 	Sign                 bool
@@ -54,6 +56,10 @@ func (ro *extractOptions) Validate() error {
 
 	if !slices.Contains(validFormats, ro.Format) {
 		errs = append(errs, errors.New("invalid format"))
+	}
+
+	if !slices.Contains([]string{"essential", "full", "disabled"}, ro.Networking) {
+		errs = append(errs, fmt.Errorf("invalid networking level %q (must be essential, full, or disabled)", ro.Networking))
 	}
 
 	// --sign implies --attest
@@ -85,6 +91,11 @@ func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 
 	cmd.PersistentFlags().StringVarP(
 		&ro.Format, "format", "f", formatTree, fmt.Sprintf("format for the output %+v", validFormats),
+	)
+
+	cmd.PersistentFlags().StringVar(
+		&ro.Networking, "networking", "essential",
+		"network access level: essential (default), full, or disabled",
 	)
 
 	cmd.PersistentFlags().BoolVar(
@@ -196,6 +207,16 @@ to the current directory.
 
 			// Filter to a specific codebase if provided
 			unpacker.Options.CodebaseFilter = opts.Codebase
+
+			// Set networking level
+			switch opts.Networking {
+			case "full":
+				unpacker.Options.Networking = api.NetworkFull
+			case "disabled":
+				unpacker.Options.Networking = api.NetworkDisabled
+			default:
+				unpacker.Options.Networking = api.NetworkEssential
+			}
 
 			// Ensure the output directory exists when writing to files
 			if opts.OutputPath != "" {

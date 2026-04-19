@@ -108,6 +108,7 @@ func (di *defaultImplementation) ExtractCodeBases(
 				WorkDir:    cbPath,
 				Version:    ver,
 				CommitHash: hashHex,
+				Networking: opts.Networking,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("from %q with %T: %w", cbPath, d, err)
