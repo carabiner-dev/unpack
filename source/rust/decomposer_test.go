@@ -5,7 +5,6 @@ package rust
 
 import (
 	"bufio"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -427,29 +426,9 @@ func TestEnrich(t *testing.T) {
 		// Respond to any /crates/{name}/{version} request
 		switch r.URL.Path {
 		case "/crates/anyhow/1.0.98":
-			_, _ = fmt.Fprint(w, `{"version":{
-				"license":"MIT OR Apache-2.0",
-				"description":"Flexible error type",
-				"homepage":"https://anyhow.rs",
-				"documentation":"https://docs.rs/anyhow",
-				"repository":"https://github.com/dtolnay/anyhow",
-				"checksum":"abc123",
-				"crate_size":42000,
-				"rust_version":"1.39",
-				"yanked":false
-			}}`)
+			w.Write([]byte(`{"version":{"license":"MIT OR Apache-2.0","description":"Flexible error type","homepage":"https://anyhow.rs","documentation":"https://docs.rs/anyhow","repository":"https://github.com/dtolnay/anyhow","checksum":"abc123","crate_size":42000,"rust_version":"1.39","yanked":false}}`)) //nolint:errcheck
 		case "/crates/libc/0.2.173":
-			_, _ = fmt.Fprint(w, `{"version":{
-				"license":"MIT OR Apache-2.0",
-				"description":"Raw bindings to platform APIs",
-				"homepage":"",
-				"documentation":"https://docs.rs/libc",
-				"repository":"https://github.com/rust-lang/libc",
-				"checksum":"def456",
-				"crate_size":800000,
-				"rust_version":"1.63",
-				"yanked":false
-			}}`)
+			w.Write([]byte(`{"version":{"license":"MIT OR Apache-2.0","description":"Raw bindings to platform APIs","homepage":"","documentation":"https://docs.rs/libc","repository":"https://github.com/rust-lang/libc","checksum":"def456","crate_size":800000,"rust_version":"1.63","yanked":false}}`)) //nolint:errcheck
 		default:
 			http.NotFound(w, r)
 		}
