@@ -27,6 +27,9 @@ type Options struct {
 
 	// IncludeBuildDependencies includes build dependencies in the output.
 	IncludeBuildDependencies bool
+
+	// Concurrency controls the number of parallel HTTP requests to crates.io (default: 10).
+	Concurrency int
 }
 
 // DefaultOptions returns the default options for the Rust decomposer.
@@ -63,6 +66,9 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 		return nil, fmt.Errorf("parsing Cargo.lock: %w", err)
 	}
 
+	// Get decomposer-specific options
+	dOpts := d.getOptions(opts)
+
 	// Build the dependency tree
 	tree := NewDependencyTree(cargoToml, cargoLock)
 
@@ -72,7 +78,22 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 		return nil, fmt.Errorf("building dependency graph: %w", err)
 	}
 
+	// Enrich dependency nodes with metadata from crates.io
+	client := NewCratesIOClient(dOpts.Concurrency)
+	tree.Enrich(client)
+
 	return nl, nil
+}
+
+// getOptions extracts Rust-specific options from DecomposerOptions.
+func (d *Decomposer) getOptions(opts *api.DecomposerOptions) *Options {
+	if opts != nil {
+		if dOpts, ok := opts.GetDriverOptions(d).(*Options); ok {
+			return dOpts
+		}
+	}
+	defaultOpts := Options{Concurrency: defaultConcurrency}
+	return &defaultOpts
 }
 
 // FindCodeBases locates Rust codebases by looking for Cargo.lock files.

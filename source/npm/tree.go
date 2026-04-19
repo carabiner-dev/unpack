@@ -14,6 +14,7 @@ import (
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/license"
 )
 
 // DependencyTree builds a complete dependency graph from npm package files.
@@ -263,9 +264,14 @@ func (dt *DependencyTree) createRootNode(pkg *LockPackage, opts *api.DecomposerO
 		})
 	}
 
+	// Add description if available
+	if dt.packageJSON.Description != "" {
+		node.Description = dt.packageJSON.Description
+	}
+
 	// Add license if available
 	if dt.packageJSON.License != "" {
-		node.Licenses = []string{dt.packageJSON.License}
+		node.Licenses = []string{license.Normalize(dt.packageJSON.License, "")}
 	}
 
 	// Add homepage if available
@@ -273,6 +279,14 @@ func (dt *DependencyTree) createRootNode(pkg *LockPackage, opts *api.DecomposerO
 		node.ExternalReferences = append(node.ExternalReferences, &sbom.ExternalReference{
 			Url:  dt.packageJSON.Homepage,
 			Type: sbom.ExternalReference_WEBSITE,
+		})
+	}
+
+	// Add repository if available
+	if dt.packageJSON.Repository != nil && dt.packageJSON.Repository.URL != "" {
+		node.ExternalReferences = append(node.ExternalReferences, &sbom.ExternalReference{
+			Url:  dt.packageJSON.Repository.URL,
+			Type: sbom.ExternalReference_VCS,
 		})
 	}
 
@@ -313,7 +327,7 @@ func (dt *DependencyTree) createNode(pkg *LockPackage) *sbom.Node {
 
 	// Add license if available
 	if pkg.License != "" {
-		node.Licenses = []string{pkg.License}
+		node.Licenses = []string{license.Normalize(pkg.License, "")}
 	}
 
 	return node

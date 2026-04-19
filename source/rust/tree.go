@@ -6,11 +6,13 @@ package rust
 import (
 	"fmt"
 	"sort"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/license"
 )
 
 // TODO(puerco): Enrich from https://crates.io/api/v1/crates/quote/1.0.35
@@ -61,6 +63,11 @@ func (dt *DependencyTree) Build(opts *api.DecomposerOptions) (*sbom.NodeList, er
 
 		// Create root node
 		rootNode := dt.createNode(root)
+
+		// Add license from Cargo.toml
+		if dt.cargoToml.Package.License != "" {
+			rootNode.Licenses = []string{license.Normalize(dt.cargoToml.Package.License, "")}
+		}
 
 		// Apply version/commit info from options
 		if opts.Version != "" {
@@ -204,4 +211,84 @@ func (dt *DependencyTree) ListDependencies() []string {
 	}
 	sort.Strings(deps)
 	return deps
+}
+
+// Enrich fetches metadata from crates.io for all cached dependency nodes
+// and populates license, description, homepage, repository, documentation,
+// and other fields on the protobom nodes.
+func (dt *DependencyTree) Enrich(client *CratesIOClient) {
+	// Collect non-root package keys (root packages have no source in Cargo.lock)
+	roots := make(map[PackageKey]struct{})
+	for _, pkg := range dt.cargoLock.FindRootPackages() {
+		roots[PackageKey{Name: pkg.Name, Version: pkg.Version}] = struct{}{}
+	}
+
+	keys := make([]PackageKey, 0, len(dt.nodeCache))
+	for key := range dt.nodeCache {
+		if _, isRoot := roots[key]; !isRoot {
+			keys = append(keys, key)
+		}
+	}
+
+	if len(keys) == 0 {
+		return
+	}
+
+	// Fetch all crate metadata in parallel
+	metadata := client.FetchAll(keys)
+
+	// Apply metadata to nodes
+	for key, meta := range metadata {
+		node, ok := dt.nodeCache[key]
+		if !ok {
+			continue
+		}
+
+		// License (normalized)
+		if meta.License != "" {
+			node.Licenses = []string{license.Normalize(meta.License, "")}
+		}
+
+		// Description
+		if meta.Description != "" {
+			node.Description = meta.Description
+		}
+
+		// Homepage
+		if meta.Homepage != "" {
+			node.UrlHome = meta.Homepage
+		}
+
+		// Repository (as VCS external reference)
+		if meta.Repository != "" {
+			node.ExternalReferences = append(node.ExternalReferences, &sbom.ExternalReference{
+				Url:  meta.Repository,
+				Type: sbom.ExternalReference_VCS,
+			})
+		}
+
+		// Documentation (as DOCUMENTATION external reference)
+		if meta.Documentation != "" {
+			node.ExternalReferences = append(node.ExternalReferences, &sbom.ExternalReference{
+				Url:  meta.Documentation,
+				Type: sbom.ExternalReference_DOCUMENTATION,
+			})
+		}
+
+		// Crate size
+		if meta.CrateSize > 0 {
+			node.Properties = append(node.Properties, &sbom.Property{
+				Name: "crates.io:crate_size",
+				Data: strconv.Itoa(meta.CrateSize),
+			})
+		}
+
+		// Rust version (MSRV)
+		if meta.RustVersion != "" {
+			node.Properties = append(node.Properties, &sbom.Property{
+				Name: "crates.io:rust_version",
+				Data: meta.RustVersion,
+			})
+		}
+	}
 }
