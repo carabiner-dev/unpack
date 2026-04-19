@@ -264,6 +264,11 @@ func (dt *DependencyTree) createRootNode(pkg *LockPackage, opts *api.DecomposerO
 		})
 	}
 
+	// Add description if available
+	if dt.packageJSON.Description != "" {
+		node.Description = dt.packageJSON.Description
+	}
+
 	// Add license if available
 	if dt.packageJSON.License != "" {
 		node.Licenses = []string{license.Normalize(dt.packageJSON.License, "")}
@@ -274,6 +279,14 @@ func (dt *DependencyTree) createRootNode(pkg *LockPackage, opts *api.DecomposerO
 		node.ExternalReferences = append(node.ExternalReferences, &sbom.ExternalReference{
 			Url:  dt.packageJSON.Homepage,
 			Type: sbom.ExternalReference_WEBSITE,
+		})
+	}
+
+	// Add repository if available
+	if dt.packageJSON.Repository != nil && dt.packageJSON.Repository.URL != "" {
+		node.ExternalReferences = append(node.ExternalReferences, &sbom.ExternalReference{
+			Url:  dt.packageJSON.Repository.URL,
+			Type: sbom.ExternalReference_VCS,
 		})
 	}
 
