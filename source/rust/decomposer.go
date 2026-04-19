@@ -79,8 +79,11 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	}
 
 	// Enrich dependency nodes with metadata from crates.io
-	client := NewCratesIOClient(dOpts.Concurrency)
-	tree.Enrich(client)
+	// (requires networking >= essential)
+	if opts.Networking >= api.NetworkEssential {
+		client := NewCratesIOClient(dOpts.Concurrency)
+		tree.Enrich(client)
+	}
 
 	return nl, nil
 }

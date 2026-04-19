@@ -77,8 +77,8 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 		return nil, fmt.Errorf("parsing go.mod: %w", err)
 	}
 
-	// 2. Build dependency tree by fetching go.mod files from the proxy
-	trees, sumHashes, err := d.buildDependencyTree(modFile, goModPath, dOpts)
+	// 2. Build dependency tree (fetches go.mod files from proxy when networking allows)
+	trees, sumHashes, err := d.buildDependencyTree(modFile, goModPath, dOpts, opts.Networking)
 	if err != nil {
 		return nil, fmt.Errorf("building dependency tree: %w", err)
 	}
@@ -94,8 +94,10 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 		return nil, fmt.Errorf("converting graph trees: %w", err)
 	}
 
-	// 4. Fetch licenses from module zips
-	d.enrichLicenses(nl, root, dOpts)
+	// 4. Enrich with license and VCS data (requires networking >= essential)
+	if opts.Networking >= api.NetworkEssential {
+		d.enrichLicenses(nl, root, dOpts, opts.Networking)
+	}
 
 	return nl, nil
 }
@@ -104,7 +106,7 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 // falling back to downloading module zips from the Go proxy for
 // modules not found in deps.dev. Sets licenses and VCS external
 // references on dependency nodes.
-func (d *Decomposer) enrichLicenses(nl *sbom.NodeList, rootModule string, opts *Options) {
+func (d *Decomposer) enrichLicenses(nl *sbom.NodeList, rootModule string, opts *Options, networking api.NetworkLevel) {
 	// Collect dependency modules that need enrichment
 	var modules []modKey
 	for _, node := range nl.GetNodes() {
@@ -128,7 +130,7 @@ func (d *Decomposer) enrichLicenses(nl *sbom.NodeList, rootModule string, opts *
 	}
 
 	lc := newLicenseClient(opts.ProxyURL, opts.Concurrency)
-	results := lc.FetchLicenses(modules)
+	results := lc.FetchLicenses(modules, networking >= api.NetworkFull)
 
 	// Apply enrichment data to nodes
 	for _, node := range nl.GetNodes() {
@@ -236,7 +238,7 @@ type replaceTarget struct {
 // 3. Building edges only between modules in the resolved set\
 //
 //nolint:gocritic,unparam
-func (d *Decomposer) buildDependencyTree(root *modfile.File, goModPath string, opts *Options) (*map[string][]string, map[string][]string, error) {
+func (d *Decomposer) buildDependencyTree(root *modfile.File, goModPath string, opts *Options, networking api.NetworkLevel) (*map[string][]string, map[string][]string, error) {
 	trees := make(map[string][]string)
 
 	// Build replace directive map
@@ -292,7 +294,10 @@ func (d *Decomposer) buildDependencyTree(root *modfile.File, goModPath string, o
 	}
 
 	// Fetch go.mod files for all modules in the resolved set to get their dependencies
-	d.fetchDependencyGraph(trees, resolvedSet, replaces, opts)
+	// (requires networking >= essential)
+	if networking >= api.NetworkEssential {
+		d.fetchDependencyGraph(trees, resolvedSet, replaces, opts)
+	}
 
 	return &trees, allSumHashes, nil
 }

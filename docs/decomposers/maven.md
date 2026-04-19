@@ -12,7 +12,7 @@
    nearest-definition-wins mediation, scope transitivity rules,
    exclude directives, and `dependencyManagement` overrides.
 4. Fetches artifact checksums (`.sha1`, `.sha256`) from the repository
-   in parallel. When `ModernHashes` is enabled, downloads the actual
+   in parallel. With `NetworkFull`, also downloads the actual
    artifacts and computes SHA-256/SHA-512 locally using the
    `github.com/carabiner-dev/hasher` library.
 5. Resolves SNAPSHOT versions via the version-level
@@ -41,7 +41,9 @@
 | `IncludeTest` | `bool` | `false` | Include test-scoped dependencies |
 | `IncludeProvided` | `bool` | `false` | Include provided-scoped dependencies |
 | `IncludeOptional` | `bool` | `false` | Include optional dependencies |
-| `ModernHashes` | `bool` | `false` | Download artifacts to compute SHA-256/SHA-512 |
+
+Artifact download for SHA-256/SHA-512 computation is controlled by the
+top-level `Networking` setting (`NetworkFull`).
 
 ## Strengths
 
@@ -68,5 +70,6 @@
   have missing dependencies.
 - **No Gradle/SBT support.** Only `pom.xml` is parsed. Gradle wrapper
   or SBT build files are not understood.
-- **ModernHashes is expensive.** Downloading every JAR to compute
-  SHA-512 significantly increases runtime and bandwidth.
+- **Full hashing is expensive.** With `NetworkFull`, downloading
+  every JAR to compute SHA-512 significantly increases runtime and
+  bandwidth.

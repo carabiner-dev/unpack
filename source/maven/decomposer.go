@@ -30,7 +30,6 @@ type Options struct {
 	IncludeTest     bool   // Include test-scoped dependencies (default: false)
 	IncludeProvided bool   // Include provided-scoped dependencies (default: false)
 	IncludeOptional bool   // Include optional dependencies (default: false)
-	ModernHashes    bool   // Download artifacts and compute SHA-256 and SHA-512 hashes
 }
 
 var defaultOptions = Options{
@@ -60,23 +59,34 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 		return nil, fmt.Errorf("parsing pom.xml: %w", err)
 	}
 
-	// 2. Create resolver for fetching remote POMs
-	resolver := NewResolver(dOpts)
+	// 2. Create resolver for fetching remote POMs (requires networking)
+	var resolver *Resolver
+	if opts.Networking >= api.NetworkEssential {
+		resolver = NewResolver(dOpts)
+	}
 
 	// 3. Resolve effective POM (parent chain + BOM imports + interpolation)
-	effective, err := resolver.ResolveEffectivePOM(pom)
-	if err != nil {
-		return nil, fmt.Errorf("resolving effective POM: %w", err)
+	effective := pom
+	if resolver != nil {
+		resolved, err := resolver.ResolveEffectivePOM(pom)
+		if err != nil {
+			return nil, fmt.Errorf("resolving effective POM: %w", err)
+		}
+		effective = resolved
 	}
 
 	// 4. Build dependency tree
 	dt := NewDependencyTree(effective, resolver, dOpts)
-	if err := dt.Build(); err != nil {
-		return nil, fmt.Errorf("building dependency tree: %w", err)
+	if resolver != nil {
+		if err := dt.Build(); err != nil {
+			return nil, fmt.Errorf("building dependency tree: %w", err)
+		}
 	}
 
-	// 5. Fetch artifact hashes in parallel
-	dt.FetchHashes()
+	// 5. Fetch artifact hashes (essential: checksum files; full: download+compute)
+	if opts.Networking >= api.NetworkEssential {
+		dt.FetchHashes(opts.Networking >= api.NetworkFull)
+	}
 
 	// 6. Convert to NodeList
 	nl, err := dt.ToNodeList(opts)

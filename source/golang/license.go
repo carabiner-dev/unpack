@@ -110,9 +110,10 @@ type licenseResult struct {
 }
 
 // FetchLicenses fetches license information for all modules. It first
-// queries deps.dev in parallel, then falls back to downloading module
-// zips from the Go proxy for any modules not found in deps.dev.
-func (lc *licenseClient) FetchLicenses(modules []modKey) map[string]*licenseResult {
+// queries deps.dev in parallel. When zipFallback is true, it also
+// downloads module zips from the Go proxy for any modules not found
+// in deps.dev and classifies their LICENSE files locally.
+func (lc *licenseClient) FetchLicenses(modules []modKey, zipFallback bool) map[string]*licenseResult {
 	if len(modules) == 0 {
 		return nil
 	}
@@ -129,8 +130,8 @@ func (lc *licenseClient) FetchLicenses(modules []modKey) map[string]*licenseResu
 		}
 	}
 
-	// Phase 3: fall back to zip download for missing modules
-	if len(missing) > 0 {
+	// Phase 3: fall back to zip download for missing modules (NetworkFull only)
+	if zipFallback && len(missing) > 0 {
 		zipResults := lc.fetchFromZips(missing)
 		for k, v := range zipResults {
 			result[k] = v

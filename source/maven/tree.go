@@ -322,7 +322,9 @@ func scopeTransitivity(parentScope, depScope string) string {
 
 // FetchHashes fetches artifact checksums for all resolved dependencies
 // in parallel and stores them in the resolved dependency entries.
-func (dt *DependencyTree) FetchHashes() {
+// When computeModern is true, it also downloads artifacts to compute
+// SHA-256 and SHA-512 hashes locally.
+func (dt *DependencyTree) FetchHashes(computeModern bool) {
 	if dt.resolver == nil {
 		return
 	}
@@ -354,8 +356,8 @@ func (dt *DependencyTree) FetchHashes() {
 	// Fetch all checksum file hashes in parallel
 	allHashes := dt.resolver.FetchAllArtifactHashes(coords)
 
-	// If ModernHashes is enabled, download artifacts and compute SHA-256/SHA-512
-	if dt.opts.ModernHashes {
+	// If computeModern is enabled, download artifacts and compute SHA-256/SHA-512
+	if computeModern {
 		computed := dt.resolver.ComputeArtifactHashes(coords)
 		for key, hashes := range computed {
 			if existing, ok := allHashes[key]; ok {

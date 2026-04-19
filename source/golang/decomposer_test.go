@@ -96,7 +96,7 @@ func TestBuildDependencyTree(t *testing.T) {
 	modFile, err := d.parseLocalGoMod("testdata/simple/go.mod")
 	require.NoError(t, err)
 
-	trees, _, err := d.buildDependencyTree(modFile, "testdata/simple/go.mod", &defaultOptions)
+	trees, _, err := d.buildDependencyTree(modFile, "testdata/simple/go.mod", &defaultOptions, api.NetworkEssential)
 	require.NoError(t, err)
 	require.NotNil(t, trees)
 
@@ -114,7 +114,7 @@ func TestBuildDependencyTreeWithReplace(t *testing.T) {
 	modFile, err := d.parseLocalGoMod("testdata/with-replace/go.mod")
 	require.NoError(t, err)
 
-	trees, _, err := d.buildDependencyTree(modFile, "testdata/with-replace/go.mod", &defaultOptions)
+	trees, _, err := d.buildDependencyTree(modFile, "testdata/with-replace/go.mod", &defaultOptions, api.NetworkEssential)
 	require.NoError(t, err)
 	require.NotNil(t, trees)
 
