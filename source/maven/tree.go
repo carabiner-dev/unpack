@@ -169,7 +169,7 @@ func (dt *DependencyTree) Build() error {
 			Version:    version,
 			Type:       dep.EffectiveType(),
 			Classifier: dep.Classifier,
-			RepoURL:    dt.nonDefaultRepoURL(),
+			RepoURL:    dt.repoURLForDep(version),
 		}
 
 		// Fetch the dependency's POM for license info and transitive deps
@@ -485,8 +485,12 @@ func (dt *DependencyTree) ToNodeList(opts *api.DecomposerOptions) (*sbom.NodeLis
 // createDependencyNode creates a protobom Node for a resolved dependency.
 func (dt *DependencyTree) createDependencyNode(rd *ResolvedDependency) *sbom.Node {
 	groupPath := strings.ReplaceAll(rd.Coordinate.GroupID, ".", "/")
+	repoURL := rd.Coordinate.RepoURL
+	if repoURL == "" {
+		repoURL = defaultRepoURL
+	}
 	downloadURL := fmt.Sprintf("%s/%s/%s/%s/%s",
-		defaultRepoURL, groupPath,
+		repoURL, groupPath,
 		rd.Coordinate.ArtifactID, rd.Coordinate.Version,
 		rd.Coordinate.ArtifactFilename(),
 	)
@@ -519,6 +523,30 @@ func (dt *DependencyTree) nonDefaultRepoURL() string {
 	if dt.resolver != nil && dt.resolver.RepoURL != defaultRepoURL {
 		return dt.resolver.RepoURL
 	}
+	return ""
+}
+
+// repoURLForDep returns the repository URL qualifier for a dependency.
+// For SNAPSHOT versions it checks the POM's declared repositories for one
+// with snapshots enabled. Falls back to the global resolver URL override.
+func (dt *DependencyTree) repoURLForDep(version string) string {
+	// Global resolver override takes precedence
+	if url := dt.nonDefaultRepoURL(); url != "" {
+		return url
+	}
+
+	// For SNAPSHOT versions, look for a POM-declared repository with snapshots enabled
+	if isSnapshot(version) && dt.rootPOM != nil {
+		for _, repo := range dt.rootPOM.Repositories {
+			if repo.SnapshotsEnabled() {
+				url := strings.TrimRight(repo.URL, "/")
+				if url != "" && url != defaultRepoURL {
+					return url
+				}
+			}
+		}
+	}
+
 	return ""
 }
 

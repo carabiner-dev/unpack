@@ -164,3 +164,43 @@ func TestEffectiveGroupIDAndVersion(t *testing.T) {
 	require.Equal(t, "own.group", pom.EffectiveGroupID())
 	require.Equal(t, "1.0", pom.EffectiveVersion())
 }
+
+func TestRepositorySnapshotsEnabled(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		repo Repository
+		want bool
+	}{
+		{"nil policy defaults to false", Repository{}, false},
+		{"enabled true", Repository{Snapshots: &RepositoryPolicy{Enabled: "true"}}, true},
+		{"enabled TRUE", Repository{Snapshots: &RepositoryPolicy{Enabled: "TRUE"}}, true},
+		{"enabled false", Repository{Snapshots: &RepositoryPolicy{Enabled: "false"}}, false},
+		{"enabled empty", Repository{Snapshots: &RepositoryPolicy{Enabled: ""}}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, tc.repo.SnapshotsEnabled())
+		})
+	}
+}
+
+func TestRepositoryReleasesEnabled(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		repo Repository
+		want bool
+	}{
+		{"nil policy defaults to true", Repository{}, true},
+		{"enabled true", Repository{Releases: &RepositoryPolicy{Enabled: "true"}}, true},
+		{"enabled false", Repository{Releases: &RepositoryPolicy{Enabled: "false"}}, false},
+		{"enabled FALSE", Repository{Releases: &RepositoryPolicy{Enabled: "FALSE"}}, false},
+		{"enabled empty", Repository{Releases: &RepositoryPolicy{Enabled: ""}}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, tc.repo.ReleasesEnabled())
+		})
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/text/encoding/ianaindex"
 )
@@ -143,9 +144,34 @@ type DependencyManagement struct {
 
 // Repository represents a Maven repository declaration.
 type Repository struct {
-	ID   string `xml:"id"`
-	URL  string `xml:"url"`
-	Name string `xml:"name"`
+	ID        string            `xml:"id"`
+	URL       string            `xml:"url"`
+	Name      string            `xml:"name"`
+	Snapshots *RepositoryPolicy `xml:"snapshots"`
+	Releases  *RepositoryPolicy `xml:"releases"`
+}
+
+// SnapshotsEnabled returns true if this repository serves snapshot artifacts.
+// Maven defaults to false for snapshots.
+func (r Repository) SnapshotsEnabled() bool {
+	if r.Snapshots == nil {
+		return false
+	}
+	return strings.EqualFold(r.Snapshots.Enabled, "true")
+}
+
+// ReleasesEnabled returns true if this repository serves release artifacts.
+// Maven defaults to true for releases.
+func (r Repository) ReleasesEnabled() bool {
+	if r.Releases == nil {
+		return true
+	}
+	return !strings.EqualFold(r.Releases.Enabled, "false")
+}
+
+// RepositoryPolicy controls whether a repository serves releases or snapshots.
+type RepositoryPolicy struct {
+	Enabled string `xml:"enabled"`
 }
 
 // Properties is a map of Maven property key-value pairs.
