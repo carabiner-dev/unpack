@@ -4,12 +4,15 @@
 package maven
 
 import (
+	"bytes"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/carabiner-dev/hasher"
 	khttp "sigs.k8s.io/release-utils/http"
 )
 
@@ -86,9 +89,12 @@ func (r *Resolver) FetchPOM(groupID, artifactID, version string) (*POM, error) {
 }
 
 // pomURL constructs the Maven repository URL for a POM file.
+// For SNAPSHOT versions, it resolves the actual timestamped filename
+// via the version-level maven-metadata.xml.
 func (r *Resolver) pomURL(groupID, artifactID, version string) string {
 	groupPath := strings.ReplaceAll(groupID, ".", "/")
-	return fmt.Sprintf("%s/%s/%s/%s/%s-%s.pom", r.RepoURL, groupPath, artifactID, version, artifactID, version)
+	fileVersion := r.ResolveSnapshotVersion(groupID, artifactID, version, "pom", "")
+	return fmt.Sprintf("%s/%s/%s/%s/%s-%s.pom", r.RepoURL, groupPath, artifactID, version, artifactID, fileVersion)
 }
 
 // metadataURL constructs the URL for maven-metadata.xml.
@@ -97,13 +103,77 @@ func (r *Resolver) metadataURL(groupID, artifactID string) string {
 	return fmt.Sprintf("%s/%s/%s/maven-metadata.xml", r.RepoURL, groupPath, artifactID)
 }
 
-// mavenMetadata represents the structure of maven-metadata.xml.
+// mavenMetadata represents the structure of the artifact-level maven-metadata.xml
+// (lists all available versions).
 type mavenMetadata struct {
 	GroupID    string   `xml:"groupId"`
 	ArtifactID string   `xml:"artifactId"`
 	Latest     string   `xml:"versioning>latest"`
 	Release    string   `xml:"versioning>release"`
 	Versions   []string `xml:"versioning>versions>version"`
+}
+
+// snapshotMetadata represents the version-level maven-metadata.xml for SNAPSHOT versions.
+// It contains the timestamp and build number needed to construct the actual artifact filename.
+type snapshotMetadata struct {
+	Timestamp   string                 `xml:"versioning>snapshot>timestamp"`
+	BuildNumber string                 `xml:"versioning>snapshot>buildNumber"`
+	Versions    []snapshotVersionEntry `xml:"versioning>snapshotVersions>snapshotVersion"`
+}
+
+// snapshotVersionEntry is a single entry in the snapshotVersions list.
+type snapshotVersionEntry struct {
+	Classifier string `xml:"classifier"`
+	Extension  string `xml:"extension"`
+	Value      string `xml:"value"`
+}
+
+// isSnapshot returns true if the version string ends with -SNAPSHOT.
+func isSnapshot(version string) bool {
+	return strings.HasSuffix(strings.ToUpper(version), "-SNAPSHOT")
+}
+
+// versionMetadataURL constructs the URL for the version-level maven-metadata.xml.
+func (r *Resolver) versionMetadataURL(groupID, artifactID, version string) string {
+	groupPath := strings.ReplaceAll(groupID, ".", "/")
+	return fmt.Sprintf("%s/%s/%s/%s/maven-metadata.xml", r.RepoURL, groupPath, artifactID, version)
+}
+
+// ResolveSnapshotVersion fetches the version-level maven-metadata.xml for a
+// SNAPSHOT version and returns the resolved timestamped version string
+// (e.g. "1.0-20260418.130000-2") for the given extension and classifier.
+// Returns the original version unchanged if the metadata cannot be fetched.
+func (r *Resolver) ResolveSnapshotVersion(groupID, artifactID, version, ext, classifier string) string {
+	if !isSnapshot(version) {
+		return version
+	}
+
+	url := r.versionMetadataURL(groupID, artifactID, version)
+	data, err := r.Agent.Get(url)
+	if err != nil {
+		return version
+	}
+
+	var meta snapshotMetadata
+	if err := xml.Unmarshal(data, &meta); err != nil {
+		return version
+	}
+
+	// Try to find a matching snapshotVersion entry
+	for _, sv := range meta.Versions {
+		if sv.Extension == ext && sv.Classifier == classifier {
+			return sv.Value
+		}
+	}
+
+	// Fallback: construct from timestamp and build number
+	if meta.Timestamp != "" && meta.BuildNumber != "" {
+		base := strings.TrimSuffix(version, "-SNAPSHOT")
+		base = strings.TrimSuffix(base, "-snapshot")
+		return fmt.Sprintf("%s-%s-%s", base, meta.Timestamp, meta.BuildNumber)
+	}
+
+	return version
 }
 
 // FetchAvailableVersions fetches maven-metadata.xml and returns all versions.
@@ -120,6 +190,124 @@ func (r *Resolver) FetchAvailableVersions(groupID, artifactID string) ([]string,
 	}
 
 	return meta.Versions, nil
+}
+
+// artifactURL constructs the Maven repository URL for an artifact.
+func (r *Resolver) artifactURL(coord *Coordinate) string {
+	groupPath := strings.ReplaceAll(coord.GroupID, ".", "/")
+	return fmt.Sprintf("%s/%s/%s/%s/%s", r.RepoURL, groupPath, coord.ArtifactID, coord.Version, coord.ArtifactFilename())
+}
+
+// hashSuffix pairs a file extension with its algorithm name.
+type hashSuffix struct {
+	suffix string
+	algo   string
+}
+
+// supportedHashes lists the hash files we attempt to fetch from the repo.
+var supportedHashes = []hashSuffix{
+	{".sha1", "SHA1"},
+	{".sha256", "SHA256"},
+}
+
+// FetchAllArtifactHashes fetches SHA-1 and SHA-256 checksums for multiple
+// artifacts in parallel using the Agent's GetGroup. It returns a map keyed
+// by "groupId:artifactId:version" containing algo->digest maps.
+func (r *Resolver) FetchAllArtifactHashes(coords []Coordinate) map[string]map[string]string {
+	if len(coords) == 0 {
+		return nil
+	}
+
+	// Build the list of URLs to fetch: 2 per coordinate (sha1, sha256)
+	urls := make([]string, 0, len(coords)*len(supportedHashes))
+	for i := range coords {
+		base := r.artifactURL(&coords[i])
+		for _, h := range supportedHashes {
+			urls = append(urls, base+h.suffix)
+		}
+	}
+
+	// Fetch all hash files in parallel
+	bodies, errs := r.Agent.GetGroup(urls)
+
+	// Parse results back into per-coordinate hash maps
+	result := make(map[string]map[string]string, len(coords))
+	for i, c := range coords {
+		hashes := make(map[string]string)
+		for j, h := range supportedHashes {
+			idx := i*len(supportedHashes) + j
+			if errs[idx] != nil || len(bodies[idx]) == 0 {
+				continue
+			}
+			digest := strings.TrimSpace(string(bodies[idx]))
+			// Some repos append the filename after the hash
+			if sp := strings.IndexByte(digest, ' '); sp > 0 {
+				digest = digest[:sp]
+			}
+			if digest != "" {
+				hashes[h.algo] = digest
+			}
+		}
+		if len(hashes) > 0 {
+			result[cacheKey(c.GroupID, c.ArtifactID, c.Version)] = hashes
+		}
+	}
+
+	return result
+}
+
+// ComputeArtifactHashes downloads artifacts in parallel and computes
+// SHA-256 and SHA-512 digests locally. It returns a map keyed by
+// "groupId:artifactId:version" containing algo->hex digest maps.
+func (r *Resolver) ComputeArtifactHashes(coords []Coordinate) map[string]map[string]string {
+	if len(coords) == 0 {
+		return nil
+	}
+
+	// Build artifact URLs
+	urls := make([]string, len(coords))
+	for i := range coords {
+		urls[i] = r.artifactURL(&coords[i])
+	}
+
+	// Download all artifacts in parallel
+	bodies, errs := r.Agent.GetGroup(urls)
+
+	// Collect downloaded bodies and their coordinates for batch hashing
+	var readers []io.Reader
+	var coordIndices []int
+	for i := range coords {
+		if errs[i] != nil || len(bodies[i]) == 0 {
+			continue
+		}
+		readers = append(readers, bytes.NewReader(bodies[i]))
+		coordIndices = append(coordIndices, i)
+	}
+
+	result := make(map[string]map[string]string, len(coords))
+	if len(readers) == 0 {
+		return result
+	}
+
+	h := hasher.New()
+	hashResults, err := h.HashReaders(readers)
+	if err != nil || hashResults == nil {
+		return result
+	}
+
+	for j, idx := range coordIndices {
+		c := coords[idx]
+		hashes := make(map[string]string, len((*hashResults)[j]))
+		for algo, digest := range (*hashResults)[j] {
+			// Store with uppercase key to match hashesForNode expectations
+			hashes[strings.ToUpper(string(algo))] = digest
+		}
+		if len(hashes) > 0 {
+			result[cacheKey(c.GroupID, c.ArtifactID, c.Version)] = hashes
+		}
+	}
+
+	return result
 }
 
 // ResolveVersionRange resolves a version range to a concrete version.

@@ -12,11 +12,13 @@ import (
 
 // Coordinate uniquely identifies a Maven artifact.
 type Coordinate struct {
-	GroupID    string
-	ArtifactID string
-	Version    string
-	Classifier string
-	Type       string
+	GroupID         string
+	ArtifactID      string
+	Version         string
+	Classifier      string
+	Type            string
+	RepoURL         string // non-empty only when different from Maven Central
+	SnapshotVersion string // resolved timestamped version for SNAPSHOTs (e.g. "1.0-20260418.130000-2")
 }
 
 // String returns "groupId:artifactId:version".
@@ -24,11 +26,26 @@ func (c *Coordinate) String() string {
 	return fmt.Sprintf("%s:%s:%s", c.GroupID, c.ArtifactID, c.Version)
 }
 
-// PURL returns the Package URL for this coordinate.
+// PURL returns the Package URL for this coordinate, including qualifiers
+// for type (if not jar), classifier (if set), and repository_url (if set).
 func (c *Coordinate) PURL() string {
 	purl := fmt.Sprintf("pkg:maven/%s/%s", c.GroupID, c.ArtifactID)
 	if c.Version != "" {
 		purl += "@" + c.Version
+	}
+
+	var qualifiers []string
+	if c.Type != "" && c.Type != DefaultType {
+		qualifiers = append(qualifiers, "type="+c.Type)
+	}
+	if c.Classifier != "" {
+		qualifiers = append(qualifiers, "classifier="+c.Classifier)
+	}
+	if c.RepoURL != "" {
+		qualifiers = append(qualifiers, "repository_url="+c.RepoURL)
+	}
+	if len(qualifiers) > 0 {
+		purl += "?" + strings.Join(qualifiers, "&")
 	}
 	return purl
 }
@@ -36,6 +53,25 @@ func (c *Coordinate) PURL() string {
 // Key returns "groupId:artifactId" for mediation lookups.
 func (c *Coordinate) Key() string {
 	return c.GroupID + ":" + c.ArtifactID
+}
+
+// ArtifactFilename returns the Maven artifact filename following the convention:
+// {artifactId}-{version}[-{classifier}].{type}
+// For SNAPSHOT artifacts with a resolved timestamped version, it uses the
+// snapshot version (e.g. "1.0-20260418.130000-2") instead of "1.0-SNAPSHOT".
+func (c *Coordinate) ArtifactFilename() string {
+	ext := c.Type
+	if ext == "" {
+		ext = DefaultType
+	}
+	version := c.SnapshotVersion
+	if version == "" {
+		version = c.Version
+	}
+	if c.Classifier != "" {
+		return fmt.Sprintf("%s-%s-%s.%s", c.ArtifactID, version, c.Classifier, ext)
+	}
+	return fmt.Sprintf("%s-%s.%s", c.ArtifactID, version, ext)
 }
 
 // qualifierRank returns the ordering rank for known Maven qualifiers.

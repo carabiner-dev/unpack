@@ -20,7 +20,24 @@ type ResolvedDependency struct {
 	Scope      string
 	Optional   bool
 	Licenses   []License
+	Hashes     map[string]string // algo name -> hex digest (e.g. "SHA1" -> "abc123")
 	Depth      int
+}
+
+// hashesForNode converts the string-keyed hashes to protobom hash algorithm keys.
+func (rd *ResolvedDependency) hashesForNode() map[int32]string {
+	m := make(map[int32]string, len(rd.Hashes))
+	for algo, digest := range rd.Hashes {
+		switch algo {
+		case "SHA1":
+			m[int32(sbom.HashAlgorithm_SHA1)] = digest
+		case "SHA256":
+			m[int32(sbom.HashAlgorithm_SHA256)] = digest
+		case "SHA512":
+			m[int32(sbom.HashAlgorithm_SHA512)] = digest
+		}
+	}
+	return m
 }
 
 // DependencyTree builds the resolved dependency graph from a Maven POM.
@@ -150,6 +167,9 @@ func (dt *DependencyTree) Build() error {
 			GroupID:    dep.GroupID,
 			ArtifactID: dep.ArtifactID,
 			Version:    version,
+			Type:       dep.EffectiveType(),
+			Classifier: dep.Classifier,
+			RepoURL:    dt.nonDefaultRepoURL(),
 		}
 
 		// Fetch the dependency's POM for license info and transitive deps
@@ -300,6 +320,63 @@ func scopeTransitivity(parentScope, depScope string) string {
 	}
 }
 
+// FetchHashes fetches artifact checksums for all resolved dependencies
+// in parallel and stores them in the resolved dependency entries.
+func (dt *DependencyTree) FetchHashes() {
+	if dt.resolver == nil {
+		return
+	}
+
+	rootKey := dt.rootPOM.EffectiveGroupID() + ":" + dt.rootPOM.ArtifactID
+
+	// Collect coordinates of all non-root resolved dependencies,
+	// resolving SNAPSHOT versions to their timestamped filenames.
+	coords := make([]Coordinate, 0, len(dt.resolved))
+	for key, rd := range dt.resolved {
+		if key == rootKey {
+			continue
+		}
+		ext := rd.Coordinate.Type
+		if ext == "" {
+			ext = DefaultType
+		}
+		rd.Coordinate.SnapshotVersion = dt.resolver.ResolveSnapshotVersion(
+			rd.Coordinate.GroupID, rd.Coordinate.ArtifactID,
+			rd.Coordinate.Version, ext, rd.Coordinate.Classifier,
+		)
+		coords = append(coords, rd.Coordinate)
+	}
+
+	if len(coords) == 0 {
+		return
+	}
+
+	// Fetch all checksum file hashes in parallel
+	allHashes := dt.resolver.FetchAllArtifactHashes(coords)
+
+	// If ModernHashes is enabled, download artifacts and compute SHA-256/SHA-512
+	if dt.opts.ModernHashes {
+		computed := dt.resolver.ComputeArtifactHashes(coords)
+		for key, hashes := range computed {
+			if existing, ok := allHashes[key]; ok {
+				for algo, digest := range hashes {
+					existing[algo] = digest
+				}
+			} else {
+				allHashes[key] = hashes
+			}
+		}
+	}
+
+	// Store the hashes back on the resolved dependencies
+	for _, rd := range dt.resolved {
+		key := rd.Coordinate.GroupID + ":" + rd.Coordinate.ArtifactID + ":" + rd.Coordinate.Version
+		if h, ok := allHashes[key]; ok {
+			rd.Hashes = h
+		}
+	}
+}
+
 // ToNodeList converts the resolved dependency tree to a protobom NodeList.
 func (dt *DependencyTree) ToNodeList(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	nl := sbom.NewNodeList()
@@ -367,8 +444,16 @@ func (dt *DependencyTree) ToNodeList(opts *api.DecomposerOptions) (*sbom.NodeLis
 		nodeMap[rd.Coordinate.String()] = node
 	}
 
-	// Create edges
-	for parentCoord, children := range dt.edges {
+	// Create edges in BFS order from root so that parent nodes are always
+	// added to the NodeList before their children (RelateNodeAtID requires
+	// the parent to already exist in the NodeList).
+	queue := []string{rootCoord.String()}
+	visited := map[string]struct{}{rootCoord.String(): {}}
+	for len(queue) > 0 {
+		parentCoord := queue[0]
+		queue = queue[1:]
+
+		children := dt.edges[parentCoord]
 		parentNode, ok := nodeMap[parentCoord]
 		if !ok {
 			continue
@@ -380,10 +465,14 @@ func (dt *DependencyTree) ToNodeList(opts *api.DecomposerOptions) (*sbom.NodeLis
 				continue
 			}
 
-			// Determine edge type based on the child's scope
 			edgeType := dt.edgeTypeForCoord(childCoord)
 			if err := nl.RelateNodeAtID(childNode, parentNode.GetId(), edgeType); err != nil {
 				return nil, fmt.Errorf("relating %s to %s: %w", childCoord, parentCoord, err)
+			}
+
+			if _, seen := visited[childCoord]; !seen {
+				visited[childCoord] = struct{}{}
+				queue = append(queue, childCoord)
 			}
 		}
 	}
@@ -394,10 +483,10 @@ func (dt *DependencyTree) ToNodeList(opts *api.DecomposerOptions) (*sbom.NodeLis
 // createDependencyNode creates a protobom Node for a resolved dependency.
 func (dt *DependencyTree) createDependencyNode(rd *ResolvedDependency) *sbom.Node {
 	groupPath := strings.ReplaceAll(rd.Coordinate.GroupID, ".", "/")
-	downloadURL := fmt.Sprintf("%s/%s/%s/%s/%s-%s.jar",
+	downloadURL := fmt.Sprintf("%s/%s/%s/%s/%s",
 		defaultRepoURL, groupPath,
 		rd.Coordinate.ArtifactID, rd.Coordinate.Version,
-		rd.Coordinate.ArtifactID, rd.Coordinate.Version,
+		rd.Coordinate.ArtifactFilename(),
 	)
 
 	node := &sbom.Node{
@@ -409,7 +498,7 @@ func (dt *DependencyTree) createDependencyNode(rd *ResolvedDependency) *sbom.Nod
 		Identifiers: map[int32]string{
 			int32(sbom.SoftwareIdentifierType_PURL): rd.Coordinate.PURL(),
 		},
-		Hashes: map[int32]string{},
+		Hashes: rd.hashesForNode(),
 		PrimaryPurpose: []sbom.Purpose{
 			sbom.Purpose_LIBRARY,
 		},
@@ -420,6 +509,15 @@ func (dt *DependencyTree) createDependencyNode(rd *ResolvedDependency) *sbom.Nod
 	}
 
 	return node
+}
+
+// nonDefaultRepoURL returns the resolver's repo URL if it differs from Maven Central,
+// or empty string otherwise.
+func (dt *DependencyTree) nonDefaultRepoURL() string {
+	if dt.resolver != nil && dt.resolver.RepoURL != defaultRepoURL {
+		return dt.resolver.RepoURL
+	}
+	return ""
 }
 
 // edgeTypeForCoord returns the appropriate edge type for a dependency.

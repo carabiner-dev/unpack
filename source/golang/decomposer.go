@@ -6,6 +6,8 @@ package golang
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -76,7 +78,7 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	}
 
 	// 2. Build dependency tree by fetching go.mod files from the proxy
-	trees, err := d.buildDependencyTree(modFile, goModPath, dOpts)
+	trees, sumHashes, err := d.buildDependencyTree(modFile, goModPath, dOpts)
 	if err != nil {
 		return nil, fmt.Errorf("building dependency tree: %w", err)
 	}
@@ -87,7 +89,7 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	if modFile.Go != nil {
 		goVersion = modFile.Go.Version
 	}
-	nl, err := d.convertTrees(opts, root, trees, goVersion)
+	nl, err := d.convertTrees(opts, root, trees, goVersion, sumHashes)
 	if err != nil {
 		return nil, fmt.Errorf("converting graph trees: %w", err)
 	}
@@ -146,8 +148,17 @@ func (d *Decomposer) parseGoSum(path string) (map[string][]string, error) {
 		version := parts[1]
 		hash := parts[2]
 
-		// Strip /go.mod suffix from version if present
-		version = strings.TrimSuffix(version, "/go.mod")
+		// Skip /go.mod entries — those are hashes of just the go.mod file,
+		// not the module zip archive. We still need them for dependency
+		// discovery (the key exists), but we don't mix them with zip hashes.
+		if strings.HasSuffix(version, "/go.mod") {
+			version = strings.TrimSuffix(version, "/go.mod")
+			key := fmt.Sprintf("%s@%s", modPath, version)
+			if _, exists := hashes[key]; !exists {
+				hashes[key] = nil // ensure the key exists for dependency discovery
+			}
+			continue
+		}
 
 		key := fmt.Sprintf("%s@%s", modPath, version)
 		hashes[key] = append(hashes[key], hash)
@@ -168,7 +179,7 @@ type replaceTarget struct {
 // 3. Building edges only between modules in the resolved set\
 //
 //nolint:gocritic,unparam
-func (d *Decomposer) buildDependencyTree(root *modfile.File, goModPath string, opts *Options) (*map[string][]string, error) {
+func (d *Decomposer) buildDependencyTree(root *modfile.File, goModPath string, opts *Options) (*map[string][]string, map[string][]string, error) {
 	trees := make(map[string][]string)
 
 	// Build replace directive map
@@ -209,7 +220,9 @@ func (d *Decomposer) buildDependencyTree(root *modfile.File, goModPath string, o
 	// Also parse go.sum to get all transitive dependencies
 	// These are needed to build the complete dependency graph
 	goSumPath := strings.TrimSuffix(goModPath, ".mod") + ".sum"
+	var allSumHashes map[string][]string
 	if sumHashes, err := d.parseGoSum(goSumPath); err == nil {
+		allSumHashes = sumHashes
 		for modKey := range sumHashes {
 			// Don't overwrite direct dependencies already in the set
 			if _, exists := resolvedSet[modKey]; !exists {
@@ -224,7 +237,7 @@ func (d *Decomposer) buildDependencyTree(root *modfile.File, goModPath string, o
 	// Fetch go.mod files for all modules in the resolved set to get their dependencies
 	d.fetchDependencyGraph(trees, resolvedSet, replaces, opts)
 
-	return &trees, nil
+	return &trees, allSumHashes, nil
 }
 
 // fetchDependencyGraph fetches go.mod files for all modules in the resolved set
@@ -395,7 +408,7 @@ func isLocalReplace(path string) bool {
 // convertTrees reads the tree map parsed from the go graph output and
 // converts it to a protobom NodeList, capturing the graph structure.
 func (d *Decomposer) convertTrees(
-	opts *api.DecomposerOptions, root string, trees *map[string][]string, goVersion string, //nolint:gocritic
+	opts *api.DecomposerOptions, root string, trees *map[string][]string, goVersion string, sumHashes map[string][]string, //nolint:gocritic
 ) (nl *sbom.NodeList, err error) {
 	// Create the new NodeList
 	nl = sbom.NewNodeList()
@@ -414,7 +427,7 @@ func (d *Decomposer) convertTrees(
 	nl.AddRootNode(rootNode)
 
 	// Run the recursive tree converter
-	if err = d.convertTree(nl, []string{root}, trees, &map[string]struct{}{}); err != nil {
+	if err = d.convertTree(nl, []string{root}, trees, sumHashes, &map[string]struct{}{}); err != nil {
 		return nil, fmt.Errorf("error running recursive conversion: %w", err)
 	}
 
@@ -463,7 +476,7 @@ func (d *Decomposer) convertTrees(
 // The function returns the list of the components' descendants to keep recursing.
 // An empty list means the component is a leaf and no more recursion is needed.
 func (d *Decomposer) convertTree(
-	nl *sbom.NodeList, components []string, trees *map[string][]string, seen *map[string]struct{}, //nolint:gocritic
+	nl *sbom.NodeList, components []string, trees *map[string][]string, sumHashes map[string][]string, seen *map[string]struct{}, //nolint:gocritic
 ) error {
 	// Cycle all the components
 	for _, component := range components {
@@ -507,7 +520,7 @@ func (d *Decomposer) convertTree(
 					Identifiers: map[int32]string{
 						int32(sbom.SoftwareIdentifierType_PURL): goStringToPurl(subcomponent),
 					},
-					Hashes: map[int32]string{},
+					Hashes: goSumToHashes(subcomponent, sumHashes),
 					PrimaryPurpose: []sbom.Purpose{
 						sbom.Purpose_LIBRARY,
 					},
@@ -522,11 +535,32 @@ func (d *Decomposer) convertTree(
 
 		(*seen)[component] = struct{}{}
 		// Recurse to the subcomponent's children
-		if err := d.convertTree(nl, (*trees)[component], trees, seen); err != nil {
+		if err := d.convertTree(nl, (*trees)[component], trees, sumHashes, seen); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// goSumToHashes converts go.sum hash entries for a module into protobom hashes.
+// go.sum uses "h1:" prefix for SHA-256 hashes, base64-encoded.
+func goSumToHashes(modKey string, sumHashes map[string][]string) map[int32]string {
+	hashes := make(map[int32]string)
+	if sumHashes == nil {
+		return hashes
+	}
+	for _, h := range sumHashes[modKey] {
+		if !strings.HasPrefix(h, "h1:") {
+			continue
+		}
+		b64 := strings.TrimPrefix(h, "h1:")
+		decoded, err := base64.StdEncoding.DecodeString(b64)
+		if err != nil {
+			continue
+		}
+		hashes[int32(sbom.HashAlgorithm_SHA256)] = hex.EncodeToString(decoded)
+	}
+	return hashes
 }
 
 // goStringToPurl converts a graph entry to a package url
