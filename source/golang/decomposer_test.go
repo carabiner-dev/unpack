@@ -415,6 +415,25 @@ func TestGoStringToPurl(t *testing.T) {
 	}
 }
 
+func TestLicenseEnrichment(t *testing.T) {
+	t.Parallel()
+
+	d := New()
+	nl, err := d.Extract(&api.DecomposerOptions{WorkDir: "testdata/simple"})
+	require.NoError(t, err)
+
+	// github.com/google/uuid is BSD-3-Clause
+	uuidNodes := nl.GetNodesByIdentifier("purl", "pkg:golang/github.com/google/uuid@v1.3.0")
+	require.Len(t, uuidNodes, 1)
+	require.Contains(t, uuidNodes[0].GetLicenses(), "BSD-3-Clause",
+		"google/uuid should be detected as BSD-3-Clause from its LICENSE file")
+
+	// stdlib should still have BSD-3-Clause (set statically, not from proxy)
+	stdlibNodes := nl.GetNodesByIdentifier("purl", "pkg:golang/stdlib@1.21")
+	require.Len(t, stdlibNodes, 1)
+	require.Contains(t, stdlibNodes[0].GetLicenses(), "BSD-3-Clause")
+}
+
 func TestGoSumHashMatchesProxy(t *testing.T) {
 	t.Parallel()
 
