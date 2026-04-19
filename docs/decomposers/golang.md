@@ -14,10 +14,10 @@
    configurable concurrency.
 4. Converts the graph into a protobom NodeList.
 5. Enriches dependency nodes with license and source repository data
-   from the [deps.dev API](https://docs.deps.dev/api/v3/). For any
-   modules not found in deps.dev, falls back to downloading the
-   module zip from the proxy, extracting the LICENSE file, and
-   classifying it with `google/licenseclassifier/v2`.
+   from the [deps.dev API](https://docs.deps.dev/api/v3/). With
+   `NetworkFull`, also falls back to downloading module zips from the
+   proxy for any modules not found in deps.dev, extracting the LICENSE
+   file, and classifying it with `google/licenseclassifier/v2`.
 
 ## Data produced per dependency
 
@@ -65,7 +65,7 @@
 - **Proxy/API dependency.** If the Go proxy and deps.dev are both
   unreachable, the transitive graph will be incomplete and dependency
   nodes will lack license data.
-- **Zip fallback is heavier.** For modules not indexed by deps.dev,
-  the full module zip is downloaded to extract and classify the
-  LICENSE file. This is rare for public modules but adds bandwidth
-  for private or very new packages.
+- **Zip fallback is heavier.** With `NetworkFull`, for modules not
+  indexed by deps.dev, the full module zip is downloaded to extract
+  and classify the LICENSE file. This is rare for public modules but
+  adds bandwidth for private or very new packages.
