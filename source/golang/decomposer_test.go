@@ -428,6 +428,15 @@ func TestLicenseEnrichment(t *testing.T) {
 	require.Contains(t, uuidNodes[0].GetLicenses(), "BSD-3-Clause",
 		"google/uuid should be detected as BSD-3-Clause from its LICENSE file")
 
+	// Check VCS external reference from deps.dev
+	var hasVCS bool
+	for _, ref := range uuidNodes[0].GetExternalReferences() {
+		if ref.GetType() == sbom.ExternalReference_VCS && ref.GetUrl() == "https://github.com/google/uuid" {
+			hasVCS = true
+		}
+	}
+	require.True(t, hasVCS, "google/uuid should have VCS external reference from deps.dev")
+
 	// stdlib should still have BSD-3-Clause (set statically, not from proxy)
 	stdlibNodes := nl.GetNodesByIdentifier("purl", "pkg:golang/stdlib@1.21")
 	require.Len(t, stdlibNodes, 1)

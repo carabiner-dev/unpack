@@ -100,10 +100,12 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	return nl, nil
 }
 
-// enrichLicenses fetches module zips from the Go proxy, extracts LICENSE files,
-// and sets the license on dependency nodes that don't already have one.
+// enrichLicenses queries deps.dev for license and source repo data,
+// falling back to downloading module zips from the Go proxy for
+// modules not found in deps.dev. Sets licenses and VCS external
+// references on dependency nodes.
 func (d *Decomposer) enrichLicenses(nl *sbom.NodeList, rootModule string, opts *Options) {
-	// Collect dependency modules that need license enrichment
+	// Collect dependency modules that need enrichment
 	var modules []modKey
 	for _, node := range nl.GetNodes() {
 		// Skip nodes that already have licenses (e.g., stdlib)
@@ -126,16 +128,28 @@ func (d *Decomposer) enrichLicenses(nl *sbom.NodeList, rootModule string, opts *
 	}
 
 	lc := newLicenseClient(opts.ProxyURL, opts.Concurrency)
-	licenses := lc.FetchLicenses(modules)
+	results := lc.FetchLicenses(modules)
 
-	// Apply licenses to nodes
+	// Apply enrichment data to nodes
 	for _, node := range nl.GetNodes() {
 		if len(node.GetLicenses()) > 0 {
 			continue
 		}
 		key := node.GetName() + "@" + node.GetVersion()
-		if lic, ok := licenses[key]; ok {
-			node.Licenses = []string{lic}
+		lr, ok := results[key]
+		if !ok {
+			continue
+		}
+
+		if lr.License != "" {
+			node.Licenses = []string{lr.License}
+		}
+
+		if lr.SourceURL != "" {
+			node.ExternalReferences = append(node.ExternalReferences, &sbom.ExternalReference{
+				Url:  lr.SourceURL,
+				Type: sbom.ExternalReference_VCS,
+			})
 		}
 	}
 }
