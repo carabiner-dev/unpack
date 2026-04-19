@@ -14,6 +14,7 @@ import (
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/license"
 )
 
 // DependencyTree builds a complete dependency graph from npm package files.
@@ -265,7 +266,7 @@ func (dt *DependencyTree) createRootNode(pkg *LockPackage, opts *api.DecomposerO
 
 	// Add license if available
 	if dt.packageJSON.License != "" {
-		node.Licenses = []string{dt.packageJSON.License}
+		node.Licenses = []string{license.Normalize(dt.packageJSON.License, "")}
 	}
 
 	// Add homepage if available
@@ -313,7 +314,7 @@ func (dt *DependencyTree) createNode(pkg *LockPackage) *sbom.Node {
 
 	// Add license if available
 	if pkg.License != "" {
-		node.Licenses = []string{pkg.License}
+		node.Licenses = []string{license.Normalize(pkg.License, "")}
 	}
 
 	return node
