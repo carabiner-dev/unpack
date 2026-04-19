@@ -5,12 +5,17 @@ package golang
 
 import (
 	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/mod/sumdb/dirhash"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 )
@@ -91,7 +96,7 @@ func TestBuildDependencyTree(t *testing.T) {
 	modFile, err := d.parseLocalGoMod("testdata/simple/go.mod")
 	require.NoError(t, err)
 
-	trees, err := d.buildDependencyTree(modFile, "testdata/simple/go.mod", &defaultOptions)
+	trees, _, err := d.buildDependencyTree(modFile, "testdata/simple/go.mod", &defaultOptions)
 	require.NoError(t, err)
 	require.NotNil(t, trees)
 
@@ -109,7 +114,7 @@ func TestBuildDependencyTreeWithReplace(t *testing.T) {
 	modFile, err := d.parseLocalGoMod("testdata/with-replace/go.mod")
 	require.NoError(t, err)
 
-	trees, err := d.buildDependencyTree(modFile, "testdata/with-replace/go.mod", &defaultOptions)
+	trees, _, err := d.buildDependencyTree(modFile, "testdata/with-replace/go.mod", &defaultOptions)
 	require.NoError(t, err)
 	require.NotNil(t, trees)
 
@@ -240,7 +245,7 @@ func TestConvertTree(t *testing.T) {
 			},
 		})
 
-		err := d.convertTree(nl, []string{"github.com/knqyf263/go-rpmdb@v0.1.1"}, trees, &map[string]struct{}{})
+		err := d.convertTree(nl, []string{"github.com/knqyf263/go-rpmdb@v0.1.1"}, trees, nil, &map[string]struct{}{})
 		require.NoError(t, err)
 
 		// This is the list of all the entries from the expected nodes
@@ -285,12 +290,12 @@ func TestConvertTree(t *testing.T) {
 	})
 
 	t.Run("no-deps", func(t *testing.T) {
-		err := d.convertTree(sbom.NewNodeList(), []string{"invalid"}, trees, &map[string]struct{}{})
+		err := d.convertTree(sbom.NewNodeList(), []string{"invalid"}, trees, nil, &map[string]struct{}{})
 		require.Error(t, err)
 	})
 
 	t.Run("no-node", func(t *testing.T) {
-		err := d.convertTree(sbom.NewNodeList(), []string{"sigs.k8s.io/bom"}, trees, &map[string]struct{}{})
+		err := d.convertTree(sbom.NewNodeList(), []string{"sigs.k8s.io/bom"}, trees, nil, &map[string]struct{}{})
 		require.Error(t, err)
 	})
 }
@@ -328,7 +333,7 @@ func TestConvertTrees(t *testing.T) {
 	t.Run("two-branches", func(t *testing.T) {
 		t.Parallel()
 		root := "sigs.k8s.io/bom"
-		nl, err := d.convertTrees(&api.DecomposerOptions{}, root, trees, "")
+		nl, err := d.convertTrees(&api.DecomposerOptions{}, root, trees, "", nil)
 		require.NoError(t, err)
 		require.NotNil(t, nl)
 
@@ -408,4 +413,49 @@ func TestGoStringToPurl(t *testing.T) {
 			require.Equal(t, tc.want, got)
 		})
 	}
+}
+
+func TestGoSumHashMatchesProxy(t *testing.T) {
+	t.Parallel()
+
+	// Extract the dependency from testdata/simple using our decomposer
+	d := New()
+	nl, err := d.Extract(&api.DecomposerOptions{WorkDir: "testdata/simple"})
+	require.NoError(t, err)
+
+	// Find the node for github.com/google/uuid
+	nodes := nl.GetNodesByIdentifier("purl", "pkg:golang/github.com/google/uuid@v1.3.0")
+	require.Len(t, nodes, 1, "should find google/uuid node")
+	node := nodes[0]
+
+	// The node should have a hash from go.sum
+	goSumHash, ok := node.GetHashes()[int32(sbom.HashAlgorithm_SHA256)]
+	require.True(t, ok, "node should have a SHA-256 hash from go.sum")
+	require.NotEmpty(t, goSumHash)
+
+	// Download the module zip from the Go proxy
+	resp, err := http.Get("https://proxy.golang.org/github.com/google/uuid/@v/v1.3.0.zip") //nolint:noctx
+	require.NoError(t, err)
+	defer resp.Body.Close() //nolint:errcheck
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	zipData, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	// Write to temp file so dirhash.HashZip can process it
+	zipPath := filepath.Join(t.TempDir(), "uuid.zip")
+	require.NoError(t, os.WriteFile(zipPath, zipData, 0o600))
+
+	// Compute the dirhash (h1:) — the same algorithm go.sum uses
+	h1Hash, err := dirhash.HashZip(zipPath, dirhash.Hash1)
+	require.NoError(t, err)
+
+	// Convert the dirhash through our goSumToHashes to get the hex digest
+	expectedHashes := goSumToHashes("key", map[string][]string{
+		"key": {h1Hash},
+	})
+	expectedHex := expectedHashes[int32(sbom.HashAlgorithm_SHA256)]
+
+	require.Equal(t, expectedHex, goSumHash,
+		"hash on node should match dirhash computed from proxy zip")
 }
