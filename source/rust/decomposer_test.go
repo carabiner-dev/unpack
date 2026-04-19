@@ -5,6 +5,9 @@ package rust
 
 import (
 	"bufio"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/require"
 	"sigs.k8s.io/release-utils/command"
 
@@ -413,4 +417,110 @@ func TestListDependencies(t *testing.T) {
 	require.Contains(t, deps, "am-i-isolated@0.4.0")
 	require.Contains(t, deps, "anyhow@1.0.98")
 	require.Contains(t, deps, "libc@0.2.173")
+}
+
+func TestEnrich(t *testing.T) {
+	t.Parallel()
+
+	// Set up a fake crates.io API server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Respond to any /crates/{name}/{version} request
+		switch r.URL.Path {
+		case "/crates/anyhow/1.0.98":
+			_, _ = fmt.Fprint(w, `{"version":{
+				"license":"MIT OR Apache-2.0",
+				"description":"Flexible error type",
+				"homepage":"https://anyhow.rs",
+				"documentation":"https://docs.rs/anyhow",
+				"repository":"https://github.com/dtolnay/anyhow",
+				"checksum":"abc123",
+				"crate_size":42000,
+				"rust_version":"1.39",
+				"yanked":false
+			}}`)
+		case "/crates/libc/0.2.173":
+			_, _ = fmt.Fprint(w, `{"version":{
+				"license":"MIT OR Apache-2.0",
+				"description":"Raw bindings to platform APIs",
+				"homepage":"",
+				"documentation":"https://docs.rs/libc",
+				"repository":"https://github.com/rust-lang/libc",
+				"checksum":"def456",
+				"crate_size":800000,
+				"rust_version":"1.63",
+				"yanked":false
+			}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	// Parse testdata/simple
+	toml, err := ParseCargoToml("testdata/simple")
+	require.NoError(t, err)
+	lock, err := ParseCargoLock("testdata/simple")
+	require.NoError(t, err)
+
+	tree := NewDependencyTree(toml, lock)
+	nl, err := tree.Build(&api.DecomposerOptions{WorkDir: "testdata/simple"})
+	require.NoError(t, err)
+
+	// Create client pointing at fake server
+	client := NewCratesIOClient(2)
+	client.BaseURL = server.URL
+
+	// Enrich
+	tree.Enrich(client)
+
+	// Verify anyhow node got enriched
+	anyhowNodes := nl.GetNodesByIdentifier("purl", "pkg:cargo/anyhow@1.0.98")
+	require.Len(t, anyhowNodes, 1)
+	anyhow := anyhowNodes[0]
+
+	require.Contains(t, anyhow.GetLicenses(), "MIT OR Apache-2.0")
+	require.Equal(t, "Flexible error type", anyhow.GetDescription())
+	require.Equal(t, "https://anyhow.rs", anyhow.GetUrlHome())
+
+	// Check external references
+	var hasVCS, hasDocs bool
+	for _, ref := range anyhow.GetExternalReferences() {
+		if ref.GetType() == sbom.ExternalReference_VCS && ref.GetUrl() == "https://github.com/dtolnay/anyhow" {
+			hasVCS = true
+		}
+		if ref.GetType() == sbom.ExternalReference_DOCUMENTATION && ref.GetUrl() == "https://docs.rs/anyhow" {
+			hasDocs = true
+		}
+	}
+	require.True(t, hasVCS, "should have VCS external reference")
+	require.True(t, hasDocs, "should have DOCUMENTATION external reference")
+
+	// Check properties
+	var hasCrateSize, hasRustVersion bool
+	for _, prop := range anyhow.GetProperties() {
+		if prop.GetName() == "crates.io:crate_size" && prop.GetData() == "42000" {
+			hasCrateSize = true
+		}
+		if prop.GetName() == "crates.io:rust_version" && prop.GetData() == "1.39" {
+			hasRustVersion = true
+		}
+	}
+	require.True(t, hasCrateSize, "should have crate_size property")
+	require.True(t, hasRustVersion, "should have rust_version property")
+
+	// Verify libc node got enriched
+	libcNodes := nl.GetNodesByIdentifier("purl", "pkg:cargo/libc@0.2.173")
+	require.Len(t, libcNodes, 1)
+	libc := libcNodes[0]
+
+	require.Contains(t, libc.GetLicenses(), "MIT OR Apache-2.0")
+	require.Equal(t, "Raw bindings to platform APIs", libc.GetDescription())
+	// homepage is empty, so UrlHome should remain empty
+	require.Empty(t, libc.GetUrlHome())
+
+	// Root node should NOT be enriched by crates.io (it's local)
+	rootNodes := nl.GetRootNodes()
+	require.Len(t, rootNodes, 1)
+	// Root should have no description from crates.io
+	require.Empty(t, rootNodes[0].GetDescription())
 }
