@@ -122,6 +122,70 @@ func (r *Resolver) FetchAvailableVersions(groupID, artifactID string) ([]string,
 	return meta.Versions, nil
 }
 
+// artifactURL constructs the Maven repository URL for a JAR artifact.
+func (r *Resolver) artifactURL(groupID, artifactID, version string) string {
+	groupPath := strings.ReplaceAll(groupID, ".", "/")
+	return fmt.Sprintf("%s/%s/%s/%s/%s-%s.jar", r.RepoURL, groupPath, artifactID, version, artifactID, version)
+}
+
+// hashSuffix pairs a file extension with its algorithm name.
+type hashSuffix struct {
+	suffix string
+	algo   string
+}
+
+// supportedHashes lists the hash files we attempt to fetch from the repo.
+var supportedHashes = []hashSuffix{
+	{".sha1", "SHA1"},
+	{".sha256", "SHA256"},
+}
+
+// FetchAllArtifactHashes fetches SHA-1 and SHA-256 checksums for multiple
+// artifacts in parallel using the Agent's GetGroup. It returns a map keyed
+// by "groupId:artifactId:version" containing algo->digest maps.
+func (r *Resolver) FetchAllArtifactHashes(coords []Coordinate) map[string]map[string]string {
+	if len(coords) == 0 {
+		return nil
+	}
+
+	// Build the list of URLs to fetch: 2 per coordinate (sha1, sha256)
+	urls := make([]string, 0, len(coords)*len(supportedHashes))
+	for _, c := range coords {
+		base := r.artifactURL(c.GroupID, c.ArtifactID, c.Version)
+		for _, h := range supportedHashes {
+			urls = append(urls, base+h.suffix)
+		}
+	}
+
+	// Fetch all hash files in parallel
+	bodies, errs := r.Agent.GetGroup(urls)
+
+	// Parse results back into per-coordinate hash maps
+	result := make(map[string]map[string]string, len(coords))
+	for i, c := range coords {
+		hashes := make(map[string]string)
+		for j, h := range supportedHashes {
+			idx := i*len(supportedHashes) + j
+			if errs[idx] != nil || len(bodies[idx]) == 0 {
+				continue
+			}
+			digest := strings.TrimSpace(string(bodies[idx]))
+			// Some repos append the filename after the hash
+			if sp := strings.IndexByte(digest, ' '); sp > 0 {
+				digest = digest[:sp]
+			}
+			if digest != "" {
+				hashes[h.algo] = digest
+			}
+		}
+		if len(hashes) > 0 {
+			result[cacheKey(c.GroupID, c.ArtifactID, c.Version)] = hashes
+		}
+	}
+
+	return result
+}
+
 // ResolveVersionRange resolves a version range to a concrete version.
 func (r *Resolver) ResolveVersionRange(groupID, artifactID, rangeSpec string) (string, error) {
 	vr, err := ParseVersionRange(rangeSpec)

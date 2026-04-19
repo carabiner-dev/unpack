@@ -74,7 +74,10 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 		return nil, fmt.Errorf("building dependency tree: %w", err)
 	}
 
-	// 5. Convert to NodeList
+	// 5. Fetch artifact hashes in parallel
+	dt.FetchHashes()
+
+	// 6. Convert to NodeList
 	nl, err := dt.ToNodeList(opts)
 	if err != nil {
 		return nil, fmt.Errorf("converting to nodelist: %w", err)

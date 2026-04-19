@@ -20,7 +20,22 @@ type ResolvedDependency struct {
 	Scope      string
 	Optional   bool
 	Licenses   []License
+	Hashes     map[string]string // algo name -> hex digest (e.g. "SHA1" -> "abc123")
 	Depth      int
+}
+
+// hashesForNode converts the string-keyed hashes to protobom hash algorithm keys.
+func (rd *ResolvedDependency) hashesForNode() map[int32]string {
+	m := make(map[int32]string, len(rd.Hashes))
+	for algo, digest := range rd.Hashes {
+		switch algo {
+		case "SHA1":
+			m[int32(sbom.HashAlgorithm_SHA1)] = digest
+		case "SHA256":
+			m[int32(sbom.HashAlgorithm_SHA256)] = digest
+		}
+	}
+	return m
 }
 
 // DependencyTree builds the resolved dependency graph from a Maven POM.
@@ -300,6 +315,40 @@ func scopeTransitivity(parentScope, depScope string) string {
 	}
 }
 
+// FetchHashes fetches artifact checksums for all resolved dependencies
+// in parallel and stores them in the resolved dependency entries.
+func (dt *DependencyTree) FetchHashes() {
+	if dt.resolver == nil {
+		return
+	}
+
+	rootKey := dt.rootPOM.EffectiveGroupID() + ":" + dt.rootPOM.ArtifactID
+
+	// Collect coordinates of all non-root resolved dependencies
+	coords := make([]Coordinate, 0, len(dt.resolved))
+	for key, rd := range dt.resolved {
+		if key == rootKey {
+			continue
+		}
+		coords = append(coords, rd.Coordinate)
+	}
+
+	if len(coords) == 0 {
+		return
+	}
+
+	// Fetch all hashes in parallel
+	allHashes := dt.resolver.FetchAllArtifactHashes(coords)
+
+	// Store the hashes back on the resolved dependencies
+	for _, rd := range dt.resolved {
+		key := rd.Coordinate.GroupID + ":" + rd.Coordinate.ArtifactID + ":" + rd.Coordinate.Version
+		if h, ok := allHashes[key]; ok {
+			rd.Hashes = h
+		}
+	}
+}
+
 // ToNodeList converts the resolved dependency tree to a protobom NodeList.
 func (dt *DependencyTree) ToNodeList(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	nl := sbom.NewNodeList()
@@ -409,7 +458,7 @@ func (dt *DependencyTree) createDependencyNode(rd *ResolvedDependency) *sbom.Nod
 		Identifiers: map[int32]string{
 			int32(sbom.SoftwareIdentifierType_PURL): rd.Coordinate.PURL(),
 		},
-		Hashes: map[int32]string{},
+		Hashes:         rd.hashesForNode(),
 		PrimaryPurpose: []sbom.Purpose{
 			sbom.Purpose_LIBRARY,
 		},
