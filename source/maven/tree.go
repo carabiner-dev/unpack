@@ -444,8 +444,16 @@ func (dt *DependencyTree) ToNodeList(opts *api.DecomposerOptions) (*sbom.NodeLis
 		nodeMap[rd.Coordinate.String()] = node
 	}
 
-	// Create edges
-	for parentCoord, children := range dt.edges {
+	// Create edges in BFS order from root so that parent nodes are always
+	// added to the NodeList before their children (RelateNodeAtID requires
+	// the parent to already exist in the NodeList).
+	queue := []string{rootCoord.String()}
+	visited := map[string]struct{}{rootCoord.String(): {}}
+	for len(queue) > 0 {
+		parentCoord := queue[0]
+		queue = queue[1:]
+
+		children := dt.edges[parentCoord]
 		parentNode, ok := nodeMap[parentCoord]
 		if !ok {
 			continue
@@ -457,10 +465,14 @@ func (dt *DependencyTree) ToNodeList(opts *api.DecomposerOptions) (*sbom.NodeLis
 				continue
 			}
 
-			// Determine edge type based on the child's scope
 			edgeType := dt.edgeTypeForCoord(childCoord)
 			if err := nl.RelateNodeAtID(childNode, parentNode.GetId(), edgeType); err != nil {
 				return nil, fmt.Errorf("relating %s to %s: %w", childCoord, parentCoord, err)
+			}
+
+			if _, seen := visited[childCoord]; !seen {
+				visited[childCoord] = struct{}{}
+				queue = append(queue, childCoord)
 			}
 		}
 	}
