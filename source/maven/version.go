@@ -35,7 +35,7 @@ func (c *Coordinate) PURL() string {
 	}
 
 	var qualifiers []string
-	if c.Type != "" && c.Type != "jar" {
+	if c.Type != "" && c.Type != DefaultType {
 		qualifiers = append(qualifiers, "type="+c.Type)
 	}
 	if c.Classifier != "" {
@@ -62,7 +62,7 @@ func (c *Coordinate) Key() string {
 func (c *Coordinate) ArtifactFilename() string {
 	ext := c.Type
 	if ext == "" {
-		ext = "jar"
+		ext = DefaultType
 	}
 	version := c.SnapshotVersion
 	if version == "" {

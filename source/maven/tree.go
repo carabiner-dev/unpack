@@ -33,6 +33,8 @@ func (rd *ResolvedDependency) hashesForNode() map[int32]string {
 			m[int32(sbom.HashAlgorithm_SHA1)] = digest
 		case "SHA256":
 			m[int32(sbom.HashAlgorithm_SHA256)] = digest
+		case "SHA512":
+			m[int32(sbom.HashAlgorithm_SHA512)] = digest
 		}
 	}
 	return m
@@ -336,7 +338,7 @@ func (dt *DependencyTree) FetchHashes() {
 		}
 		ext := rd.Coordinate.Type
 		if ext == "" {
-			ext = "jar"
+			ext = DefaultType
 		}
 		rd.Coordinate.SnapshotVersion = dt.resolver.ResolveSnapshotVersion(
 			rd.Coordinate.GroupID, rd.Coordinate.ArtifactID,
@@ -349,8 +351,22 @@ func (dt *DependencyTree) FetchHashes() {
 		return
 	}
 
-	// Fetch all hashes in parallel
+	// Fetch all checksum file hashes in parallel
 	allHashes := dt.resolver.FetchAllArtifactHashes(coords)
+
+	// If ModernHashes is enabled, download artifacts and compute SHA-256/SHA-512
+	if dt.opts.ModernHashes {
+		computed := dt.resolver.ComputeArtifactHashes(coords)
+		for key, hashes := range computed {
+			if existing, ok := allHashes[key]; ok {
+				for algo, digest := range hashes {
+					existing[algo] = digest
+				}
+			} else {
+				allHashes[key] = hashes
+			}
+		}
+	}
 
 	// Store the hashes back on the resolved dependencies
 	for _, rd := range dt.resolved {
@@ -470,7 +486,7 @@ func (dt *DependencyTree) createDependencyNode(rd *ResolvedDependency) *sbom.Nod
 		Identifiers: map[int32]string{
 			int32(sbom.SoftwareIdentifierType_PURL): rd.Coordinate.PURL(),
 		},
-		Hashes:         rd.hashesForNode(),
+		Hashes: rd.hashesForNode(),
 		PrimaryPurpose: []sbom.Purpose{
 			sbom.Purpose_LIBRARY,
 		},

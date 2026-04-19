@@ -4,12 +4,15 @@
 package maven
 
 import (
+	"bytes"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/carabiner-dev/hasher"
 	khttp "sigs.k8s.io/release-utils/http"
 )
 
@@ -113,9 +116,9 @@ type mavenMetadata struct {
 // snapshotMetadata represents the version-level maven-metadata.xml for SNAPSHOT versions.
 // It contains the timestamp and build number needed to construct the actual artifact filename.
 type snapshotMetadata struct {
-	Timestamp   string                   `xml:"versioning>snapshot>timestamp"`
-	BuildNumber string                   `xml:"versioning>snapshot>buildNumber"`
-	Versions    []snapshotVersionEntry    `xml:"versioning>snapshotVersions>snapshotVersion"`
+	Timestamp   string                 `xml:"versioning>snapshot>timestamp"`
+	BuildNumber string                 `xml:"versioning>snapshot>buildNumber"`
+	Versions    []snapshotVersionEntry `xml:"versioning>snapshotVersions>snapshotVersion"`
 }
 
 // snapshotVersionEntry is a single entry in the snapshotVersions list.
@@ -190,7 +193,7 @@ func (r *Resolver) FetchAvailableVersions(groupID, artifactID string) ([]string,
 }
 
 // artifactURL constructs the Maven repository URL for an artifact.
-func (r *Resolver) artifactURL(coord Coordinate) string {
+func (r *Resolver) artifactURL(coord *Coordinate) string {
 	groupPath := strings.ReplaceAll(coord.GroupID, ".", "/")
 	return fmt.Sprintf("%s/%s/%s/%s/%s", r.RepoURL, groupPath, coord.ArtifactID, coord.Version, coord.ArtifactFilename())
 }
@@ -217,8 +220,8 @@ func (r *Resolver) FetchAllArtifactHashes(coords []Coordinate) map[string]map[st
 
 	// Build the list of URLs to fetch: 2 per coordinate (sha1, sha256)
 	urls := make([]string, 0, len(coords)*len(supportedHashes))
-	for _, c := range coords {
-		base := r.artifactURL(c)
+	for i := range coords {
+		base := r.artifactURL(&coords[i])
 		for _, h := range supportedHashes {
 			urls = append(urls, base+h.suffix)
 		}
@@ -244,6 +247,60 @@ func (r *Resolver) FetchAllArtifactHashes(coords []Coordinate) map[string]map[st
 			if digest != "" {
 				hashes[h.algo] = digest
 			}
+		}
+		if len(hashes) > 0 {
+			result[cacheKey(c.GroupID, c.ArtifactID, c.Version)] = hashes
+		}
+	}
+
+	return result
+}
+
+// ComputeArtifactHashes downloads artifacts in parallel and computes
+// SHA-256 and SHA-512 digests locally. It returns a map keyed by
+// "groupId:artifactId:version" containing algo->hex digest maps.
+func (r *Resolver) ComputeArtifactHashes(coords []Coordinate) map[string]map[string]string {
+	if len(coords) == 0 {
+		return nil
+	}
+
+	// Build artifact URLs
+	urls := make([]string, len(coords))
+	for i := range coords {
+		urls[i] = r.artifactURL(&coords[i])
+	}
+
+	// Download all artifacts in parallel
+	bodies, errs := r.Agent.GetGroup(urls)
+
+	// Collect downloaded bodies and their coordinates for batch hashing
+	var readers []io.Reader
+	var coordIndices []int
+	for i := range coords {
+		if errs[i] != nil || len(bodies[i]) == 0 {
+			continue
+		}
+		readers = append(readers, bytes.NewReader(bodies[i]))
+		coordIndices = append(coordIndices, i)
+	}
+
+	result := make(map[string]map[string]string, len(coords))
+	if len(readers) == 0 {
+		return result
+	}
+
+	h := hasher.New()
+	hashResults, err := h.HashReaders(readers)
+	if err != nil || hashResults == nil {
+		return result
+	}
+
+	for j, idx := range coordIndices {
+		c := coords[idx]
+		hashes := make(map[string]string, len((*hashResults)[j]))
+		for algo, digest := range (*hashResults)[j] {
+			// Store with uppercase key to match hashesForNode expectations
+			hashes[strings.ToUpper(string(algo))] = digest
 		}
 		if len(hashes) > 0 {
 			result[cacheKey(c.GroupID, c.ArtifactID, c.Version)] = hashes

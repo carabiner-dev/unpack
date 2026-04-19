@@ -83,6 +83,9 @@ const (
 	ScopeProvided = "provided"
 	ScopeSystem   = "system"
 	ScopeImport   = "import"
+
+	// DefaultType is the default Maven artifact type.
+	DefaultType = "jar"
 )
 
 // IsOptional returns true if the dependency is marked optional.
@@ -101,7 +104,7 @@ func (d *Dependency) EffectiveScope() string {
 // EffectiveType returns the dependency's type, defaulting to "jar".
 func (d *Dependency) EffectiveType() string {
 	if d.Type == "" {
-		return "jar"
+		return DefaultType
 	}
 	return d.Type
 }

@@ -30,6 +30,7 @@ type Options struct {
 	IncludeTest     bool   // Include test-scoped dependencies (default: false)
 	IncludeProvided bool   // Include provided-scoped dependencies (default: false)
 	IncludeOptional bool   // Include optional dependencies (default: false)
+	ModernHashes    bool   // Download artifacts and compute SHA-256 and SHA-512 hashes
 }
 
 var defaultOptions = Options{
