@@ -106,6 +106,11 @@ func TestDecomposerExtractLarger(t *testing.T) {
 	// Check we have many nodes (the larger project has many deps)
 	nodes := nl.GetNodes()
 	require.Greater(t, len(nodes), 50) // Should have many transitive deps
+
+	// Check that the root node has the license from Cargo.toml
+	rootNodes := nl.GetRootNodes()
+	require.Len(t, rootNodes, 1)
+	require.Contains(t, rootNodes[0].GetLicenses(), "Apache-2.0")
 }
 
 // TestCompareWithCargoTree verifies our parsing matches cargo tree output.

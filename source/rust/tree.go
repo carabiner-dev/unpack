@@ -11,6 +11,7 @@ import (
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/license"
 )
 
 // TODO(puerco): Enrich from https://crates.io/api/v1/crates/quote/1.0.35
@@ -61,6 +62,11 @@ func (dt *DependencyTree) Build(opts *api.DecomposerOptions) (*sbom.NodeList, er
 
 		// Create root node
 		rootNode := dt.createNode(root)
+
+		// Add license from Cargo.toml
+		if dt.cargoToml.Package.License != "" {
+			rootNode.Licenses = []string{license.Normalize(dt.cargoToml.Package.License, "")}
+		}
 
 		// Apply version/commit info from options
 		if opts.Version != "" {
