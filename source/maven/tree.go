@@ -327,12 +327,21 @@ func (dt *DependencyTree) FetchHashes() {
 
 	rootKey := dt.rootPOM.EffectiveGroupID() + ":" + dt.rootPOM.ArtifactID
 
-	// Collect coordinates of all non-root resolved dependencies
+	// Collect coordinates of all non-root resolved dependencies,
+	// resolving SNAPSHOT versions to their timestamped filenames.
 	coords := make([]Coordinate, 0, len(dt.resolved))
 	for key, rd := range dt.resolved {
 		if key == rootKey {
 			continue
 		}
+		ext := rd.Coordinate.Type
+		if ext == "" {
+			ext = "jar"
+		}
+		rd.Coordinate.SnapshotVersion = dt.resolver.ResolveSnapshotVersion(
+			rd.Coordinate.GroupID, rd.Coordinate.ArtifactID,
+			rd.Coordinate.Version, ext, rd.Coordinate.Classifier,
+		)
 		coords = append(coords, rd.Coordinate)
 	}
 

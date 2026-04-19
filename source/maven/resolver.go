@@ -86,9 +86,12 @@ func (r *Resolver) FetchPOM(groupID, artifactID, version string) (*POM, error) {
 }
 
 // pomURL constructs the Maven repository URL for a POM file.
+// For SNAPSHOT versions, it resolves the actual timestamped filename
+// via the version-level maven-metadata.xml.
 func (r *Resolver) pomURL(groupID, artifactID, version string) string {
 	groupPath := strings.ReplaceAll(groupID, ".", "/")
-	return fmt.Sprintf("%s/%s/%s/%s/%s-%s.pom", r.RepoURL, groupPath, artifactID, version, artifactID, version)
+	fileVersion := r.ResolveSnapshotVersion(groupID, artifactID, version, "pom", "")
+	return fmt.Sprintf("%s/%s/%s/%s/%s-%s.pom", r.RepoURL, groupPath, artifactID, version, artifactID, fileVersion)
 }
 
 // metadataURL constructs the URL for maven-metadata.xml.
@@ -97,13 +100,77 @@ func (r *Resolver) metadataURL(groupID, artifactID string) string {
 	return fmt.Sprintf("%s/%s/%s/maven-metadata.xml", r.RepoURL, groupPath, artifactID)
 }
 
-// mavenMetadata represents the structure of maven-metadata.xml.
+// mavenMetadata represents the structure of the artifact-level maven-metadata.xml
+// (lists all available versions).
 type mavenMetadata struct {
 	GroupID    string   `xml:"groupId"`
 	ArtifactID string   `xml:"artifactId"`
 	Latest     string   `xml:"versioning>latest"`
 	Release    string   `xml:"versioning>release"`
 	Versions   []string `xml:"versioning>versions>version"`
+}
+
+// snapshotMetadata represents the version-level maven-metadata.xml for SNAPSHOT versions.
+// It contains the timestamp and build number needed to construct the actual artifact filename.
+type snapshotMetadata struct {
+	Timestamp   string                   `xml:"versioning>snapshot>timestamp"`
+	BuildNumber string                   `xml:"versioning>snapshot>buildNumber"`
+	Versions    []snapshotVersionEntry    `xml:"versioning>snapshotVersions>snapshotVersion"`
+}
+
+// snapshotVersionEntry is a single entry in the snapshotVersions list.
+type snapshotVersionEntry struct {
+	Classifier string `xml:"classifier"`
+	Extension  string `xml:"extension"`
+	Value      string `xml:"value"`
+}
+
+// isSnapshot returns true if the version string ends with -SNAPSHOT.
+func isSnapshot(version string) bool {
+	return strings.HasSuffix(strings.ToUpper(version), "-SNAPSHOT")
+}
+
+// versionMetadataURL constructs the URL for the version-level maven-metadata.xml.
+func (r *Resolver) versionMetadataURL(groupID, artifactID, version string) string {
+	groupPath := strings.ReplaceAll(groupID, ".", "/")
+	return fmt.Sprintf("%s/%s/%s/%s/maven-metadata.xml", r.RepoURL, groupPath, artifactID, version)
+}
+
+// ResolveSnapshotVersion fetches the version-level maven-metadata.xml for a
+// SNAPSHOT version and returns the resolved timestamped version string
+// (e.g. "1.0-20260418.130000-2") for the given extension and classifier.
+// Returns the original version unchanged if the metadata cannot be fetched.
+func (r *Resolver) ResolveSnapshotVersion(groupID, artifactID, version, ext, classifier string) string {
+	if !isSnapshot(version) {
+		return version
+	}
+
+	url := r.versionMetadataURL(groupID, artifactID, version)
+	data, err := r.Agent.Get(url)
+	if err != nil {
+		return version
+	}
+
+	var meta snapshotMetadata
+	if err := xml.Unmarshal(data, &meta); err != nil {
+		return version
+	}
+
+	// Try to find a matching snapshotVersion entry
+	for _, sv := range meta.Versions {
+		if sv.Extension == ext && sv.Classifier == classifier {
+			return sv.Value
+		}
+	}
+
+	// Fallback: construct from timestamp and build number
+	if meta.Timestamp != "" && meta.BuildNumber != "" {
+		base := strings.TrimSuffix(version, "-SNAPSHOT")
+		base = strings.TrimSuffix(base, "-snapshot")
+		return fmt.Sprintf("%s-%s-%s", base, meta.Timestamp, meta.BuildNumber)
+	}
+
+	return version
 }
 
 // FetchAvailableVersions fetches maven-metadata.xml and returns all versions.

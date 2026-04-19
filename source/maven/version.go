@@ -12,12 +12,13 @@ import (
 
 // Coordinate uniquely identifies a Maven artifact.
 type Coordinate struct {
-	GroupID    string
-	ArtifactID string
-	Version    string
-	Classifier string
-	Type       string
-	RepoURL    string // non-empty only when different from Maven Central
+	GroupID         string
+	ArtifactID      string
+	Version         string
+	Classifier      string
+	Type            string
+	RepoURL         string // non-empty only when different from Maven Central
+	SnapshotVersion string // resolved timestamped version for SNAPSHOTs (e.g. "1.0-20260418.130000-2")
 }
 
 // String returns "groupId:artifactId:version".
@@ -56,15 +57,21 @@ func (c *Coordinate) Key() string {
 
 // ArtifactFilename returns the Maven artifact filename following the convention:
 // {artifactId}-{version}[-{classifier}].{type}
+// For SNAPSHOT artifacts with a resolved timestamped version, it uses the
+// snapshot version (e.g. "1.0-20260418.130000-2") instead of "1.0-SNAPSHOT".
 func (c *Coordinate) ArtifactFilename() string {
 	ext := c.Type
 	if ext == "" {
 		ext = "jar"
 	}
-	if c.Classifier != "" {
-		return fmt.Sprintf("%s-%s-%s.%s", c.ArtifactID, c.Version, c.Classifier, ext)
+	version := c.SnapshotVersion
+	if version == "" {
+		version = c.Version
 	}
-	return fmt.Sprintf("%s-%s.%s", c.ArtifactID, c.Version, ext)
+	if c.Classifier != "" {
+		return fmt.Sprintf("%s-%s-%s.%s", c.ArtifactID, version, c.Classifier, ext)
+	}
+	return fmt.Sprintf("%s-%s.%s", c.ArtifactID, version, ext)
 }
 
 // qualifierRank returns the ordering rank for known Maven qualifiers.
