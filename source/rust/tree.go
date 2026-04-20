@@ -21,6 +21,7 @@ import (
 type DependencyTree struct {
 	cargoToml *CargoToml
 	cargoLock *CargoLock
+	opts      *Options
 
 	// Indexes for quick lookup
 	pkgByKey  map[PackageKey]*LockPackage
@@ -34,12 +35,13 @@ type DependencyTree struct {
 }
 
 // NewDependencyTree creates a new dependency tree from parsed Cargo files.
-func NewDependencyTree(toml *CargoToml, lock *CargoLock) *DependencyTree {
+func NewDependencyTree(toml *CargoToml, lock *CargoLock, opts *Options) *DependencyTree {
 	pkgByKey, pkgByName := lock.BuildPackageIndex()
 
 	return &DependencyTree{
 		cargoToml:  toml,
 		cargoLock:  lock,
+		opts:       opts,
 		pkgByKey:   pkgByKey,
 		pkgByName:  pkgByName,
 		directDeps: toml.GetDirectDependencies(),
@@ -124,8 +126,14 @@ func (dt *DependencyTree) buildSubtree(nl *sbom.NodeList, pkg *LockPackage, pare
 			dt.nodeCache[depKey] = depNode
 		}
 
-		// Determine the edge type based on how we reached this dependency
+		// Determine the edge type and filter based on options
 		edgeType := dt.determineEdgeType(pkg, depPkg)
+		if edgeType == sbom.Edge_devDependency && !dt.opts.IncludeDevDependencies {
+			continue
+		}
+		if edgeType == sbom.Edge_buildDependency && !dt.opts.IncludeBuildDependencies {
+			continue
+		}
 
 		// Relate the dependency to its parent
 		if err := nl.RelateNodeAtID(depNode, parentNode.GetId(), edgeType); err != nil {
