@@ -72,6 +72,15 @@ type Options struct {
 	// Defaults to NetworkEssential.
 	Networking api.NetworkLevel
 
+	// IncludeDev includes development/test dependencies.
+	IncludeDev bool
+
+	// IncludeBuild includes build tool dependencies.
+	IncludeBuild bool
+
+	// IncludeOptional includes optional dependencies.
+	IncludeOptional bool
+
 	logger *slog.Logger
 }
 
