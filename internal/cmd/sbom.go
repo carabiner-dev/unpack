@@ -18,10 +18,13 @@ import (
 )
 
 type sbomOptions struct {
-	Path   string
-	Format string
-	Attest bool
-	Sign   bool
+	Path            string
+	Format          string
+	Attest          bool
+	Sign            bool
+	IncludeDev      bool
+	IncludeBuild    bool
+	IncludeOptional bool
 }
 
 // Validates the options in context with arguments
@@ -64,6 +67,18 @@ func (ro *sbomOptions) AddFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().BoolVar(
 		&ro.Sign, "sign", false, "sign the attestation into a sigstore bundle (implies --attest)",
 	)
+
+	cmd.PersistentFlags().BoolVar(
+		&ro.IncludeDev, "include-dev", true, "include development/test dependencies (default: true for SBOM reading)",
+	)
+
+	cmd.PersistentFlags().BoolVar(
+		&ro.IncludeBuild, "include-build", true, "include build tool dependencies (default: true for SBOM reading)",
+	)
+
+	cmd.PersistentFlags().BoolVar(
+		&ro.IncludeOptional, "include-optional", true, "include optional dependencies (default: true for SBOM reading)",
+	)
 }
 
 func addSBOM(parent *cobra.Command) {
@@ -102,6 +117,9 @@ Unpack sbom takes an SBOM document and returns dependency data from its contents
 			if nodelist == nil {
 				return errors.New("no dependency data found")
 			}
+
+			// Filter out excluded dependency types
+			filterNodeListByEdgeType(nodelist, opts)
 
 			var format formats.Format
 
