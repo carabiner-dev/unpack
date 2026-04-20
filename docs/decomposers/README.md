@@ -53,6 +53,39 @@ decomposers uniformly.
 | **Rust:** local parsing (Cargo.toml/lock) | works | works | works |
 | **Rust:** crates.io API (enrichment) | skip | yes | yes |
 
+## Dependency inclusion flags
+
+By default, only production/compile dependencies are included in the
+output. Three flags control the inclusion of additional dependency types:
+
+| Flag | CLI | Default | Description |
+|------|-----|---------|-------------|
+| `IncludeDev` | `--include-dev` | `false` | Include development and test dependencies |
+| `IncludeBuild` | `--include-build` | `false` | Include build tool dependencies |
+| `IncludeOptional` | `--include-optional` | `false` | Include optional dependencies |
+
+### Per-decomposer mapping
+
+| Flag | Go | Maven | npm | Rust |
+|------|-------|-------|-----|------|
+| `--include-dev` | _(no-op)_ | test-scoped deps | `devDependencies` | `[dev-dependencies]` |
+| `--include-build` | _(no-op)_ | `<build><plugins>` | _(no-op)_ | `[build-dependencies]` |
+| `--include-optional` | _(no-op)_ | `<optional>true</optional>` | `optionalDependencies` | _(no-op)_ |
+
+**Notes:**
+
+- Go modules do not distinguish dependency types in `go.mod`, so all
+  three flags are no-ops for the Go decomposer.
+- Maven's scope transitivity rules still apply: a test-scoped dependency
+  declared by one of your compile-scoped dependencies will never be
+  included, even with `--include-dev`. The flag only affects dependencies
+  declared directly in your own POM (or resolved at the current project
+  level).
+- npm's `peerDependencies` are not covered by these flags and remain
+  a decomposer-specific option (`IncludePeerDependencies`).
+- Maven's `provided` scope is not covered by these flags and remains
+  a decomposer-specific option (`IncludeProvided`).
+
 ## Per-decomposer docs
 
 See the individual pages linked in the table above for implementation

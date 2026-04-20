@@ -45,6 +45,13 @@
 | `HTTPClient` | `*http.Client` | _(default)_ | Custom HTTP client (for testing) |
 | `Concurrency` | `int` | `10` | Parallel proxy/deps.dev requests |
 
+## Dependency types
+
+Go modules do not distinguish between production, dev, build, or optional
+dependencies in `go.mod`. All three common flags (`--include-dev`,
+`--include-build`, `--include-optional`) are no-ops for the Go decomposer.
+All declared dependencies are always included.
+
 ## Strengths
 
 - No external tooling needed -- does not shell out to `go`.
