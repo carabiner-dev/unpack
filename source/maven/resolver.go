@@ -59,8 +59,14 @@ func cacheKey(groupID, artifactID, version string) string {
 	return groupID + ":" + artifactID + ":" + version
 }
 
-// FetchPOM fetches a POM from the repository, parses it, and caches the result.
+// FetchPOM fetches a POM from the resolver's configured repository.
 func (r *Resolver) FetchPOM(groupID, artifactID, version string) (*POM, error) {
+	return r.FetchPOMFrom(groupID, artifactID, version, "")
+}
+
+// FetchPOMFrom fetches a POM from an explicit repository URL, falling back
+// to the resolver's configured RepoURL when repoURL is empty.
+func (r *Resolver) FetchPOMFrom(groupID, artifactID, version, repoURL string) (*POM, error) {
 	key := cacheKey(groupID, artifactID, version)
 
 	r.mu.RLock()
@@ -70,7 +76,7 @@ func (r *Resolver) FetchPOM(groupID, artifactID, version string) (*POM, error) {
 	}
 	r.mu.RUnlock()
 
-	url := r.pomURL(groupID, artifactID, version)
+	url := r.pomURLFrom(groupID, artifactID, version, repoURL)
 	data, err := r.Agent.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("fetching POM %s: %w", key, err)
@@ -88,13 +94,28 @@ func (r *Resolver) FetchPOM(groupID, artifactID, version string) (*POM, error) {
 	return pom, nil
 }
 
-// pomURL constructs the Maven repository URL for a POM file.
-// For SNAPSHOT versions, it resolves the actual timestamped filename
-// via the version-level maven-metadata.xml.
+// effectiveRepoURL returns override when non-empty (trimmed), else r.RepoURL.
+func (r *Resolver) effectiveRepoURL(override string) string {
+	if override != "" {
+		return strings.TrimRight(override, "/")
+	}
+	return r.RepoURL
+}
+
+// pomURL constructs the Maven repository URL for a POM file using the
+// resolver's configured repository.
 func (r *Resolver) pomURL(groupID, artifactID, version string) string {
+	return r.pomURLFrom(groupID, artifactID, version, "")
+}
+
+// pomURLFrom constructs the POM URL against an explicit repository URL
+// (falling back to the resolver's) and resolves SNAPSHOT filenames against
+// that same repository.
+func (r *Resolver) pomURLFrom(groupID, artifactID, version, repoURL string) string {
 	groupPath := strings.ReplaceAll(groupID, ".", "/")
-	fileVersion := r.ResolveSnapshotVersion(groupID, artifactID, version, "pom", "")
-	return fmt.Sprintf("%s/%s/%s/%s/%s-%s.pom", r.RepoURL, groupPath, artifactID, version, artifactID, fileVersion)
+	base := r.effectiveRepoURL(repoURL)
+	fileVersion := r.ResolveSnapshotVersionFrom(groupID, artifactID, version, "pom", "", repoURL)
+	return fmt.Sprintf("%s/%s/%s/%s/%s-%s.pom", base, groupPath, artifactID, version, artifactID, fileVersion)
 }
 
 // metadataURL constructs the URL for maven-metadata.xml.
@@ -133,22 +154,31 @@ func isSnapshot(version string) bool {
 	return strings.HasSuffix(strings.ToUpper(version), "-SNAPSHOT")
 }
 
-// versionMetadataURL constructs the URL for the version-level maven-metadata.xml.
-func (r *Resolver) versionMetadataURL(groupID, artifactID, version string) string {
+// versionMetadataURLFrom constructs the version-level maven-metadata.xml URL
+// against an explicit repository URL (falling back to the resolver's).
+func (r *Resolver) versionMetadataURLFrom(groupID, artifactID, version, repoURL string) string {
 	groupPath := strings.ReplaceAll(groupID, ".", "/")
-	return fmt.Sprintf("%s/%s/%s/%s/maven-metadata.xml", r.RepoURL, groupPath, artifactID, version)
+	base := r.effectiveRepoURL(repoURL)
+	return fmt.Sprintf("%s/%s/%s/%s/maven-metadata.xml", base, groupPath, artifactID, version)
 }
 
-// ResolveSnapshotVersion fetches the version-level maven-metadata.xml for a
-// SNAPSHOT version and returns the resolved timestamped version string
+// ResolveSnapshotVersion resolves a SNAPSHOT version against the resolver's
+// configured repository. See ResolveSnapshotVersionFrom for details.
+func (r *Resolver) ResolveSnapshotVersion(groupID, artifactID, version, ext, classifier string) string {
+	return r.ResolveSnapshotVersionFrom(groupID, artifactID, version, ext, classifier, "")
+}
+
+// ResolveSnapshotVersionFrom fetches the version-level maven-metadata.xml for a
+// SNAPSHOT version from an explicit repository URL (or the resolver's default
+// when empty) and returns the resolved timestamped version string
 // (e.g. "1.0-20260418.130000-2") for the given extension and classifier.
 // Returns the original version unchanged if the metadata cannot be fetched.
-func (r *Resolver) ResolveSnapshotVersion(groupID, artifactID, version, ext, classifier string) string {
+func (r *Resolver) ResolveSnapshotVersionFrom(groupID, artifactID, version, ext, classifier, repoURL string) string {
 	if !isSnapshot(version) {
 		return version
 	}
 
-	url := r.versionMetadataURL(groupID, artifactID, version)
+	url := r.versionMetadataURLFrom(groupID, artifactID, version, repoURL)
 	data, err := r.Agent.Get(url)
 	if err != nil {
 		return version
@@ -193,9 +223,12 @@ func (r *Resolver) FetchAvailableVersions(groupID, artifactID string) ([]string,
 }
 
 // artifactURL constructs the Maven repository URL for an artifact.
+// Uses the coordinate's RepoURL when set (e.g. a SNAPSHOT hosted in a
+// project-declared repository), otherwise falls back to the resolver's.
 func (r *Resolver) artifactURL(coord *Coordinate) string {
 	groupPath := strings.ReplaceAll(coord.GroupID, ".", "/")
-	return fmt.Sprintf("%s/%s/%s/%s/%s", r.RepoURL, groupPath, coord.ArtifactID, coord.Version, coord.ArtifactFilename())
+	base := r.effectiveRepoURL(coord.RepoURL)
+	return fmt.Sprintf("%s/%s/%s/%s/%s", base, groupPath, coord.ArtifactID, coord.Version, coord.ArtifactFilename())
 }
 
 // hashSuffix pairs a file extension with its algorithm name.
