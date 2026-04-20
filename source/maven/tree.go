@@ -250,6 +250,65 @@ func (dt *DependencyTree) Build() error {
 	return nil
 }
 
+// AddBuildPlugins adds build plugins from the POM as build dependencies
+// of the root node. Plugins without a version are skipped (they're inherited
+// from a parent but we can't resolve them without the version).
+func (dt *DependencyTree) AddBuildPlugins() {
+	if dt.rootPOM.Build == nil {
+		return
+	}
+
+	rootCoord := Coordinate{
+		GroupID:    dt.rootPOM.EffectiveGroupID(),
+		ArtifactID: dt.rootPOM.ArtifactID,
+		Version:    dt.rootPOM.EffectiveVersion(),
+	}
+
+	for _, plugin := range dt.rootPOM.Build.GetAllPlugins() {
+		if plugin.Version == "" {
+			continue // can't resolve without a version
+		}
+
+		groupID := plugin.EffectiveGroupID()
+		key := groupID + ":" + plugin.ArtifactID
+
+		// Skip if already resolved as a regular dependency
+		if _, exists := dt.resolved[key]; exists {
+			continue
+		}
+
+		coord := Coordinate{
+			GroupID:    groupID,
+			ArtifactID: plugin.ArtifactID,
+			Version:    plugin.Version,
+			Type:       DefaultType,
+			RepoURL:    dt.nonDefaultRepoURL(),
+		}
+
+		// Fetch license info if resolver is available
+		var licenses []License
+		if dt.resolver != nil {
+			depPOM, err := dt.resolver.FetchPOM(groupID, plugin.ArtifactID, plugin.Version)
+			if err == nil {
+				effective, err := dt.resolver.ResolveEffectivePOM(depPOM)
+				if err == nil {
+					depPOM = effective
+				}
+				licenses = depPOM.Licenses
+			}
+		}
+
+		dt.resolved[key] = &ResolvedDependency{
+			Coordinate: coord,
+			Scope:      "build",
+			Licenses:   licenses,
+			Depth:      1,
+		}
+
+		dt.edges[rootCoord.String()] = append(dt.edges[rootCoord.String()], coord.String())
+	}
+}
+
 // applyManagement applies dependencyManagement overrides to a dependency.
 func (dt *DependencyTree) applyManagement(dep Dependency) Dependency { //nolint:gocritic // returns modified copy
 	managed, ok := dt.managed[dep.Key()]
@@ -561,6 +620,8 @@ func (dt *DependencyTree) edgeTypeForCoord(coordStr string) sbom.Edge_Type {
 			switch rd.Scope {
 			case ScopeTest:
 				return sbom.Edge_devDependency
+			case "build":
+				return sbom.Edge_buildDependency
 			default:
 				return sbom.Edge_dependsOn
 			}

@@ -44,6 +44,17 @@ func InterpolatePOM(pom *POM) *POM {
 		pom.Licenses[i].URL = interpolateString(pom.Licenses[i].URL, props)
 	}
 
+	if pom.Build != nil {
+		for i := range pom.Build.Plugins {
+			interpolatePlugin(&pom.Build.Plugins[i], props)
+		}
+		if pom.Build.PluginManagement != nil {
+			for i := range pom.Build.PluginManagement.Plugins {
+				interpolatePlugin(&pom.Build.PluginManagement.Plugins[i], props)
+			}
+		}
+	}
+
 	return pom
 }
 
@@ -56,6 +67,16 @@ func interpolateDependency(dep *Dependency, props map[string]string) {
 	dep.Type = interpolateString(dep.Type, props)
 	dep.Classifier = interpolateString(dep.Classifier, props)
 	dep.Optional = interpolateString(dep.Optional, props)
+}
+
+// interpolatePlugin resolves property placeholders in a Plugin.
+func interpolatePlugin(plugin *Plugin, props map[string]string) {
+	plugin.GroupID = interpolateString(plugin.GroupID, props)
+	plugin.ArtifactID = interpolateString(plugin.ArtifactID, props)
+	plugin.Version = interpolateString(plugin.Version, props)
+	for i := range plugin.Dependencies {
+		interpolateDependency(&plugin.Dependencies[i], props)
+	}
 }
 
 // interpolateString replaces ${property.name} tokens in s using the given properties.
