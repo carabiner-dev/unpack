@@ -269,6 +269,49 @@ func TestToNodeListEdgeTypes(t *testing.T) {
 	require.Len(t, nl.GetNodes(), 3)
 }
 
+func TestAddBuildPlugins(t *testing.T) {
+	t.Parallel()
+	pom := &POM{
+		GroupID:    "com.example",
+		ArtifactID: "app",
+		Version:    "1.0.0",
+		Dependencies: []Dependency{
+			{GroupID: "com.dep", ArtifactID: "main-dep", Version: "1.0"},
+		},
+		Build: &Build{
+			Plugins: []Plugin{
+				{GroupID: "org.apache.maven.plugins", ArtifactID: "maven-compiler-plugin", Version: "3.11.0"},
+				{ArtifactID: "maven-shade-plugin", Version: "3.5.1"}, // no groupId, should default
+				{ArtifactID: "maven-surefire-plugin"},                // no version, should be skipped
+			},
+		},
+	}
+
+	opts := Options{IncludeBuild: true}
+	dt := NewDependencyTree(pom, nil, &opts)
+	err := dt.Build()
+	require.NoError(t, err)
+
+	dt.AddBuildPlugins()
+
+	nl, err := dt.ToNodeList(nil)
+	require.NoError(t, err)
+
+	// root + 1 dep + 2 plugins (surefire skipped: no version)
+	require.Len(t, nl.GetNodes(), 4)
+
+	// Check that plugins are present
+	var pluginNames []string
+	for _, node := range nl.GetNodes() {
+		if node.GetName() == "maven-compiler-plugin" || node.GetName() == "maven-shade-plugin" {
+			pluginNames = append(pluginNames, node.GetName())
+		}
+	}
+	require.Len(t, pluginNames, 2)
+	require.Contains(t, pluginNames, "maven-compiler-plugin")
+	require.Contains(t, pluginNames, "maven-shade-plugin")
+}
+
 func TestRepoURLForDep(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

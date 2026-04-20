@@ -30,6 +30,7 @@ type Options struct {
 	IncludeTest     bool   // Include test-scoped dependencies (default: false)
 	IncludeProvided bool   // Include provided-scoped dependencies (default: false)
 	IncludeOptional bool   // Include optional dependencies (default: false)
+	IncludeBuild    bool   // Include build plugins as build dependencies (default: false)
 }
 
 var defaultOptions = Options{
@@ -83,12 +84,17 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 		}
 	}
 
-	// 5. Fetch artifact hashes (essential: checksum files; full: download+compute)
+	// 5. Add build plugins if requested
+	if dOpts.IncludeBuild {
+		dt.AddBuildPlugins()
+	}
+
+	// 6. Fetch artifact hashes (essential: checksum files; full: download+compute)
 	if opts.Networking >= api.NetworkEssential {
 		dt.FetchHashes(opts.Networking >= api.NetworkFull)
 	}
 
-	// 6. Convert to NodeList
+	// 7. Convert to NodeList
 	nl, err := dt.ToNodeList(opts)
 	if err != nil {
 		return nil, fmt.Errorf("converting to nodelist: %w", err)

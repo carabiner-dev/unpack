@@ -31,6 +31,7 @@ type POM struct {
 	Properties           Properties            `xml:"properties"`
 	DependencyManagement *DependencyManagement `xml:"dependencyManagement"`
 	Dependencies         []Dependency          `xml:"dependencies>dependency"`
+	Build                *Build                `xml:"build"`
 	Modules              []string              `xml:"modules>module"`
 	Repositories         []Repository          `xml:"repositories>repository"`
 }
@@ -172,6 +173,67 @@ func (r Repository) ReleasesEnabled() bool {
 // RepositoryPolicy controls whether a repository serves releases or snapshots.
 type RepositoryPolicy struct {
 	Enabled string `xml:"enabled"`
+}
+
+// Build represents the <build> section of a POM.
+type Build struct {
+	Plugins          []Plugin          `xml:"plugins>plugin"`
+	PluginManagement *PluginManagement `xml:"pluginManagement"`
+}
+
+// PluginManagement holds managed plugin versions.
+type PluginManagement struct {
+	Plugins []Plugin `xml:"plugins>plugin"`
+}
+
+// Plugin represents a Maven build plugin.
+type Plugin struct {
+	GroupID      string       `xml:"groupId"`
+	ArtifactID   string       `xml:"artifactId"`
+	Version      string       `xml:"version"`
+	Dependencies []Dependency `xml:"dependencies>dependency"`
+}
+
+// EffectiveGroupID returns the plugin's groupId, defaulting to
+// "org.apache.maven.plugins" per Maven convention.
+func (p *Plugin) EffectiveGroupID() string {
+	if p.GroupID != "" {
+		return p.GroupID
+	}
+	return "org.apache.maven.plugins"
+}
+
+// GetAllPlugins returns all plugins from both <plugins> and
+// <pluginManagement>, deduplicated by groupId:artifactId.
+func (b *Build) GetAllPlugins() []Plugin {
+	if b == nil {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	var result []Plugin
+
+	// Direct plugins first (take precedence)
+	for _, p := range b.Plugins {
+		key := p.EffectiveGroupID() + ":" + p.ArtifactID
+		if _, ok := seen[key]; !ok {
+			seen[key] = struct{}{}
+			result = append(result, p)
+		}
+	}
+
+	// Then managed plugins not already seen
+	if b.PluginManagement != nil {
+		for _, p := range b.PluginManagement.Plugins {
+			key := p.EffectiveGroupID() + ":" + p.ArtifactID
+			if _, ok := seen[key]; !ok {
+				seen[key] = struct{}{}
+				result = append(result, p)
+			}
+		}
+	}
+
+	return result
 }
 
 // Properties is a map of Maven property key-value pairs.
