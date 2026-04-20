@@ -268,3 +268,126 @@ func TestToNodeListEdgeTypes(t *testing.T) {
 	// Should have 3 nodes: root + 2 deps
 	require.Len(t, nl.GetNodes(), 3)
 }
+
+func TestRepoURLForDep(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		repos   []Repository
+		version string
+		want    string
+	}{
+		{
+			"release version no repos",
+			nil,
+			"1.0.0",
+			"",
+		},
+		{
+			"snapshot version no repos",
+			nil,
+			"1.0-SNAPSHOT",
+			"",
+		},
+		{
+			"snapshot version with snapshot repo",
+			[]Repository{{
+				ID:        "snapshots",
+				URL:       "https://repo.example.com/snapshots",
+				Snapshots: &RepositoryPolicy{Enabled: "true"},
+			}},
+			"1.0-SNAPSHOT",
+			"https://repo.example.com/snapshots",
+		},
+		{
+			"snapshot version with trailing slash",
+			[]Repository{{
+				ID:        "snapshots",
+				URL:       "https://repo.example.com/snapshots/",
+				Snapshots: &RepositoryPolicy{Enabled: "true"},
+			}},
+			"1.0-SNAPSHOT",
+			"https://repo.example.com/snapshots",
+		},
+		{
+			"release version with snapshot repo",
+			[]Repository{{
+				ID:        "snapshots",
+				URL:       "https://repo.example.com/snapshots",
+				Snapshots: &RepositoryPolicy{Enabled: "true"},
+				Releases:  &RepositoryPolicy{Enabled: "false"},
+			}},
+			"1.0.0",
+			"",
+		},
+		{
+			"snapshot version with snapshots disabled",
+			[]Repository{{
+				ID:        "releases-only",
+				URL:       "https://repo.example.com/releases",
+				Snapshots: &RepositoryPolicy{Enabled: "false"},
+			}},
+			"1.0-SNAPSHOT",
+			"",
+		},
+		{
+			"snapshot version with maven central repo",
+			[]Repository{{
+				ID:        "central",
+				URL:       "https://repo1.maven.org/maven2",
+				Snapshots: &RepositoryPolicy{Enabled: "true"},
+			}},
+			"1.0-SNAPSHOT",
+			"",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			pom := &POM{
+				GroupID:      "com.example",
+				ArtifactID:   "app",
+				Version:      "1.0.0",
+				Repositories: tc.repos,
+			}
+			dt := NewDependencyTree(pom, nil, &defaultOptions)
+			got := dt.repoURLForDep(tc.version)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestBuildTreeSnapshotRepoURL(t *testing.T) {
+	t.Parallel()
+	pom := &POM{
+		GroupID:    "com.example",
+		ArtifactID: "app",
+		Version:    "1.0.0",
+		Repositories: []Repository{{
+			ID:        "apache-snapshots",
+			Name:      "Apache Snapshots",
+			URL:       "https://repository.apache.org/content/repositories/snapshots/",
+			Snapshots: &RepositoryPolicy{Enabled: "true"},
+			Releases:  &RepositoryPolicy{Enabled: "false"},
+		}},
+		Dependencies: []Dependency{
+			{GroupID: "org.apache.commons", ArtifactID: "commons-lang3", Version: "3.21.0-SNAPSHOT"},
+			{GroupID: "org.apache.commons", ArtifactID: "commons-text", Version: "1.13.0"},
+		},
+	}
+
+	dt := NewDependencyTree(pom, nil, &defaultOptions)
+	err := dt.Build()
+	require.NoError(t, err)
+
+	// SNAPSHOT dep should have the repo URL
+	snapshotDep := dt.resolved["org.apache.commons:commons-lang3"]
+	require.NotNil(t, snapshotDep)
+	require.Equal(t, "https://repository.apache.org/content/repositories/snapshots", snapshotDep.Coordinate.RepoURL)
+	require.Contains(t, snapshotDep.Coordinate.PURL(), "repository_url=https://repository.apache.org/content/repositories/snapshots")
+
+	// Release dep should NOT have a repo URL
+	releaseDep := dt.resolved["org.apache.commons:commons-text"]
+	require.NotNil(t, releaseDep)
+	require.Empty(t, releaseDep.Coordinate.RepoURL)
+	require.NotContains(t, releaseDep.Coordinate.PURL(), "repository_url")
+}
