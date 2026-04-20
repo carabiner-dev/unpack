@@ -40,6 +40,18 @@ type DecomposerOptions struct {
 	// Defaults to NetworkEssential.
 	Networking NetworkLevel
 
+	// IncludeDev includes development/test dependencies in the output.
+	// Maps to: Maven test scope, npm devDependencies, Rust dev-dependencies.
+	IncludeDev bool
+
+	// IncludeBuild includes build tool dependencies in the output.
+	// Maps to: Maven build plugins, Rust build-dependencies.
+	IncludeBuild bool
+
+	// IncludeOptional includes optional dependencies in the output.
+	// Maps to: Maven optional deps, npm optionalDependencies.
+	IncludeOptional bool
+
 	driverOptions map[string]any
 }
 

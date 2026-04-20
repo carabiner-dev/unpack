@@ -105,10 +105,13 @@ func (di *defaultImplementation) ExtractCodeBases(
 			}
 
 			nl, err := d.Extract(&api.DecomposerOptions{
-				WorkDir:    cbPath,
-				Version:    ver,
-				CommitHash: hashHex,
-				Networking: opts.Networking,
+				WorkDir:         cbPath,
+				Version:         ver,
+				CommitHash:      hashHex,
+				Networking:      opts.Networking,
+				IncludeDev:      opts.IncludeDev,
+				IncludeBuild:    opts.IncludeBuild,
+				IncludeOptional: opts.IncludeOptional,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("from %q with %T: %w", cbPath, d, err)

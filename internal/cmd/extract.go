@@ -40,6 +40,9 @@ type extractOptions struct {
 	Sign                 bool
 	IgnoreExtraCodebases bool
 	MultipleOutputs      bool
+	IncludeDev           bool
+	IncludeBuild         bool
+	IncludeOptional      bool
 	Codebase             string
 	OutputPath           string
 	OutputPrefix         string
@@ -96,6 +99,18 @@ func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(
 		&ro.Networking, "networking", "essential",
 		"network access level: essential (default), full, or disabled",
+	)
+
+	cmd.PersistentFlags().BoolVar(
+		&ro.IncludeDev, "include-dev", false, "include development/test dependencies",
+	)
+
+	cmd.PersistentFlags().BoolVar(
+		&ro.IncludeBuild, "include-build", false, "include build tool dependencies",
+	)
+
+	cmd.PersistentFlags().BoolVar(
+		&ro.IncludeOptional, "include-optional", false, "include optional dependencies",
 	)
 
 	cmd.PersistentFlags().BoolVar(
@@ -207,6 +222,11 @@ to the current directory.
 
 			// Filter to a specific codebase if provided
 			unpacker.Options.CodebaseFilter = opts.Codebase
+
+			// Set dependency inclusion options
+			unpacker.Options.IncludeDev = opts.IncludeDev
+			unpacker.Options.IncludeBuild = opts.IncludeBuild
+			unpacker.Options.IncludeOptional = opts.IncludeOptional
 
 			// Set networking level
 			switch opts.Networking {

@@ -376,7 +376,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 	d := New()
 	opts := &api.DecomposerOptions{
-		WorkDir: tmpDir,
+		WorkDir:      tmpDir,
+		IncludeDev:   true,
+		IncludeBuild: true,
 	}
 
 	nl, err := d.Extract(opts)
@@ -391,6 +393,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 	// We can verify by checking that nodes are properly connected
 	roots := nl.GetRootElements()
 	require.Len(t, roots, 1)
+
+	// Without dev/build, only the normal dep should be included
+	optsNoDevBuild := &api.DecomposerOptions{
+		WorkDir: tmpDir,
+	}
+	nl2, err := d.Extract(optsNoDevBuild)
+	require.NoError(t, err)
+	require.Len(t, nl2.GetNodes(), 2) // root + normal-dep only
 }
 
 // TestListDependencies tests the helper function for debugging.
@@ -403,7 +413,7 @@ func TestListDependencies(t *testing.T) {
 	lock, err := ParseCargoLock("testdata/simple")
 	require.NoError(t, err)
 
-	tree := NewDependencyTree(toml, lock)
+	tree := NewDependencyTree(toml, lock, &Options{})
 	deps := tree.ListDependencies()
 
 	// Should be sorted
@@ -441,7 +451,7 @@ func TestEnrich(t *testing.T) {
 	lock, err := ParseCargoLock("testdata/simple")
 	require.NoError(t, err)
 
-	tree := NewDependencyTree(toml, lock)
+	tree := NewDependencyTree(toml, lock, &Options{})
 	nl, err := tree.Build(&api.DecomposerOptions{WorkDir: "testdata/simple"})
 	require.NoError(t, err)
 

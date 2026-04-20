@@ -66,11 +66,17 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 		return nil, fmt.Errorf("parsing Cargo.lock: %w", err)
 	}
 
-	// Get decomposer-specific options
+	// Get decomposer-specific options and apply common flags
 	dOpts := d.getOptions(opts)
+	if opts.IncludeDev {
+		dOpts.IncludeDevDependencies = true
+	}
+	if opts.IncludeBuild {
+		dOpts.IncludeBuildDependencies = true
+	}
 
 	// Build the dependency tree
-	tree := NewDependencyTree(cargoToml, cargoLock)
+	tree := NewDependencyTree(cargoToml, cargoLock, dOpts)
 
 	// Build the protobom NodeList
 	nl, err := tree.Build(opts)

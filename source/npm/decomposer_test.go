@@ -248,7 +248,9 @@ func TestDecomposerExtract(t *testing.T) {
 
 			d := New()
 			opts := &api.DecomposerOptions{
-				WorkDir: tc.workDir,
+				WorkDir:         tc.workDir,
+				IncludeDev:      true,
+				IncludeOptional: true,
 			}
 
 			nl, err := d.Extract(opts)
@@ -403,10 +405,12 @@ func TestCompareWithNpmLs(t *testing.T) {
 				t.Skip("npm ls returned no packages - skipping comparison")
 			}
 
-			// Extract using our implementation
+			// Extract using our implementation (include all dep types for comparison)
 			d := New()
 			opts := &api.DecomposerOptions{
-				WorkDir: tc.workDir,
+				WorkDir:         tc.workDir,
+				IncludeDev:      true,
+				IncludeOptional: true,
 			}
 			nl, err := d.Extract(opts)
 			require.NoError(t, err)
@@ -473,7 +477,8 @@ func TestDevDependencyEdges(t *testing.T) {
 
 	d := New()
 	opts := &api.DecomposerOptions{
-		WorkDir: "testdata/k8s.io",
+		WorkDir:    "testdata/k8s.io",
+		IncludeDev: true,
 	}
 
 	nl, err := d.Extract(opts)

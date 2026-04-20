@@ -37,8 +37,23 @@
 
 ## Options
 
-The npm decomposer currently has no ecosystem-specific options beyond
-the common `DecomposerOptions`.
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `IncludeDevDependencies` | `bool` | `false` | Include dev dependencies |
+| `IncludeOptionalDependencies` | `bool` | `false` | Include optional dependencies |
+| `IncludePeerDependencies` | `bool` | `false` | Include peer dependencies |
+| `IgnoreNodeModulesCodebases` | `bool` | `true` | Ignore package-lock.json in node_modules |
+
+## Dependency types
+
+| Common flag | npm equivalent | What it includes |
+|-------------|---------------|------------------|
+| `--include-dev` | `IncludeDevDependencies` | Packages listed in `devDependencies` in `package.json`. These are direct dependencies only — transitive deps of dev dependencies are still included if they are also reachable from production deps. Edge type: `devDependency`. |
+| `--include-build` | _(no-op)_ | npm does not have a separate build dependency concept. |
+| `--include-optional` | `IncludeOptionalDependencies` | Packages listed in `optionalDependencies` in `package.json`. Edge type: `optionalDependency`. |
+
+`peerDependencies` are not covered by the common flags and remain a
+decomposer-specific option.
 
 ## Strengths
 

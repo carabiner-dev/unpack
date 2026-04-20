@@ -41,9 +41,21 @@
 | `IncludeTest` | `bool` | `false` | Include test-scoped dependencies |
 | `IncludeProvided` | `bool` | `false` | Include provided-scoped dependencies |
 | `IncludeOptional` | `bool` | `false` | Include optional dependencies |
+| `IncludeBuild` | `bool` | `false` | Include build plugins as dependencies |
 
 Artifact download for SHA-256/SHA-512 computation is controlled by the
 top-level `Networking` setting (`NetworkFull`).
+
+## Dependency types
+
+| Common flag | Maven equivalent | What it includes |
+|-------------|-----------------|------------------|
+| `--include-dev` | `IncludeTest` | Dependencies with `<scope>test</scope>` declared in the project's own POM. Maven's transitivity rules still apply: test-scoped transitive deps from compile-scoped dependencies are never included. |
+| `--include-build` | `IncludeBuild` | Plugins from `<build><plugins>` and `<build><pluginManagement>`. Only plugins with an explicit version are included. Plugins without a groupId default to `org.apache.maven.plugins`. Edge type: `buildDependency`. |
+| `--include-optional` | `IncludeOptional` | Dependencies with `<optional>true</optional>`. Edge type: `optionalDependency`. |
+
+The `provided` scope (`IncludeProvided`) is a decomposer-specific option
+not mapped to any common flag.
 
 ## Strengths
 

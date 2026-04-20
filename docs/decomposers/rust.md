@@ -47,6 +47,14 @@
 | `IncludeBuildDependencies` | `bool` | `false` | Include build dependencies |
 | `Concurrency` | `int` | `10` | Parallel crates.io API requests |
 
+## Dependency types
+
+| Common flag | Rust equivalent | What it includes |
+|-------------|----------------|------------------|
+| `--include-dev` | `IncludeDevDependencies` | Crates listed in `[dev-dependencies]` in `Cargo.toml`. These are direct dev dependencies only — the type is determined by checking `Cargo.toml` sections since `Cargo.lock` does not distinguish dependency types. Edge type: `devDependency`. |
+| `--include-build` | `IncludeBuildDependencies` | Crates listed in `[build-dependencies]` in `Cargo.toml`. These are typically proc-macro crates or build script helpers. Edge type: `buildDependency`. |
+| `--include-optional` | _(no-op)_ | Cargo's `optional = true` flag on dependencies is related to feature gates, not optional installation. Not currently mapped. |
+
 ## Strengths
 
 - **Rich metadata from crates.io.** Every dependency gets license,

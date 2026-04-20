@@ -66,7 +66,7 @@ func (dt *DependencyTree) Build(opts *api.DecomposerOptions) (*sbom.NodeList, er
 
 	// Build the dependency tree from the root's direct dependencies
 	visited := make(map[string]bool)
-	if err := dt.buildFromRoot(nl, rootNode, visited); err != nil {
+	if err := dt.buildFromRoot(nl, rootNode, visited, opts); err != nil {
 		return nil, fmt.Errorf("building dependency tree: %w", err)
 	}
 
@@ -74,9 +74,17 @@ func (dt *DependencyTree) Build(opts *api.DecomposerOptions) (*sbom.NodeList, er
 }
 
 // buildFromRoot builds the dependency tree starting from direct dependencies.
-func (dt *DependencyTree) buildFromRoot(nl *sbom.NodeList, rootNode *sbom.Node, visited map[string]bool) error {
+func (dt *DependencyTree) buildFromRoot(nl *sbom.NodeList, rootNode *sbom.Node, visited map[string]bool, opts *api.DecomposerOptions) error {
 	// Process direct dependencies from package.json
 	for depName, depType := range dt.directDeps {
+		// Filter by dependency type based on common options
+		if depType == DepTypeDev && !opts.IncludeDev {
+			continue
+		}
+		if depType == DepTypeOptional && !opts.IncludeOptional {
+			continue
+		}
+
 		depPath := dt.resolveDependencyPath("", depName)
 		if depPath == "" {
 			continue
