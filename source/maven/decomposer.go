@@ -54,6 +54,17 @@ func (d *Decomposer) Requirements(_ *api.DecomposerOptions) []api.Requirement {
 func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	dOpts := d.getOptions(opts)
 
+	// Apply common dependency inclusion options
+	if opts.IncludeDev {
+		dOpts.IncludeTest = true
+	}
+	if opts.IncludeBuild {
+		dOpts.IncludeBuild = true
+	}
+	if opts.IncludeOptional {
+		dOpts.IncludeOptional = true
+	}
+
 	// 1. Parse local pom.xml
 	pom, err := ParsePomXML(opts.WorkDir)
 	if err != nil {
