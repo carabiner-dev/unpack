@@ -172,11 +172,13 @@ func (dt *DependencyTree) Build() error {
 			RepoURL:    dt.repoURLForDep(version),
 		}
 
-		// Fetch the dependency's POM for license info and transitive deps
+		// Fetch the dependency's POM for license info and transitive deps.
+		// Use the coordinate's RepoURL so SNAPSHOTs hosted outside Maven
+		// Central (e.g. apache-snapshots) are fetched from the right repo.
 		var licenses []License
 		var transitiveDeps []Dependency
 		if dt.resolver != nil && version != "" {
-			depPOM, err := dt.resolver.FetchPOM(dep.GroupID, dep.ArtifactID, version)
+			depPOM, err := dt.resolver.FetchPOMFrom(dep.GroupID, dep.ArtifactID, version, coord.RepoURL)
 			if err == nil {
 				// Try to resolve effective POM for accurate data
 				effective, err := dt.resolver.ResolveEffectivePOM(depPOM)
@@ -401,9 +403,10 @@ func (dt *DependencyTree) FetchHashes(computeModern bool) {
 		if ext == "" {
 			ext = DefaultType
 		}
-		rd.Coordinate.SnapshotVersion = dt.resolver.ResolveSnapshotVersion(
+		rd.Coordinate.SnapshotVersion = dt.resolver.ResolveSnapshotVersionFrom(
 			rd.Coordinate.GroupID, rd.Coordinate.ArtifactID,
 			rd.Coordinate.Version, ext, rd.Coordinate.Classifier,
+			rd.Coordinate.RepoURL,
 		)
 		coords = append(coords, rd.Coordinate)
 	}
