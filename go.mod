@@ -5,7 +5,7 @@ go 1.25.9
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/carabiner-dev/attestation v0.2.1
-	github.com/carabiner-dev/collector v0.3.4
+	github.com/carabiner-dev/collector v0.3.5
 	github.com/carabiner-dev/hasher v0.2.4
 	github.com/carabiner-dev/protograph v0.0.0-20260117204235-4dc9de9c0db5
 	github.com/carabiner-dev/signer v0.4.5
@@ -16,7 +16,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/in-toto/attestation v1.2.0
 	github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
-	github.com/protobom/protobom v0.5.4
+	github.com/protobom/protobom v0.5.5
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
@@ -27,6 +27,7 @@ require (
 )
 
 require (
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260415201107-50325440f8f2.1 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/CycloneDX/cyclonedx-go v0.10.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
@@ -38,9 +39,9 @@ require (
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/carabiner-dev/openeox v1.0.0-pre.1 // indirect
 	github.com/carabiner-dev/osv v0.0.0-20250124012120-b8ce4531cd92 // indirect
-	github.com/carabiner-dev/policy v0.4.5 // indirect
-	github.com/carabiner-dev/predicates v0.1.0 // indirect
-	github.com/carabiner-dev/vcslocator v0.4.3-0.20260415221723-1e7d86696551 // indirect
+	github.com/carabiner-dev/policy v0.5.0 // indirect
+	github.com/carabiner-dev/predicates v0.5.0 // indirect
+	github.com/carabiner-dev/vcslocator v0.4.3 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
@@ -130,7 +131,6 @@ require (
 	github.com/transparency-dev/merkle v0.0.2 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.65.0 // indirect
 	go.opentelemetry.io/otel v1.43.0 // indirect
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
