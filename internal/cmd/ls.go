@@ -10,9 +10,8 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"strings"
 
-	"github.com/fatih/color"
+	"github.com/carabiner-dev/termtable"
 	"github.com/spf13/cobra"
 
 	"github.com/carabiner-dev/unpack/dependencies"
@@ -130,33 +129,45 @@ func listCodebases(ctx context.Context, opts *codebasesOptions) error {
 }
 
 func outputCodebasesTable(codebases []dependencies.CodebaseInfo) error {
-	bold := color.New(color.Bold)
+	t := termtable.NewTable(
+		termtable.WithBorder(lsBorderSet()),
+		termtable.WithTargetWidthPercent(100),
+		termtable.WithTableStyle("border: none"),
+	)
 
-	// Compute column widths
-	idWidth, langWidth, pathWidth := len("ID"), len("LANGUAGE"), len("PATH")
-	for _, cb := range codebases {
-		if len(cb.ID) > idWidth {
-			idWidth = len(cb.ID)
-		}
-		if len(cb.Language) > langWidth {
-			langWidth = len(cb.Language)
-		}
-		if len(cb.Path) > pathWidth {
-			pathWidth = len(cb.Path)
-		}
-	}
-
-	pad := 3
-	rowFmt := fmt.Sprintf("%%-%ds%%-%ds%%s\n", idWidth+pad, langWidth+pad)
-
-	// Print bold headers and divider directly to avoid tabwriter ANSI issues
-	bold.Printf(rowFmt, "ID", "LANGUAGE", "PATH") //nolint:errcheck,gosec
-	fmt.Printf(rowFmt, strings.Repeat("─", idWidth), strings.Repeat("─", langWidth), strings.Repeat("─", pathWidth))
+	hdr := t.AddHeader(
+		termtable.WithRowStyle("font-weight: bold"),
+		termtable.WithRowBorderBottom(termtable.BorderEdgeSolid),
+	)
+	hdr.AddCell(termtable.WithContent("ID"))
+	hdr.AddCell(termtable.WithContent("LANGUAGE"))
+	hdr.AddCell(termtable.WithContent("PATH"))
 
 	for _, cb := range codebases {
-		fmt.Printf(rowFmt, cb.ID, cb.Language, cb.Path)
+		row := t.AddRow()
+		row.AddCell(termtable.WithContent(cb.ID))
+		row.AddCell(termtable.WithContent(cb.Language))
+		row.AddCell(termtable.WithContent(cb.Path))
 	}
-	return nil
+
+	_, err := t.WriteTo(os.Stdout)
+	return err
+}
+
+// lsBorderSet is the borderless glyph set used by the ls table:
+// horizontal runs render as U+2500 so the rule under the header
+// matches the original unpack look; verticals and junctions fall
+// back to spaces and never actually appear because the table-level
+// `border: none` directive drops them.
+func lsBorderSet() termtable.BorderSet {
+	b := termtable.BorderSet{
+		Horizontal: '─',
+		Vertical:   ' ',
+	}
+	for i := range b.Joins {
+		b.Joins[i] = ' '
+	}
+	return b
 }
 
 type codebaseJSONOutput struct {
