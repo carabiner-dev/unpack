@@ -20,7 +20,7 @@ jobs:
 
     - name: Resolve Go versions
       id: go-versions
-      uses: carabiner-dev/actions/go/versions@360ffa1eb909b0105d4eccb6d6ef337911c34952 # v1.1.6
+      uses: carabiner-dev/actions/go/versions@e0e3b8149dafed833431095bc148d50e7eade4e8 # v1.2.0
 
     - name: Build version matrix
       id: matrix
