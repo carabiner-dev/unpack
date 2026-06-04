@@ -116,7 +116,7 @@ func (d *Decomposer) ExtractFromFS(source fs.FS, opts *api.DecomposerOptions) (*
 		return nil, fmt.Errorf("reading os-release: %w", err)
 	}
 
-	return packagesToNodeList(pkgs, osr), nil
+	return packagesToNodeList(pkgs, osr, opts != nil && opts.IncludeFiles)
 }
 
 // stageRpmDB looks for the first RPM database that exists in source at any of
@@ -177,7 +177,9 @@ func copyToTemp(f fs.File, srcPath string) (string, func() error, error) {
 
 // packagesToNodeList converts go-rpmdb package entries into a protobom
 // NodeList. Each package becomes a root node identified by its pkg:rpm purl.
-func packagesToNodeList(pkgs []*rpmdb.PackageInfo, osr osRelease) *sbom.NodeList {
+// When includeFiles is true, each package's file list is also emitted as
+// child Node_FILE nodes related via a "contains" edge.
+func packagesToNodeList(pkgs []*rpmdb.PackageInfo, osr osRelease, includeFiles bool) (*sbom.NodeList, error) {
 	nl := sbom.NewNodeList()
 	for _, p := range pkgs {
 		if virtualPackages[p.Name] {
@@ -211,8 +213,14 @@ func packagesToNodeList(pkgs []*rpmdb.PackageInfo, osr osRelease) *sbom.NodeList
 			}
 		}
 		nl.AddRootNode(node)
+
+		if includeFiles {
+			if err := addPackageFiles(nl, p, node.GetId()); err != nil {
+				return nil, fmt.Errorf("expanding files for %q: %w", p.Name, err)
+			}
+		}
 	}
-	return nl
+	return nl, nil
 }
 
 // versionRelease combines the RPM version and release fields the way RPM

@@ -12,6 +12,8 @@ import (
 	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	api "github.com/carabiner-dev/unpack/api/v1"
 )
 
 func intPtr(v int) *int { return &v }
@@ -149,7 +151,8 @@ func TestPackagesToNodeListMapping(t *testing.T) {
 			SigMD5:  "d41d8cd98f00b204e9800998ecf8427e",
 		},
 	}
-	nl := packagesToNodeList(pkgs, osRelease{ID: "fedora", VersionID: "25"})
+	nl, err := packagesToNodeList(pkgs, osRelease{ID: "fedora", VersionID: "25"}, false)
+	require.NoError(t, err)
 
 	nodes := nl.GetNodes()
 	if assert.Len(t, nodes, 1) {
@@ -177,7 +180,8 @@ func TestPackagesToNodeListSkipsGPGPubkey(t *testing.T) {
 		{Name: "gpg-pubkey", Version: "fd431d51", Release: "4ae0493b"},
 		{Name: "curl", Version: "7.50.3", Release: "1.fc25"},
 	}
-	nl := packagesToNodeList(pkgs, osRelease{})
+	nl, err := packagesToNodeList(pkgs, osRelease{}, false)
+	require.NoError(t, err)
 	nodes := nl.GetNodes()
 	if assert.Len(t, nodes, 1) {
 		assert.Equal(t, "curl", nodes[0].GetName())
@@ -199,7 +203,7 @@ func TestExtractFromFS_BDB(t *testing.T) {
 	require.NotNil(t, nl)
 
 	nodes := nl.GetNodes()
-	require.Len(t, nodes, 1)
+	require.Len(t, nodes, 1, "IncludeFiles defaults to false, so we expect only the package node")
 
 	n := nodes[0]
 	assert.Equal(t, "libuuid", n.GetName())
@@ -221,6 +225,100 @@ func TestExtractFromFS_BDB(t *testing.T) {
 		"pkg:rpm/rhel/libuuid@2.32.1-42.el8_8?arch=x86_64&distro=rhel-8.8&upstream=util-linux-2.32.1-42.el8_8.src.rpm",
 		n.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)],
 	)
+}
+
+// TestExtractFromFS_BDB_IncludeFiles flips IncludeFiles on and verifies that
+// the libuuid package now contains the seven file entries the fixture
+// declares, that paths reassemble correctly, and that real digests get
+// labelled with the package's DigestAlgorithm (SHA-256 for this RPM).
+func TestExtractFromFS_BDB_IncludeFiles(t *testing.T) {
+	t.Parallel()
+	d := New()
+	source := os.DirFS("testdata/rhel8-libuuid")
+
+	nl, err := d.ExtractFromFS(source, &api.DecomposerOptions{IncludeFiles: true})
+	require.NoError(t, err)
+	require.NotNil(t, nl)
+
+	// 1 package + 7 files
+	nodes := nl.GetNodes()
+	require.Len(t, nodes, 8)
+
+	// Index by name so we can assert by file path independent of ordering.
+	byName := map[string]*sbom.Node{}
+	var pkgNode *sbom.Node
+	for _, n := range nodes {
+		if n.GetType() == sbom.Node_PACKAGE {
+			pkgNode = n
+			continue
+		}
+		byName[n.GetName()] = n
+	}
+	require.NotNil(t, pkgNode)
+
+	// Spot-check three of the expected paths: a directory, a symlink (size
+	// 16, no digest), and the .so with a SHA-256 digest.
+	for _, want := range []string{
+		"/usr/lib/.build-id",
+		"/usr/lib64/libuuid.so.1",
+		"/usr/lib64/libuuid.so.1.3.0",
+		"/usr/share/licenses/libuuid/COPYING",
+		"/usr/share/licenses/libuuid/COPYING.BSD-3",
+	} {
+		_, ok := byName[want]
+		assert.True(t, ok, "missing file node %q", want)
+	}
+
+	// Real-file digests get labelled with the algorithm the package
+	// declares (SHA-256 for libuuid).
+	so := byName["/usr/lib64/libuuid.so.1.3.0"]
+	require.NotNil(t, so)
+	assert.Equal(t,
+		"3c8f59a0e39cce53501045859f5c9a86b82fedd558a2f4110ab1823047b43745",
+		so.GetHashes()[int32(sbom.HashAlgorithm_SHA256)],
+	)
+
+	// Files without a digest (directories, symlinks) get a node but no
+	// Hashes map entry.
+	link := byName["/usr/lib64/libuuid.so.1"]
+	require.NotNil(t, link)
+	assert.Empty(t, link.GetHashes())
+
+	// Every file node has a contains-edge from the package; verify by
+	// counting outgoing contains-edges on the package.
+	var fileEdges int
+	for _, e := range nl.Edges {
+		if e.GetFrom() == pkgNode.GetId() && e.GetType() == sbom.Edge_contains {
+			fileEdges += len(e.GetTo())
+		}
+	}
+	assert.Equal(t, 7, fileEdges)
+}
+
+func TestMapDigestAlgorithm(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		in     rpmdb.DigestAlgorithm
+		want   sbom.HashAlgorithm
+		mapped bool
+	}{
+		{rpmdb.PGPHASHALGO_MD5, sbom.HashAlgorithm_MD5, true},
+		{rpmdb.PGPHASHALGO_SHA1, sbom.HashAlgorithm_SHA1, true},
+		{rpmdb.PGPHASHALGO_MD2, sbom.HashAlgorithm_MD2, true},
+		{rpmdb.PGPHASHALGO_SHA256, sbom.HashAlgorithm_SHA256, true},
+		{rpmdb.PGPHASHALGO_SHA384, sbom.HashAlgorithm_SHA384, true},
+		{rpmdb.PGPHASHALGO_SHA512, sbom.HashAlgorithm_SHA512, true},
+		{rpmdb.PGPHASHALGO_SHA224, sbom.HashAlgorithm_SHA224, true},
+		// Algorithms protobom doesn't model: RIPEMD160 (3), TIGER192 (6),
+		// HAVAL_5_160 (7). Dropping them is preferable to mislabelling them.
+		{rpmdb.PGPHASHALGO_RIPEMD160, sbom.HashAlgorithm_UNKNOWN, false},
+		{rpmdb.PGPHASHALGO_TIGER192, sbom.HashAlgorithm_UNKNOWN, false},
+		{rpmdb.PGPHASHALGO_HAVAL_5_160, sbom.HashAlgorithm_UNKNOWN, false},
+	} {
+		got, ok := mapDigestAlgorithm(tc.in)
+		assert.Equal(t, tc.mapped, ok, "algorithm %d mapped?", tc.in)
+		assert.Equal(t, tc.want, got, "algorithm %d result", tc.in)
+	}
 }
 
 // TestExtractFromFS_NoDB verifies that a filesystem without an RPM database

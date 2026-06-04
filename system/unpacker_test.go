@@ -35,6 +35,23 @@ func TestUnpackerExtractLocalSystem(t *testing.T) {
 	)
 }
 
+// TestUnpackerExtractLocalSystemIncludeFiles flips the IncludeFiles option
+// on the unpacker and verifies that file nodes flow all the way through to
+// the NodeList — exercising the full Options → DecomposerOptions plumbing.
+func TestUnpackerExtractLocalSystemIncludeFiles(t *testing.T) {
+	t.Parallel()
+	u := NewUnpacker()
+	u.Options.IncludeFiles = true
+	subject := &LocalSystem{Root: "rpm/testdata/rhel8-libuuid"}
+
+	nodelists, err := u.Extract(context.Background(), subject)
+	require.NoError(t, err)
+	require.Len(t, nodelists, 1)
+
+	// 1 package + 7 files in the libuuid fixture.
+	assert.Len(t, nodelists[0].GetNodes(), 8)
+}
+
 // TestUnpackerExtractEmptySystem confirms that a system with no recognized
 // package databases produces no NodeLists (rather than an error or a NodeList
 // with zero nodes).
