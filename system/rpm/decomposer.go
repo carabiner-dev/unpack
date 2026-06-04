@@ -188,6 +188,7 @@ func packagesToNodeList(pkgs []*rpmdb.PackageInfo, osr osRelease) *sbom.NodeList
 			Type:    sbom.Node_PACKAGE,
 			Name:    p.Name,
 			Version: versionRelease(p),
+			Summary: p.Summary,
 			Identifiers: map[int32]string{
 				int32(sbom.SoftwareIdentifierType_PURL): rpmPurl(p, osr),
 			},
@@ -197,6 +198,17 @@ func packagesToNodeList(pkgs []*rpmdb.PackageInfo, osr osRelease) *sbom.NodeList
 			// Most RPM packages don't carry SPDX-valid license names, but
 			// downstream consumers can still normalize them.
 			node.Licenses = []string{p.License}
+		}
+		if p.Vendor != "" {
+			node.Suppliers = []*sbom.Person{{Name: p.Vendor, IsOrg: true}}
+		}
+		if p.SigMD5 != "" {
+			// SigMD5 is the MD5 over the original .rpm envelope and is the
+			// canonical identifier used by Red Hat's vulnerability and signature
+			// feeds (e.g. clamav, OVAL).
+			node.Hashes = map[int32]string{
+				int32(sbom.HashAlgorithm_MD5): p.SigMD5,
+			}
 		}
 		nl.AddRootNode(node)
 	}

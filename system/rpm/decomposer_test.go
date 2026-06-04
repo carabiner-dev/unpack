@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	rpmdb "github.com/knqyf263/go-rpmdb/pkg"
+	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -97,7 +98,7 @@ func TestRpmPurl(t *testing.T) {
 				Name: "curl", Version: "7.50.3", Release: "1.fc26", Arch: "x86_64",
 				Epoch: intPtr(2), SourceRpm: "curl-7.50.3-1.fc26.src.rpm",
 			},
-			osr:  osRelease{ID: "fedora", VersionID: "26"},
+			osr: osRelease{ID: "fedora", VersionID: "26"},
 			// arch < distro < epoch < upstream
 			want: "pkg:rpm/fedora/curl@7.50.3-1.fc26?arch=x86_64&distro=fedora-26&epoch=2&upstream=curl-7.50.3-1.fc26.src.rpm",
 		},
@@ -133,4 +134,50 @@ func TestOSReleaseDistroEmpty(t *testing.T) {
 	assert.Equal(t, "", osRelease{}.Distro())
 	assert.Equal(t, "", osRelease{ID: "fedora"}.Distro())
 	assert.Equal(t, "", osRelease{VersionID: "38"}.Distro())
+}
+
+func TestPackagesToNodeListMapping(t *testing.T) {
+	t.Parallel()
+	pkgs := []*rpmdb.PackageInfo{
+		{
+			Name: "curl", Version: "7.50.3", Release: "1.fc25", Arch: "x86_64",
+			License: "MIT",
+			Vendor:  "Fedora Project",
+			Summary: "A utility for getting files from remote servers",
+			SigMD5:  "d41d8cd98f00b204e9800998ecf8427e",
+		},
+	}
+	nl := packagesToNodeList(pkgs, osRelease{ID: "fedora", VersionID: "25"})
+
+	nodes := nl.GetNodes()
+	if assert.Len(t, nodes, 1) {
+		n := nodes[0]
+		assert.Equal(t, "curl", n.GetName())
+		assert.Equal(t, "7.50.3-1.fc25", n.GetVersion())
+		assert.Equal(t, "A utility for getting files from remote servers", n.GetSummary())
+		assert.Equal(t, []string{"MIT"}, n.GetLicenses())
+
+		if assert.Len(t, n.GetSuppliers(), 1) {
+			assert.Equal(t, "Fedora Project", n.GetSuppliers()[0].GetName())
+			assert.True(t, n.GetSuppliers()[0].GetIsOrg())
+		}
+
+		assert.Equal(t,
+			"d41d8cd98f00b204e9800998ecf8427e",
+			n.GetHashes()[int32(sbom.HashAlgorithm_MD5)],
+		)
+	}
+}
+
+func TestPackagesToNodeListSkipsGPGPubkey(t *testing.T) {
+	t.Parallel()
+	pkgs := []*rpmdb.PackageInfo{
+		{Name: "gpg-pubkey", Version: "fd431d51", Release: "4ae0493b"},
+		{Name: "curl", Version: "7.50.3", Release: "1.fc25"},
+	}
+	nl := packagesToNodeList(pkgs, osRelease{})
+	nodes := nl.GetNodes()
+	if assert.Len(t, nodes, 1) {
+		assert.Equal(t, "curl", nodes[0].GetName())
+	}
 }
