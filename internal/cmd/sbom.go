@@ -14,7 +14,7 @@ import (
 	"github.com/protobom/protobom/pkg/formats"
 	"github.com/spf13/cobra"
 
-	"github.com/carabiner-dev/unpack/dependencies"
+	sbomunpack "github.com/carabiner-dev/unpack/sbom"
 )
 
 type sbomOptions struct {
@@ -104,19 +104,17 @@ Unpack sbom takes an SBOM document and returns dependency data from its contents
 			if err := opts.Validate(); err != nil {
 				return err
 			}
-			unpacker := dependencies.NewUnpacker()
+			unpacker := sbomunpack.NewUnpacker()
 
-			// Add all the source files from codebases
-			unpacker.Options.IndexFiles = true
-
-			nodelist, err := unpacker.ExtractSBOMFromFile(opts.Path)
+			nodelists, err := unpacker.Extract(cmd.Context(), &sbomunpack.Subject{Path: opts.Path})
 			if err != nil {
 				return err
 			}
 
-			if nodelist == nil {
+			if len(nodelists) == 0 || nodelists[0] == nil {
 				return errors.New("no dependency data found")
 			}
+			nodelist := nodelists[0]
 
 			// Filter out excluded dependency types
 			filterNodeListByEdgeType(nodelist, opts)
