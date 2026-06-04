@@ -126,26 +126,27 @@ func (d *Decomposer) ExtractFromFS(source fs.FS, opts *api.DecomposerOptions) (*
 //
 // Returns the staged path and a cleanup function that removes the staging
 // directory. When no database is found, returns ("", noop, nil).
-func stageRpmDB(source fs.FS, locations []string) (string, func() error, error) {
+func stageRpmDB(source fs.FS, locations []string) (dbPath string, cleanup func() error, err error) {
 	noop := func() error { return nil }
 	for _, loc := range locations {
-		f, err := source.Open(loc)
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
+		f, openErr := source.Open(loc)
+		if openErr != nil {
+			if errors.Is(openErr, fs.ErrNotExist) {
 				continue
 			}
-			return "", noop, fmt.Errorf("opening %q: %w", loc, err)
+			return "", noop, fmt.Errorf("opening %q: %w", loc, openErr)
 		}
 
-		dstPath, cleanup, copyErr := copyToTemp(f, loc)
+		dstPath, dstCleanup, copyErr := copyToTemp(f, loc)
 		if cerr := f.Close(); cerr != nil && copyErr == nil {
 			copyErr = fmt.Errorf("closing source db: %w", cerr)
 		}
 		if copyErr != nil {
-			cleanup() //nolint:errcheck
+			//nolint:errcheck,gosec // cleanup is best-effort; we already have an error to surface
+			dstCleanup()
 			return "", noop, copyErr
 		}
-		return dstPath, cleanup, nil
+		return dstPath, dstCleanup, nil
 	}
 	return "", noop, nil
 }
@@ -153,20 +154,21 @@ func stageRpmDB(source fs.FS, locations []string) (string, func() error, error) 
 // copyToTemp streams f into a fresh temp directory and returns the staged
 // path plus a cleanup function. Errors arrange for the temp dir to be
 // removed before returning.
-func copyToTemp(f fs.File, srcPath string) (string, func() error, error) {
+func copyToTemp(f fs.File, srcPath string) (dstPath string, cleanup func() error, err error) {
 	tmpDir, err := os.MkdirTemp("", "unpack-rpmdb-")
 	if err != nil {
 		return "", func() error { return nil }, fmt.Errorf("creating temp dir: %w", err)
 	}
-	cleanup := func() error { return os.RemoveAll(tmpDir) }
+	cleanup = func() error { return os.RemoveAll(tmpDir) }
 
-	dstPath := path.Join(tmpDir, path.Base(srcPath))
+	dstPath = path.Join(tmpDir, path.Base(srcPath))
 	dst, err := os.Create(dstPath)
 	if err != nil {
 		return "", cleanup, fmt.Errorf("creating staging file: %w", err)
 	}
 	if _, err := io.Copy(dst, f); err != nil {
-		dst.Close() //nolint:errcheck
+		//nolint:errcheck,gosec // close is best-effort; we already have an error to surface
+		dst.Close()
 		return "", cleanup, fmt.Errorf("copying rpm database: %w", err)
 	}
 	if err := dst.Close(); err != nil {

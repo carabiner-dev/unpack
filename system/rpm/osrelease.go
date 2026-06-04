@@ -54,7 +54,8 @@ func readOSRelease(source fs.FS) (osRelease, error) {
 			return osRelease{}, err
 		}
 		o, err := parseOSRelease(f)
-		f.Close() //nolint:errcheck
+		//nolint:errcheck,gosec // close is best-effort on a read-only file
+		f.Close()
 		if err != nil {
 			return osRelease{}, err
 		}

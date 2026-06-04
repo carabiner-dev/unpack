@@ -126,7 +126,7 @@ VERSION_ID=38
 PRETTY_NAME="Fedora Linux 38 (Workstation Edition)"
 `)
 	got, err := parseOSRelease(in)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "fedora", got.ID)
 	assert.Equal(t, "38", got.VersionID)
 	assert.Equal(t, "fedora", got.Namespace())
@@ -135,9 +135,9 @@ PRETTY_NAME="Fedora Linux 38 (Workstation Edition)"
 
 func TestOSReleaseDistroEmpty(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "", osRelease{}.Distro())
-	assert.Equal(t, "", osRelease{ID: "fedora"}.Distro())
-	assert.Equal(t, "", osRelease{VersionID: "38"}.Distro())
+	assert.Empty(t, osRelease{}.Distro())
+	assert.Empty(t, osRelease{ID: "fedora"}.Distro())
+	assert.Empty(t, osRelease{VersionID: "38"}.Distro())
 }
 
 func TestPackagesToNodeListMapping(t *testing.T) {
@@ -287,7 +287,7 @@ func TestExtractFromFS_BDB_IncludeFiles(t *testing.T) {
 	// Every file node has a contains-edge from the package; verify by
 	// counting outgoing contains-edges on the package.
 	var fileEdges int
-	for _, e := range nl.Edges {
+	for _, e := range nl.GetEdges() {
 		if e.GetFrom() == pkgNode.GetId() && e.GetType() == sbom.Edge_contains {
 			fileEdges += len(e.GetTo())
 		}
@@ -330,6 +330,6 @@ func TestExtractFromFS_NoDB(t *testing.T) {
 	source := os.DirFS(t.TempDir())
 
 	nl, err := d.ExtractFromFS(source, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Nil(t, nl)
 }

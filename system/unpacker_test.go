@@ -61,7 +61,7 @@ func TestUnpackerExtractEmptySystem(t *testing.T) {
 	subject := &LocalSystem{Root: t.TempDir()}
 
 	nodelists, err := u.Extract(context.Background(), subject)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Empty(t, nodelists)
 }
 
@@ -72,10 +72,10 @@ func TestUnpackerRejectsNonSystemSubject(t *testing.T) {
 	u := NewUnpacker()
 
 	_, err := u.Extract(context.Background(), nil)
-	assert.Error(t, err)
+	require.Error(t, err)
 
 	_, err = u.Extract(context.Background(), bogusSubject{})
-	assert.Error(t, err)
+	require.Error(t, err)
 }
 
 type bogusSubject struct{}
