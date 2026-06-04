@@ -35,6 +35,9 @@ type Unpacker struct{}
 
 // Extract parses the SBOM in the subject and returns its node list.
 func (u *Unpacker) Extract(_ context.Context, subject api.DecomposableSubject) ([]*protosbom.NodeList, error) {
+	if subject == nil {
+		return nil, fmt.Errorf("sbom unpacker received a nil subject")
+	}
 	s, ok := subject.(*Subject)
 	if !ok {
 		return nil, fmt.Errorf(

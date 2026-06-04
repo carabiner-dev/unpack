@@ -115,6 +115,9 @@ type Unpacker struct {
 // handles codebase subjects: it scans the subject's path for codebases and runs
 // the configured decomposers over them, returning the resulting nodelists.
 func (unpacker *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject) ([]*sbom.NodeList, error) {
+	if subject == nil {
+		return nil, fmt.Errorf("dependencies unpacker received a nil subject")
+	}
 	cb, ok := subject.(*Codebase)
 	if !ok {
 		return nil, fmt.Errorf(
