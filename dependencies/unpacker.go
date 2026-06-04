@@ -7,9 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"os"
 
 	"github.com/protobom/protobom/pkg/sbom"
 
@@ -21,6 +19,15 @@ import (
 )
 
 var ErrMultipleCodebases = errors.New("multiple codebases found")
+
+// Ensure the codebase unpacker satisfies the unified Unpacker interface.
+var _ api.Unpacker = (*Unpacker)(nil)
+
+// Register the codebase unpacker so that subjects of type "codebase" (see the
+// Codebase subject in codebase.go) are routed here by the registry.
+func init() {
+	api.RegisterUnpacker("codebase", func() api.Unpacker { return NewUnpacker() })
+}
 
 func NewUnpacker() *Unpacker {
 	return &Unpacker{
@@ -104,14 +111,22 @@ type Unpacker struct {
 	decomposers map[string]api.Decomposer
 }
 
-// Extract is an alias of ExtractWithContext without context support
-func (unpacker *Unpacker) Extract(sources Sources) ([]*sbom.NodeList, error) {
-	return unpacker.ExtractWithContext(context.Background(), sources)
+// Extract reads dependency data from a subject. The dependencies unpacker
+// handles codebase subjects: it scans the subject's path for codebases and runs
+// the configured decomposers over them, returning the resulting nodelists.
+func (unpacker *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject) ([]*sbom.NodeList, error) {
+	cb, ok := subject.(*Codebase)
+	if !ok {
+		return nil, fmt.Errorf(
+			"dependencies unpacker cannot process subject of type %q", subject.DecomposableType(),
+		)
+	}
+	return unpacker.extractSources(ctx, Sources{Paths: []string{cb.Path}})
 }
 
-// ExtractWithContext launches the analyzers in the configured sources and returns
+// extractSources launches the analyzers in the given sources and returns the
 // resulting nodelists.
-func (unpacker *Unpacker) ExtractWithContext(ctx context.Context, sources Sources) ([]*sbom.NodeList, error) {
+func (unpacker *Unpacker) extractSources(ctx context.Context, sources Sources) ([]*sbom.NodeList, error) {
 	// Index the specified directories
 	codeIndices, err := unpacker.impl.IndexPaths(ctx, &unpacker.Options, sources)
 	if err != nil {
@@ -196,9 +211,7 @@ func (unpacker *Unpacker) ExtractCodebase(path string) (*sbom.NodeList, error) {
 
 // ExtractCodeBaseWithContext extracts data from a single directory.
 func (unpacker *Unpacker) ExtractCodebaseWithContext(ctx context.Context, path string) (*sbom.NodeList, error) {
-	nodelists, err := unpacker.ExtractWithContext(ctx, Sources{
-		Paths: []string{path},
-	})
+	nodelists, err := unpacker.Extract(ctx, &Codebase{Path: path})
 	if err != nil {
 		return nil, fmt.Errorf("extracting codebases: %w", err)
 	}
@@ -219,16 +232,6 @@ func (unpacker *Unpacker) ExtractCodebaseWithContext(ctx context.Context, path s
 		)
 		return nodelists[0], nil
 	}
-}
-
-// ExtractFromCodeBaseWithContext
-func (unpacker *Unpacker) ExtractArtifact(path string) (*sbom.NodeList, error) {
-	return unpacker.ExtractCodebaseWithContext(context.Background(), path)
-}
-
-// ExtractCodeBaseWithContext extracts data from a single directory.
-func (unpacker *Unpacker) ExtractArtifactWithContext(ctx context.Context, path string) (*sbom.NodeList, error) {
-	return nil, fmt.Errorf("not implemented yet")
 }
 
 func (unpacker *Unpacker) RegisterDecomposer(d api.Decomposer) {
@@ -282,18 +285,4 @@ func (unpacker *Unpacker) ListCodebases(ctx context.Context, path string) ([]Cod
 	}
 
 	return result, nil
-}
-
-// ExtractFromCodeBaseWithContext
-func (unpacker *Unpacker) ExtractSBOMFromFile(path string) (*sbom.NodeList, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("opening SBOM file: %w", err)
-	}
-	return unpacker.ExtractSBOM(context.Background(), f)
-}
-
-// ExtractFromCodeBaseWithContext
-func (unpacker *Unpacker) ExtractSBOM(ctx context.Context, r io.ReadSeeker) (*sbom.NodeList, error) {
-	return unpacker.impl.ExtractSBOM(ctx, r)
 }

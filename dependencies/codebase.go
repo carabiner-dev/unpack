@@ -9,6 +9,17 @@ import (
 	"strings"
 )
 
+// Codebase is the DecomposableSubject consumed by the dependencies unpacker. It
+// points at a filesystem path that may contain one or more codebases; the
+// unpacker scans it and runs the matching decomposers.
+type Codebase struct {
+	Path string
+}
+
+// DecomposableType identifies this subject as a codebase, routing it to the
+// dependencies unpacker through the registry.
+func (c *Codebase) DecomposableType() string { return "codebase" }
+
 // CodebaseInfo contains information about a discovered codebase.
 type CodebaseInfo struct {
 	ID       string // e.g., "golang:./services/api"
