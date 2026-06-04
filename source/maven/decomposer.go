@@ -26,7 +26,7 @@ type Decomposer struct{}
 // Options configures the Maven dependency extraction.
 type Options struct {
 	RepoURL         string // Maven repository URL (default: https://repo1.maven.org/maven2)
-	Concurrency     int    // Number of parallel HTTP requests (default: 10)
+	Concurrency     int    // Number of parallel HTTP requests (default: 5)
 	IncludeTest     bool   // Include test-scoped dependencies (default: false)
 	IncludeProvided bool   // Include provided-scoped dependencies (default: false)
 	IncludeOptional bool   // Include optional dependencies (default: false)
