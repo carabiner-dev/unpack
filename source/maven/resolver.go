@@ -29,7 +29,7 @@ var ErrNotFound = errors.New("resource not found in repository")
 
 const (
 	defaultRepoURL     = "https://repo1.maven.org/maven2"
-	defaultConcurrency = 10
+	defaultConcurrency = 5
 	defaultTimeout     = 30 * time.Second
 	maxParentDepth     = 10
 )
