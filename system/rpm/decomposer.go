@@ -10,8 +10,11 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"path"
+	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 	rpmdb "github.com/knqyf263/go-rpmdb/pkg"
@@ -106,7 +109,14 @@ func (d *Decomposer) ExtractFromFS(source fs.FS, opts *api.DecomposerOptions) (*
 		return nil, fmt.Errorf("listing rpm packages: %w", err)
 	}
 
-	return packagesToNodeList(pkgs), nil
+	// os-release feeds the purl namespace and the distro= qualifier. If it's
+	// missing we still emit purls, just without distro information.
+	osr, err := readOSRelease(source)
+	if err != nil {
+		return nil, fmt.Errorf("reading os-release: %w", err)
+	}
+
+	return packagesToNodeList(pkgs, osr), nil
 }
 
 // stageRpmDB looks for the first RPM database that exists in source at any of
@@ -167,7 +177,7 @@ func copyToTemp(f fs.File, srcPath string) (string, func() error, error) {
 
 // packagesToNodeList converts go-rpmdb package entries into a protobom
 // NodeList. Each package becomes a root node identified by its pkg:rpm purl.
-func packagesToNodeList(pkgs []*rpmdb.PackageInfo) *sbom.NodeList {
+func packagesToNodeList(pkgs []*rpmdb.PackageInfo, osr osRelease) *sbom.NodeList {
 	nl := sbom.NewNodeList()
 	for _, p := range pkgs {
 		if virtualPackages[p.Name] {
@@ -179,7 +189,7 @@ func packagesToNodeList(pkgs []*rpmdb.PackageInfo) *sbom.NodeList {
 			Name:    p.Name,
 			Version: versionRelease(p),
 			Identifiers: map[int32]string{
-				int32(sbom.SoftwareIdentifierType_PURL): rpmPurl(p),
+				int32(sbom.SoftwareIdentifierType_PURL): rpmPurl(p, osr),
 			},
 			PrimaryPurpose: []sbom.Purpose{sbom.Purpose_LIBRARY},
 		}
@@ -202,25 +212,48 @@ func versionRelease(p *rpmdb.PackageInfo) string {
 	return fmt.Sprintf("%s-%s", p.Version, p.Release)
 }
 
-// rpmPurl builds a pkg:rpm purl for a single RPM package. The namespace
-// (vendor/distro) is left empty until we add /etc/os-release detection.
-func rpmPurl(p *rpmdb.PackageInfo) string {
-	purl := fmt.Sprintf("pkg:rpm/%s@%s", p.Name, purlVersion(p))
-	if p.Arch != "" {
-		purl = fmt.Sprintf("%s?arch=%s", purl, p.Arch)
+// rpmPurl builds a pkg:rpm purl for a single RPM package per the purl-spec
+// rpm-definition: namespace is the lowercased distro id (e.g. "fedora"),
+// version is the combined version-release, and qualifiers include arch,
+// epoch (when > 0), upstream (the source RPM), distro (id-version_id), and
+// the Fedora modularity label when present. Qualifiers are sorted
+// alphabetically and percent-encoded.
+//
+//	pkg:rpm/fedora/curl@7.50.3-1.fc25?arch=i386&distro=fedora-25
+func rpmPurl(p *rpmdb.PackageInfo, osr osRelease) string {
+	var b strings.Builder
+	b.WriteString("pkg:rpm/")
+	if ns := osr.Namespace(); ns != "" {
+		b.WriteString(ns)
+		b.WriteByte('/')
 	}
-	return purl
-}
+	b.WriteString(p.Name)
+	if v := versionRelease(p); v != "" {
+		b.WriteByte('@')
+		b.WriteString(v)
+	}
 
-// purlVersion encodes the package version for a purl, including the epoch
-// when it is non-zero. The purl-spec puts the epoch in front of the version
-// separated by a colon.
-func purlVersion(p *rpmdb.PackageInfo) string {
-	v := versionRelease(p)
-	if p.Epoch != nil && *p.Epoch > 0 {
-		return fmt.Sprintf("%d:%s", *p.Epoch, v)
+	q := url.Values{}
+	if p.Arch != "" {
+		q.Set("arch", strings.ToLower(p.Arch))
 	}
-	return v
+	if p.Epoch != nil && *p.Epoch > 0 {
+		q.Set("epoch", strconv.Itoa(*p.Epoch))
+	}
+	if p.SourceRpm != "" {
+		q.Set("upstream", p.SourceRpm)
+	}
+	if d := osr.Distro(); d != "" {
+		q.Set("distro", d)
+	}
+	if p.Modularitylabel != "" {
+		q.Set("modularitylabel", p.Modularitylabel)
+	}
+	if enc := q.Encode(); enc != "" {
+		b.WriteByte('?')
+		b.WriteString(enc)
+	}
+	return b.String()
 }
 
 // getOptions extracts RPM-specific options from DecomposerOptions, falling
