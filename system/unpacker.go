@@ -23,10 +23,23 @@ func init() {
 	api.RegisterUnpacker(SubjectType, func() api.Unpacker { return NewUnpacker() })
 }
 
+// Options configures the SystemPackages unpacker.
+type Options struct {
+	// IncludeFiles instructs system decomposers to emit a Node for every file
+	// installed by each package, related to the package via a "contains"
+	// edge. Off by default because it can multiply node count by a large
+	// factor (a typical RHEL system has ~10⁵ files).
+	IncludeFiles bool
+}
+
+// DefaultOptions is the zero-value configuration used by NewUnpacker.
+var DefaultOptions = Options{}
+
 // NewUnpacker returns a SystemPackages unpacker pre-loaded with the default
 // system decomposers.
 func NewUnpacker() *Unpacker {
 	return &Unpacker{
+		Options: DefaultOptions,
 		decomposers: map[string]SystemDecomposer{
 			"rpm": rpm.New(),
 		},
@@ -37,6 +50,7 @@ func NewUnpacker() *Unpacker {
 // SystemDecomposer against the subject's filesystem and aggregates the
 // resulting NodeLists.
 type Unpacker struct {
+	Options     Options
 	decomposers map[string]SystemDecomposer
 }
 
@@ -60,7 +74,9 @@ func (u *Unpacker) Extract(_ context.Context, subject api.DecomposableSubject) (
 		return nil, fmt.Errorf("opening system filesystem: %w", err)
 	}
 
-	opts := &api.DecomposerOptions{}
+	opts := &api.DecomposerOptions{
+		IncludeFiles: u.Options.IncludeFiles,
+	}
 	var nodelists []*sbom.NodeList
 	var errs []error
 	for name, d := range u.decomposers {
