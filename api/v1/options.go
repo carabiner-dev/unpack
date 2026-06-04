@@ -52,6 +52,11 @@ type DecomposerOptions struct {
 	// Maps to: Maven optional deps, npm optionalDependencies.
 	IncludeOptional bool
 
+	// IncludeFiles instructs system-package decomposers to also emit nodes for
+	// the files installed by each package and relate them to the package via a
+	// "contains" edge. Source decomposers ignore this flag.
+	IncludeFiles bool
+
 	driverOptions map[string]any
 }
 
