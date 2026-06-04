@@ -24,6 +24,9 @@ func RegisterUnpacker(subjectType string, builder UnpackerBuilder) {
 // or an error if no unpacker is registered for the subject's type. This is the
 // routing mechanism unpackers use to dispatch child subjects they discover.
 func UnpackerFor(subject DecomposableSubject) (Unpacker, error) {
+	if subject == nil {
+		return nil, fmt.Errorf("cannot route a nil subject to an unpacker")
+	}
 	builder, ok := unpackerRegistry[subject.DecomposableType()]
 	if !ok {
 		return nil, fmt.Errorf("no unpacker registered for subject type %q", subject.DecomposableType())
