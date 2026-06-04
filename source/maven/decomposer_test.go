@@ -33,6 +33,22 @@ func (f *failingAgentImpl) SendHeadRequest(_ *http.Client, _ string) (*http.Resp
 	return nil, fmt.Errorf("not implemented")
 }
 
+// transientFailAgentImpl simulates a transient network failure (no HTTP
+// response) for all requests, as opposed to a definitive 404.
+type transientFailAgentImpl struct{}
+
+func (f *transientFailAgentImpl) SendGetRequest(_ *http.Client, url string) (*http.Response, error) {
+	return nil, fmt.Errorf("connection refused: %s", url)
+}
+
+func (f *transientFailAgentImpl) SendPostRequest(_ *http.Client, _ string, _ []byte, _ string) (*http.Response, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (f *transientFailAgentImpl) SendHeadRequest(_ *http.Client, _ string) (*http.Response, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 func TestDecomposerDefaultOptions(t *testing.T) {
 	t.Parallel()
 	d := New()
@@ -87,6 +103,28 @@ func TestDecomposerExtractSimple(t *testing.T) {
 	// Test and provided deps should be excluded by default
 	nodes := nl.GetNodes()
 	require.GreaterOrEqual(t, len(nodes), 3) // root + guava + commons-lang3
+}
+
+// TestDecomposerExtractTransientFails verifies that a transient fetch failure
+// (after retries) fails the extraction rather than silently producing an
+// incomplete tree. This is the counterpart to TestDecomposerExtractSimple,
+// where a definitive 404 is tolerated.
+func TestDecomposerExtractTransientFails(t *testing.T) {
+	t.Parallel()
+
+	pom, err := ParsePomXML("testdata/simple")
+	require.NoError(t, err)
+
+	resolver := NewResolver(&Options{RepoURL: "https://unused.test", Concurrency: 1})
+	resolver.Agent = resolver.Agent.WithRetries(0)
+	resolver.Agent.SetImplementation(&transientFailAgentImpl{})
+
+	effective, err := resolver.ResolveEffectivePOM(pom)
+	require.NoError(t, err)
+
+	dt := NewDependencyTree(effective, resolver, &defaultOptions)
+	err = dt.Build()
+	require.Error(t, err, "transient fetch failure should fail the build")
 }
 
 func TestCanDecompose(t *testing.T) {

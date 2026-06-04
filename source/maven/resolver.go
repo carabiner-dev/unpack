@@ -6,8 +6,10 @@ package maven
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +17,15 @@ import (
 	"github.com/carabiner-dev/hasher"
 	khttp "sigs.k8s.io/release-utils/http"
 )
+
+// ErrNotFound is returned when a resource (POM, metadata) is definitively
+// absent from a repository (HTTP 404). Maven Central is immutable, so a 404
+// almost never means the artifact was removed; it usually means the artifact
+// lives in a different repository or the coordinate is wrong. Callers should
+// treat it as a tolerable "not in this repo" signal rather than a hard failure,
+// distinguishing it from transient/network errors (which are fatal once the
+// HTTP agent's retries are exhausted).
+var ErrNotFound = errors.New("resource not found in repository")
 
 const (
 	defaultRepoURL     = "https://repo1.maven.org/maven2"
@@ -77,7 +88,7 @@ func (r *Resolver) FetchPOMFrom(groupID, artifactID, version, repoURL string) (*
 	r.mu.RUnlock()
 
 	url := r.pomURLFrom(groupID, artifactID, version, repoURL)
-	data, err := r.Agent.Get(url)
+	data, err := r.get(url)
 	if err != nil {
 		return nil, fmt.Errorf("fetching POM %s: %w", key, err)
 	}
@@ -92,6 +103,27 @@ func (r *Resolver) FetchPOMFrom(groupID, artifactID, version, repoURL string) (*
 	r.mu.Unlock()
 
 	return pom, nil
+}
+
+// get fetches a URL through the HTTP agent (which retries transient failures),
+// translating a definitive 404 into ErrNotFound so callers can tell a
+// "not in this repo" miss apart from a transient/network failure. The agent's
+// WithFailOnHTTPError surfaces other non-2xx statuses as plain errors.
+func (r *Resolver) get(url string) ([]byte, error) {
+	resp, err := r.Agent.GetRequest(url)
+	if resp != nil {
+		defer resp.Body.Close() //nolint:errcheck // read-only body
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("%w: %s", ErrNotFound, url)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("HTTP %s for %s", resp.Status, url)
+	}
+	return io.ReadAll(resp.Body)
 }
 
 // effectiveRepoURL returns override when non-empty (trimmed), else r.RepoURL.

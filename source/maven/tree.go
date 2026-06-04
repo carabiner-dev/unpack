@@ -4,6 +4,7 @@
 package maven
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -178,11 +179,26 @@ func (dt *DependencyTree) Build() error {
 		var licenses []License
 		var transitiveDeps []Dependency
 		if dt.resolver != nil && version != "" {
+			// Fetching a dependency's POM is what lets us discover its
+			// transitive dependencies.
 			depPOM, err := dt.resolver.FetchPOMFrom(dep.GroupID, dep.ArtifactID, version, coord.RepoURL)
-			if err == nil {
+			switch {
+			case err == nil:
+				// proceed to extract transitive deps below
+			case errors.Is(err, ErrNotFound):
+				// The POM isn't in the configured repository (it may be hosted
+				// in a different repo, or the coordinate is off). Tolerate it:
+				// keep the dependency node but skip expanding its transitives.
+				depPOM = nil
+			default:
+				// Transient/network failure after the agent's retries. Failing
+				// here beats returning a silently incomplete tree.
+				return fmt.Errorf("fetching POM for %s: %w", coord.String(), err)
+			}
+
+			if depPOM != nil {
 				// Try to resolve effective POM for accurate data
-				effective, err := dt.resolver.ResolveEffectivePOM(depPOM)
-				if err == nil {
+				if effective, err := dt.resolver.ResolveEffectivePOM(depPOM); err == nil {
 					depPOM = effective
 				}
 				licenses = depPOM.Licenses
