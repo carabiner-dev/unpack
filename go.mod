@@ -1,6 +1,6 @@
 module github.com/carabiner-dev/unpack
 
-go 1.25.9
+go 1.25.11
 
 require (
 	github.com/BurntSushi/toml v1.6.0

@@ -4,12 +4,14 @@
 package rpm
 
 import (
+	"os"
 	"strings"
 	"testing"
 
 	rpmdb "github.com/knqyf263/go-rpmdb/pkg"
 	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func intPtr(v int) *int { return &v }
@@ -180,4 +182,56 @@ func TestPackagesToNodeListSkipsGPGPubkey(t *testing.T) {
 	if assert.Len(t, nodes, 1) {
 		assert.Equal(t, "curl", nodes[0].GetName())
 	}
+}
+
+// TestExtractFromFS_BDB runs the full ExtractFromFS path against the
+// testdata/rhel8-libuuid fixture — a BerkeleyDB-format Packages file with a
+// single libuuid package, plus a matching etc/os-release. The single-package
+// fixture is enough to validate every step of the chain: BDB stage+open,
+// os-release parsing, purl construction, and the rich Node fields.
+func TestExtractFromFS_BDB(t *testing.T) {
+	t.Parallel()
+	d := New()
+	source := os.DirFS("testdata/rhel8-libuuid")
+
+	nl, err := d.ExtractFromFS(source, nil)
+	require.NoError(t, err)
+	require.NotNil(t, nl)
+
+	nodes := nl.GetNodes()
+	require.Len(t, nodes, 1)
+
+	n := nodes[0]
+	assert.Equal(t, "libuuid", n.GetName())
+	assert.Equal(t, "2.32.1-42.el8_8", n.GetVersion())
+	assert.Equal(t, []string{"BSD"}, n.GetLicenses())
+
+	if assert.Len(t, n.GetSuppliers(), 1) {
+		assert.Equal(t, "Red Hat, Inc.", n.GetSuppliers()[0].GetName())
+		assert.True(t, n.GetSuppliers()[0].GetIsOrg())
+	}
+
+	assert.Equal(t,
+		"c1e561f13d39aee443a1f00258fba000",
+		n.GetHashes()[int32(sbom.HashAlgorithm_MD5)],
+	)
+
+	// Namespace and distro come from etc/os-release; upstream from SourceRpm.
+	assert.Equal(t,
+		"pkg:rpm/rhel/libuuid@2.32.1-42.el8_8?arch=x86_64&distro=rhel-8.8&upstream=util-linux-2.32.1-42.el8_8.src.rpm",
+		n.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)],
+	)
+}
+
+// TestExtractFromFS_NoDB verifies that a filesystem without an RPM database
+// returns (nil, nil) rather than an error — RPM is not the only system
+// package format and its absence isn't a failure.
+func TestExtractFromFS_NoDB(t *testing.T) {
+	t.Parallel()
+	d := New()
+	source := os.DirFS(t.TempDir())
+
+	nl, err := d.ExtractFromFS(source, nil)
+	assert.NoError(t, err)
+	assert.Nil(t, nl)
 }
