@@ -356,14 +356,20 @@ func buildPURL(name, version string) string {
 	return fmt.Sprintf("pkg:npm/%s@%s", url.PathEscape(name), version)
 }
 
+// SRI hash algorithm names as they appear in package-lock integrity fields.
+const (
+	algoSHA512 = "sha512"
+	algoSHA256 = "sha256"
+)
+
 // integrityAlgorithmToSBOM converts an SRI algorithm name to an sbom.HashAlgorithm.
 func integrityAlgorithmToSBOM(algorithm string) sbom.HashAlgorithm {
 	switch strings.ToLower(algorithm) {
-	case "sha512":
+	case algoSHA512:
 		return sbom.HashAlgorithm_SHA512
 	case "sha384":
 		return sbom.HashAlgorithm_SHA384
-	case "sha256":
+	case algoSHA256:
 		return sbom.HashAlgorithm_SHA256
 	case "sha1":
 		return sbom.HashAlgorithm_SHA1

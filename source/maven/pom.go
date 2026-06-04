@@ -88,11 +88,14 @@ const (
 
 	// DefaultType is the default Maven artifact type.
 	DefaultType = "jar"
+
+	// valueTrue is the XML string representation of a boolean true.
+	valueTrue = "true"
 )
 
 // IsOptional returns true if the dependency is marked optional.
 func (d *Dependency) IsOptional() bool {
-	return d.Optional == "true"
+	return d.Optional == valueTrue
 }
 
 // EffectiveScope returns the dependency's scope, defaulting to "compile".
@@ -158,7 +161,7 @@ func (r Repository) SnapshotsEnabled() bool {
 	if r.Snapshots == nil {
 		return false
 	}
-	return strings.EqualFold(r.Snapshots.Enabled, "true")
+	return strings.EqualFold(r.Snapshots.Enabled, valueTrue)
 }
 
 // ReleasesEnabled returns true if this repository serves release artifacts.
