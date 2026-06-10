@@ -4,8 +4,15 @@
 package deb
 
 import (
+	"archive/tar"
+	"compress/gzip"
+	"errors"
+	"io"
+	"io/fs"
 	"os"
+	"path"
 	"testing"
+	"testing/fstest"
 
 	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/assert"
@@ -13,6 +20,38 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 )
+
+// fixtureFS loads a tar.gz fixture into an in-memory filesystem. The
+// debian13-slim fixture ships as a tarball because its multi-arch dpkg info
+// files have colons in their names ("libc6:amd64.list"), which NTFS forbids:
+// keeping them as plain files would break git checkout on Windows.
+func fixtureFS(t *testing.T, tarPath string) fs.FS {
+	t.Helper()
+
+	f, err := os.Open(tarPath)
+	require.NoError(t, err)
+	defer f.Close() //nolint:errcheck // read-only file
+
+	gz, err := gzip.NewReader(f)
+	require.NoError(t, err)
+
+	fsys := fstest.MapFS{}
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		data, err := io.ReadAll(tr)
+		require.NoError(t, err)
+		fsys[path.Clean(hdr.Name)] = &fstest.MapFile{Data: data}
+	}
+	return fsys
+}
 
 // TestExtractFromFS_DebianSlim runs the full ExtractFromFS path against the
 // testdata/debian13-slim fixture: a dpkg status file lifted from
@@ -22,7 +61,7 @@ import (
 func TestExtractFromFS_DebianSlim(t *testing.T) {
 	t.Parallel()
 	d := New()
-	source := os.DirFS("testdata/debian13-slim")
+	source := fixtureFS(t, "testdata/debian13-slim.tar.gz")
 
 	nl, err := d.ExtractFromFS(source, nil)
 	require.NoError(t, err)
@@ -62,7 +101,7 @@ func TestExtractFromFS_DebianSlim(t *testing.T) {
 func TestExtractFromFS_DebianSlimIncludeFiles(t *testing.T) {
 	t.Parallel()
 	d := New()
-	source := os.DirFS("testdata/debian13-slim")
+	source := fixtureFS(t, "testdata/debian13-slim.tar.gz")
 
 	nl, err := d.ExtractFromFS(source, &api.DecomposerOptions{IncludeFiles: true})
 	require.NoError(t, err)
