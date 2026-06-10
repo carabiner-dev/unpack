@@ -102,7 +102,7 @@ func (d *Decomposer) ExtractFromFS(source fs.FS, opts *api.DecomposerOptions) (*
 		fsrc = newFileSource(source, dbPath, isDir)
 	}
 
-	return packagesToNodeList(pkgs, osr, fsrc)
+	return packagesToNodeList(source, pkgs, osr, fsrc)
 }
 
 // readDpkgDB looks for the first dpkg database that exists in source at any
@@ -173,9 +173,10 @@ func readStatusDir(source fs.FS, dir string) ([]*dpkgPackage, error) {
 // packagesToNodeList converts dpkg database entries into a protobom
 // NodeList. Each installed package becomes a root node identified by its
 // pkg:deb purl; stanzas for removed-but-not-purged packages are skipped.
+// Licenses are read from each package's Debian copyright file in source.
 // When fsrc is non-nil, each package's file list is also emitted as child
 // Node_FILE nodes related via a "contains" edge.
-func packagesToNodeList(pkgs []*dpkgPackage, osr osrelease.Data, fsrc *fileSource) (*sbom.NodeList, error) {
+func packagesToNodeList(source fs.FS, pkgs []*dpkgPackage, osr osrelease.Data, fsrc *fileSource) (*sbom.NodeList, error) {
 	nl := sbom.NewNodeList()
 	for _, p := range pkgs {
 		if !p.Installed() {
@@ -193,6 +194,9 @@ func packagesToNodeList(pkgs []*dpkgPackage, osr osrelease.Data, fsrc *fileSourc
 			},
 			PrimaryPurpose: []sbom.Purpose{sbom.Purpose_LIBRARY},
 		}
+		licenses, concluded := packageLicenses(source, p.Name)
+		node.Licenses = licenses
+		node.LicenseConcluded = concluded
 		if p.Maintainer != "" {
 			// Maintainers are mostly teams (e.g. "Debian GNU Libc
 			// Maintainers"), so flag them as orgs like we do for RPM vendors.

@@ -93,6 +93,19 @@ func TestExtractFromFS_DebianSlim(t *testing.T) {
 		"pkg:deb/debian/libc6@2.41-12+deb13u3?arch=amd64&distro=debian-13&upstream=glibc",
 		libc.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)],
 	)
+
+	// Licenses come from the DEP-5 copyright file: the "Files: *" license is
+	// the concluded one and the full set collects every Files paragraph,
+	// normalized to SPDX form.
+	assert.Equal(t, "LGPL-2.1-or-later", libc.GetLicenseConcluded())
+	assert.Greater(t, len(libc.GetLicenses()), 30, "libc6 declares many per-file licenses")
+	assert.Contains(t, libc.GetLicenses(), "BSD-2-Clause OR GPL-2.0-only")
+	assert.Contains(t, libc.GetLicenses(), "LGPL-2.1-or-later")
+
+	base := byName["base-files"]
+	require.NotNil(t, base)
+	assert.Equal(t, "GPL-2.0-or-later", base.GetLicenseConcluded())
+	assert.Equal(t, []string{"GPL-2.0-or-later", "verbatim"}, base.GetLicenses())
 }
 
 // TestExtractFromFS_DebianSlimIncludeFiles flips IncludeFiles on and checks
@@ -157,6 +170,18 @@ func TestExtractFromFS_Distroless(t *testing.T) {
 	)
 	assert.Contains(t, byName, "netbase")
 	assert.Contains(t, byName, "media-types")
+
+	// License enrichment works on the distroless doc tree too: tzdata and
+	// netbase ship DEP-5 copyright files, while base-files in Debian 12 is
+	// prose-format and yields no license data.
+	byNodeName := map[string]*sbom.Node{}
+	for _, n := range nl.GetNodes() {
+		byNodeName[n.GetName()] = n
+	}
+	assert.Equal(t, "public-domain", byNodeName["tzdata"].GetLicenseConcluded())
+	assert.Equal(t, "GPL-2.0-only", byNodeName["netbase"].GetLicenseConcluded())
+	assert.Empty(t, byNodeName["base-files"].GetLicenses())
+	assert.Empty(t, byNodeName["base-files"].GetLicenseConcluded())
 }
 
 // TestExtractFromFS_DistrolessIncludeFiles checks the distroless file lists
