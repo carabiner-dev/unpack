@@ -11,6 +11,7 @@ import (
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/system/apk"
 	"github.com/carabiner-dev/unpack/system/deb"
 	"github.com/carabiner-dev/unpack/system/rpm"
 )
@@ -44,6 +45,7 @@ func NewUnpacker() *Unpacker {
 		decomposers: map[string]SystemDecomposer{
 			"rpm": rpm.New(),
 			"deb": deb.New(),
+			"apk": apk.New(),
 		},
 	}
 }
