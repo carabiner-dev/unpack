@@ -122,8 +122,8 @@ func nodeListToSignedAttestation(s *signer.Signer, wr io.WriteCloser, format for
 		return fmt.Errorf("signing attestation: %w", err)
 	}
 
-	// Write the bundle to the output
-	if err := s.WriteBundle(bndl, wr); err != nil {
+	// Write the signed artifact to the output
+	if _, err := bndl.WriteTo(wr); err != nil {
 		return fmt.Errorf("writing signed bundle: %w", err)
 	}
 
