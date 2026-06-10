@@ -80,7 +80,7 @@ func (d *Decomposer) ExtractFromFS(source fs.FS, opts *api.DecomposerOptions) (*
 		locations = dpkgDBLocations
 	}
 
-	pkgs, err := readDpkgDB(source, locations)
+	pkgs, dbPath, isDir, err := readDpkgDB(source, locations)
 	if err != nil {
 		return nil, fmt.Errorf("reading dpkg database: %w", err)
 	}
@@ -95,29 +95,38 @@ func (d *Decomposer) ExtractFromFS(source fs.FS, opts *api.DecomposerOptions) (*
 		return nil, fmt.Errorf("reading os-release: %w", err)
 	}
 
-	return packagesToNodeList(pkgs, osr)
+	// The file lists live next to the database, in layout-specific places,
+	// so the fileSource needs to know where the DB was found.
+	var fsrc *fileSource
+	if opts != nil && opts.IncludeFiles {
+		fsrc = newFileSource(source, dbPath, isDir)
+	}
+
+	return packagesToNodeList(pkgs, osr, fsrc)
 }
 
 // readDpkgDB looks for the first dpkg database that exists in source at any
-// of the given locations and parses it. A location may be the classic status
-// file or a status.d-style directory of single-stanza files. When no
-// database is found, returns (nil, nil); a found-but-empty database returns
-// a non-nil empty slice.
-func readDpkgDB(source fs.FS, locations []string) ([]*dpkgPackage, error) {
+// of the given locations and parses it, reporting where it was found and
+// whether it is a status.d-style directory of single-stanza files (as
+// opposed to the classic status file). When no database is found, returns a
+// nil slice; a found-but-empty database returns a non-nil empty slice.
+func readDpkgDB(source fs.FS, locations []string) (pkgs []*dpkgPackage, dbPath string, isDir bool, err error) {
 	for _, loc := range locations {
 		info, err := fs.Stat(source, loc)
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
-			return nil, fmt.Errorf("checking %q: %w", loc, err)
+			return nil, "", false, fmt.Errorf("checking %q: %w", loc, err)
 		}
 		if info.IsDir() {
-			return readStatusDir(source, loc)
+			pkgs, err = readStatusDir(source, loc)
+		} else {
+			pkgs, err = readStatusFile(source, loc)
 		}
-		return readStatusFile(source, loc)
+		return pkgs, loc, info.IsDir(), err
 	}
-	return nil, nil
+	return nil, "", false, nil
 }
 
 // readStatusFile parses a classic single-file dpkg status database.
@@ -164,7 +173,9 @@ func readStatusDir(source fs.FS, dir string) ([]*dpkgPackage, error) {
 // packagesToNodeList converts dpkg database entries into a protobom
 // NodeList. Each installed package becomes a root node identified by its
 // pkg:deb purl; stanzas for removed-but-not-purged packages are skipped.
-func packagesToNodeList(pkgs []*dpkgPackage, osr osrelease.Data) (*sbom.NodeList, error) {
+// When fsrc is non-nil, each package's file list is also emitted as child
+// Node_FILE nodes related via a "contains" edge.
+func packagesToNodeList(pkgs []*dpkgPackage, osr osrelease.Data, fsrc *fileSource) (*sbom.NodeList, error) {
 	nl := sbom.NewNodeList()
 	for _, p := range pkgs {
 		if !p.Installed() {
@@ -190,6 +201,12 @@ func packagesToNodeList(pkgs []*dpkgPackage, osr osrelease.Data) (*sbom.NodeList
 			}}
 		}
 		nl.AddRootNode(node)
+
+		if fsrc != nil {
+			if err := fsrc.addPackageFiles(nl, p, node.GetId()); err != nil {
+				return nil, fmt.Errorf("expanding files for %q: %w", p.Name, err)
+			}
+		}
 	}
 	return nl, nil
 }
