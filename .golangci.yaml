@@ -110,6 +110,10 @@ linters:
     - zerologlint
 
   settings:
+    goconst:
+      # Don't count occurrences in test data tables: a literal repeated only
+      # in tests shouldn't force a constant into production code.
+      ignore-tests: true
     gocyclo:
       min-complexity: 35
     godox:

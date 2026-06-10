@@ -21,6 +21,7 @@ import (
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/system/internal/osrelease"
 )
 
 // rpmDBLocations are paths inside a system filesystem where an installed RPM
@@ -111,7 +112,7 @@ func (d *Decomposer) ExtractFromFS(source fs.FS, opts *api.DecomposerOptions) (*
 
 	// os-release feeds the purl namespace and the distro= qualifier. If it's
 	// missing we still emit purls, just without distro information.
-	osr, err := readOSRelease(source)
+	osr, err := osrelease.Read(source)
 	if err != nil {
 		return nil, fmt.Errorf("reading os-release: %w", err)
 	}
@@ -181,7 +182,7 @@ func copyToTemp(f fs.File, srcPath string) (dstPath string, cleanup func() error
 // NodeList. Each package becomes a root node identified by its pkg:rpm purl.
 // When includeFiles is true, each package's file list is also emitted as
 // child Node_FILE nodes related via a "contains" edge.
-func packagesToNodeList(pkgs []*rpmdb.PackageInfo, osr osRelease, includeFiles bool) (*sbom.NodeList, error) {
+func packagesToNodeList(pkgs []*rpmdb.PackageInfo, osr osrelease.Data, includeFiles bool) (*sbom.NodeList, error) {
 	nl := sbom.NewNodeList()
 	for _, p := range pkgs {
 		if virtualPackages[p.Name] {
@@ -242,7 +243,7 @@ func versionRelease(p *rpmdb.PackageInfo) string {
 // alphabetically and percent-encoded.
 //
 //	pkg:rpm/fedora/curl@7.50.3-1.fc25?arch=i386&distro=fedora-25
-func rpmPurl(p *rpmdb.PackageInfo, osr osRelease) string {
+func rpmPurl(p *rpmdb.PackageInfo, osr osrelease.Data) string {
 	var b strings.Builder
 	b.WriteString("pkg:rpm/")
 	if ns := osr.Namespace(); ns != "" {
