@@ -5,7 +5,6 @@ package rpm
 
 import (
 	"os"
-	"strings"
 	"testing"
 
 	rpmdb "github.com/knqyf263/go-rpmdb/pkg"
@@ -14,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/system/internal/osrelease"
 )
 
 func intPtr(v int) *int { return &v }
@@ -23,7 +23,7 @@ func TestRpmPurl(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		pkg  rpmdb.PackageInfo
-		osr  osRelease
+		osr  osrelease.Data
 		want string
 	}{
 		{
@@ -31,7 +31,7 @@ func TestRpmPurl(t *testing.T) {
 			pkg: rpmdb.PackageInfo{
 				Name: "curl", Version: "7.50.3", Release: "1.fc25", Arch: "i386",
 			},
-			osr:  osRelease{ID: "fedora", VersionID: "25"},
+			osr:  osrelease.Data{ID: "fedora", VersionID: "25"},
 			want: "pkg:rpm/fedora/curl@7.50.3-1.fc25?arch=i386&distro=fedora-25",
 		},
 		{
@@ -40,7 +40,7 @@ func TestRpmPurl(t *testing.T) {
 				Name: "centerim", Version: "4.22.10", Release: "1.el6",
 				Arch: "i686", Epoch: intPtr(1),
 			},
-			osr:  osRelease{ID: "fedora", VersionID: "25"},
+			osr:  osrelease.Data{ID: "fedora", VersionID: "25"},
 			want: "pkg:rpm/fedora/centerim@4.22.10-1.el6?arch=i686&distro=fedora-25&epoch=1",
 		},
 		{
@@ -49,7 +49,7 @@ func TestRpmPurl(t *testing.T) {
 				Name: "bash", Version: "5.2.15", Release: "1.fc38",
 				Arch: "x86_64", Epoch: intPtr(0),
 			},
-			osr:  osRelease{ID: "fedora", VersionID: "38"},
+			osr:  osrelease.Data{ID: "fedora", VersionID: "38"},
 			want: "pkg:rpm/fedora/bash@5.2.15-1.fc38?arch=x86_64&distro=fedora-38",
 		},
 		{
@@ -58,7 +58,7 @@ func TestRpmPurl(t *testing.T) {
 				Name: "curl", Version: "7.50.3", Release: "1.fc26", Arch: "x86_64",
 				SourceRpm: "curl-7.50.3-1.fc26.src.rpm",
 			},
-			osr:  osRelease{ID: "fedora", VersionID: "26"},
+			osr:  osrelease.Data{ID: "fedora", VersionID: "26"},
 			want: "pkg:rpm/fedora/curl@7.50.3-1.fc26?arch=x86_64&distro=fedora-26&upstream=curl-7.50.3-1.fc26.src.rpm",
 		},
 		{
@@ -67,7 +67,7 @@ func TestRpmPurl(t *testing.T) {
 				Name: "openssl", Version: "3.0.7", Release: "18.el9_2",
 				Arch: "x86_64",
 			},
-			osr:  osRelease{ID: "RHEL", VersionID: "9.2"},
+			osr:  osrelease.Data{ID: "RHEL", VersionID: "9.2"},
 			want: "pkg:rpm/rhel/openssl@3.0.7-18.el9_2?arch=x86_64&distro=rhel-9.2",
 		},
 		{
@@ -75,7 +75,7 @@ func TestRpmPurl(t *testing.T) {
 			pkg: rpmdb.PackageInfo{
 				Name: "kernel", Version: "6.4.6", Release: "200.fc38", Arch: "X86_64",
 			},
-			osr:  osRelease{ID: "fedora", VersionID: "38"},
+			osr:  osrelease.Data{ID: "fedora", VersionID: "38"},
 			want: "pkg:rpm/fedora/kernel@6.4.6-200.fc38?arch=x86_64&distro=fedora-38",
 		},
 		{
@@ -85,7 +85,7 @@ func TestRpmPurl(t *testing.T) {
 				Arch:            "x86_64",
 				Modularitylabel: "nodejs:14:8060020220421152133:e6e4d6a4",
 			},
-			osr:  osRelease{ID: "fedora", VersionID: "38"},
+			osr:  osrelease.Data{ID: "fedora", VersionID: "38"},
 			want: "pkg:rpm/fedora/nodejs@14.21.3-1.module_f38+18119+78d34c93?arch=x86_64&distro=fedora-38&modularitylabel=nodejs%3A14%3A8060020220421152133%3Ae6e4d6a4",
 		},
 		{
@@ -93,7 +93,7 @@ func TestRpmPurl(t *testing.T) {
 			pkg: rpmdb.PackageInfo{
 				Name: "curl", Version: "7.50.3", Release: "1", Arch: "x86_64",
 			},
-			osr:  osRelease{},
+			osr:  osrelease.Data{},
 			want: "pkg:rpm/curl@7.50.3-1?arch=x86_64",
 		},
 		{
@@ -102,7 +102,7 @@ func TestRpmPurl(t *testing.T) {
 				Name: "curl", Version: "7.50.3", Release: "1.fc26", Arch: "x86_64",
 				Epoch: intPtr(2), SourceRpm: "curl-7.50.3-1.fc26.src.rpm",
 			},
-			osr: osRelease{ID: "fedora", VersionID: "26"},
+			osr: osrelease.Data{ID: "fedora", VersionID: "26"},
 			// arch < distro < epoch < upstream
 			want: "pkg:rpm/fedora/curl@7.50.3-1.fc26?arch=x86_64&distro=fedora-26&epoch=2&upstream=curl-7.50.3-1.fc26.src.rpm",
 		},
@@ -113,31 +113,6 @@ func TestRpmPurl(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
-}
-
-func TestParseOSRelease(t *testing.T) {
-	t.Parallel()
-	in := strings.NewReader(`NAME="Fedora Linux"
-VERSION="38 (Workstation Edition)"
-ID=fedora
-ID_LIKE=fedora
-VERSION_ID=38
-# a comment
-PRETTY_NAME="Fedora Linux 38 (Workstation Edition)"
-`)
-	got, err := parseOSRelease(in)
-	require.NoError(t, err)
-	assert.Equal(t, "fedora", got.ID)
-	assert.Equal(t, "38", got.VersionID)
-	assert.Equal(t, "fedora", got.Namespace())
-	assert.Equal(t, "fedora-38", got.Distro())
-}
-
-func TestOSReleaseDistroEmpty(t *testing.T) {
-	t.Parallel()
-	assert.Empty(t, osRelease{}.Distro())
-	assert.Empty(t, osRelease{ID: "fedora"}.Distro())
-	assert.Empty(t, osRelease{VersionID: "38"}.Distro())
 }
 
 func TestPackagesToNodeListMapping(t *testing.T) {
@@ -151,7 +126,7 @@ func TestPackagesToNodeListMapping(t *testing.T) {
 			SigMD5:  "d41d8cd98f00b204e9800998ecf8427e",
 		},
 	}
-	nl, err := packagesToNodeList(pkgs, osRelease{ID: "fedora", VersionID: "25"}, false)
+	nl, err := packagesToNodeList(pkgs, osrelease.Data{ID: "fedora", VersionID: "25"}, false)
 	require.NoError(t, err)
 
 	nodes := nl.GetNodes()
@@ -180,7 +155,7 @@ func TestPackagesToNodeListSkipsGPGPubkey(t *testing.T) {
 		{Name: "gpg-pubkey", Version: "fd431d51", Release: "4ae0493b"},
 		{Name: "curl", Version: "7.50.3", Release: "1.fc25"},
 	}
-	nl, err := packagesToNodeList(pkgs, osRelease{}, false)
+	nl, err := packagesToNodeList(pkgs, osrelease.Data{}, false)
 	require.NoError(t, err)
 	nodes := nl.GetNodes()
 	if assert.Len(t, nodes, 1) {
