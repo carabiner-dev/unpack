@@ -217,8 +217,27 @@ func platformString(p *v1.Platform) string {
 func (u *Unpacker) remoteOptions(ctx context.Context) []remote.Option {
 	return []remote.Option{
 		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+		remote.WithAuthFromKeychain(fallbackKeychain{inner: authn.DefaultKeychain}),
 	}
+}
+
+// fallbackKeychain resolves credentials through the wrapped keychain but
+// degrades to anonymous access when resolution itself fails — for example
+// when a docker credential helper is configured but broken (expired gcloud
+// login, missing helper binary). Most images we unpack are public, and a
+// broken helper should not prevent reading them; genuinely private images
+// then fail with the registry's own authorization error instead.
+type fallbackKeychain struct {
+	inner authn.Keychain
+}
+
+func (k fallbackKeychain) Resolve(r authn.Resource) (authn.Authenticator, error) {
+	auth, err := k.inner.Resolve(r)
+	if err != nil {
+		//nolint:nilerr // swallowing the error is this type's purpose: degrade to anonymous
+		return authn.Anonymous, nil
+	}
+	return auth, nil
 }
 
 // extractImage squashes a single-arch image and returns a NodeList rooted
