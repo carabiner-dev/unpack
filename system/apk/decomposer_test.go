@@ -139,28 +139,21 @@ func TestExtractFromFS_AlpineIncludeFiles(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, nl)
 
-	// 16 packages + 253 file records (F: directories and R: files).
-	require.Len(t, nl.GetNodes(), 269)
+	// 16 packages + 110 file records (R: entries; F: directories are
+	// not emitted).
+	require.Len(t, nl.GetNodes(), 126)
 
 	// Spot-check the musl loader file and its digest from the Z: record.
 	var loader *sbom.Node
-	dirs, files := 0, 0
 	for _, n := range nl.GetNodes() {
 		if n.GetType() != sbom.Node_FILE {
 			continue
 		}
-		if len(n.GetHashes()) == 0 {
-			dirs++
-		} else {
-			files++
-		}
+		assert.NotEmpty(t, n.GetHashes(), "R: file records should carry Z: digests: %s", n.GetName())
 		if n.GetName() == "/lib/libc.musl-x86_64.so.1" {
 			loader = n
 		}
 	}
-	assert.NotZero(t, dirs, "F: directory records should produce hashless nodes")
-	assert.NotZero(t, files, "R: file records should carry Z: digests")
-
 	require.NotNil(t, loader, "musl loader file node missing")
 	assert.Equal(t,
 		"ef2277245372a40e26c61249af4a2ee82cec2552",

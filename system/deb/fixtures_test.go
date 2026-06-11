@@ -120,9 +120,9 @@ func TestExtractFromFS_DebianSlimIncludeFiles(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, nl)
 
-	// 2 packages + 90 base-files entries + 299 libc6 entries (the "/." root
-	// entry of each .list file is skipped).
-	require.Len(t, nl.GetNodes(), 391)
+	// 2 packages + 75 base-files entries + 286 libc6 entries (the "/."
+	// root and the directories of each .list file are skipped).
+	require.Len(t, nl.GetNodes(), 363)
 
 	// Spot-check the libc6 shared object got its digest from the multi-arch
 	// qualified md5sums file.

@@ -152,15 +152,15 @@ func TestExtractSingleArchIncludeFiles(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, lists, 1)
 
-	// 1 image node + 2 packages + 2 musl file records (F:lib and the R:
-	// loader file).
+	// 1 image node + 2 packages + 1 musl file record (the R: loader file;
+	// the F: directory is not emitted).
 	var files []*sbom.Node
 	for _, n := range lists[0].GetNodes() {
 		if n.GetType() == sbom.Node_FILE {
 			files = append(files, n)
 		}
 	}
-	require.Len(t, files, 2)
+	require.Len(t, files, 1)
 }
 
 // archImage builds a platform image carrying an apk database whose musl

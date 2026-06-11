@@ -28,12 +28,12 @@ type apkPackage struct {
 	Files       []apkFile
 }
 
-// apkFile is one filesystem entry owned by a package: directories come from
-// F: records (no digest), regular files from R: records with their digest
-// in the following Z: record.
+// apkFile is one file owned by a package: an R: record with its digest from
+// the following Z: record. Directory records (F:) only provide the path
+// prefix and are not emitted as files.
 type apkFile struct {
 	Path string
-	SHA1 string // hex digest; empty for directories
+	SHA1 string // hex digest; empty for special files
 }
 
 // parseInstalled parses an apk installed database: blank-line separated
@@ -97,7 +97,6 @@ func parseInstalled(r io.Reader) ([]*apkPackage, error) {
 			cur.Checksum = decodeChecksum(value)
 		case "F":
 			dir = value
-			cur.Files = append(cur.Files, apkFile{Path: "/" + value})
 		case "R":
 			cur.Files = append(cur.Files, apkFile{Path: "/" + dir + "/" + value})
 		case "Z":

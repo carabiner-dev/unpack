@@ -108,10 +108,20 @@ func (f *fileSource) classicFiles(p *dpkgPackage) ([]fileEntry, error) {
 			return nil, err
 		}
 
+		// The .list format carries no file-type marker, but directories
+		// always appear as the parent of other entries in the same list, so
+		// anything that prefixes another entry is a directory and skipped.
+		parents := map[string]bool{}
+		for _, fp := range paths {
+			for d := path.Dir(fp); d != "/" && d != "."; d = path.Dir(d) {
+				parents[d] = true
+			}
+		}
+
 		entries := make([]fileEntry, 0, len(paths))
 		for _, fp := range paths {
 			// The root entry "/." is dpkg bookkeeping, not package content.
-			if fp == "/." {
+			if fp == "/." || parents[fp] {
 				continue
 			}
 			// md5sums paths carry no leading slash; .list paths do.

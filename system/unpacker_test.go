@@ -48,8 +48,9 @@ func TestUnpackerExtractLocalSystemIncludeFiles(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, nodelists, 1)
 
-	// 1 package + 7 files in the libuuid fixture.
-	assert.Len(t, nodelists[0].GetNodes(), 8)
+	// 1 package + 5 files in the libuuid fixture (directories are not
+	// part of the file list).
+	assert.Len(t, nodelists[0].GetNodes(), 6)
 }
 
 // TestUnpackerExtractEmptySystem confirms that a system with no recognized
