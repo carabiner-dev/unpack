@@ -170,8 +170,8 @@ func packagesToNodeList(pkgs []*apkPackage, osr osrelease.Data, includeFiles boo
 }
 
 // addPackageFiles emits the file records owned by p and relates each one to
-// the package node via a "contains" edge. Directory records carry no
-// digest; regular files get their SHA1 from the database's Z: records.
+// the package node via a "contains" edge. Regular files get their SHA1 from
+// the database's Z: records; special files carry no digest.
 func addPackageFiles(nl *sbom.NodeList, p *apkPackage, packageID string) error {
 	for _, f := range p.Files {
 		node := &sbom.Node{

@@ -215,9 +215,10 @@ func TestExtractFromFS_BDB_IncludeFiles(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, nl)
 
-	// 1 package + 7 files
+	// 1 package + 5 files (the two directories the package owns are not
+	// part of the file list)
 	nodes := nl.GetNodes()
-	require.Len(t, nodes, 8)
+	require.Len(t, nodes, 6)
 
 	// Index by name so we can assert by file path independent of ordering.
 	byName := map[string]*sbom.Node{}
@@ -231,10 +232,10 @@ func TestExtractFromFS_BDB_IncludeFiles(t *testing.T) {
 	}
 	require.NotNil(t, pkgNode)
 
-	// Spot-check three of the expected paths: a directory, a symlink (size
-	// 16, no digest), and the .so with a SHA-256 digest.
+	// Spot-check the expected paths: symlinks (no digest) and the .so
+	// with a SHA-256 digest; directories are filtered out.
 	for _, want := range []string{
-		"/usr/lib/.build-id",
+		"/usr/lib/.build-id/df/ef6a880adac817216ab9866779a0725e017647",
 		"/usr/lib64/libuuid.so.1",
 		"/usr/lib64/libuuid.so.1.3.0",
 		"/usr/share/licenses/libuuid/COPYING",
@@ -267,7 +268,7 @@ func TestExtractFromFS_BDB_IncludeFiles(t *testing.T) {
 			fileEdges += len(e.GetTo())
 		}
 	}
-	assert.Equal(t, 7, fileEdges)
+	assert.Equal(t, 5, fileEdges)
 }
 
 func TestMapDigestAlgorithm(t *testing.T) {

@@ -55,14 +55,14 @@ o:busybox
 	assert.Equal(t, "ncopa@alpinelinux.org", musl.Email)
 	assert.Equal(t, "0f7e5827e4e1a73631beda27b78431a8ba240e05", musl.Checksum)
 
-	// One F: directory record plus two R: files with Z: digests; the a:
-	// permission lines between R: and Z: don't break the association.
-	require.Len(t, musl.Files, 3)
-	assert.Equal(t, apkFile{Path: "/lib"}, musl.Files[0])
-	assert.Equal(t, "/lib/ld-musl-x86_64.so.1", musl.Files[1].Path)
-	assert.Equal(t, "1c36e90298092e128f24de888da03bc09dce6b8a", musl.Files[1].SHA1)
-	assert.Equal(t, "/lib/libc.musl-x86_64.so.1", musl.Files[2].Path)
-	assert.Equal(t, "ef2277245372a40e26c61249af4a2ee82cec2552", musl.Files[2].SHA1)
+	// Two R: files with Z: digests; the F: directory record only provides
+	// the path prefix and the a: permission lines between R: and Z: don't
+	// break the association.
+	require.Len(t, musl.Files, 2)
+	assert.Equal(t, "/lib/ld-musl-x86_64.so.1", musl.Files[0].Path)
+	assert.Equal(t, "1c36e90298092e128f24de888da03bc09dce6b8a", musl.Files[0].SHA1)
+	assert.Equal(t, "/lib/libc.musl-x86_64.so.1", musl.Files[1].Path)
+	assert.Equal(t, "ef2277245372a40e26c61249af4a2ee82cec2552", musl.Files[1].SHA1)
 
 	// Subpackages keep their origin for the upstream qualifier.
 	assert.Equal(t, "busybox", pkgs[1].Origin)

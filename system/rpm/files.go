@@ -9,6 +9,14 @@ import (
 	"github.com/protobom/protobom/pkg/sbom"
 )
 
+// The RPM database stores POSIX mode bits in FileModes; these pick out the
+// file-type field (S_IFMT) and the directory type (S_IFDIR) without
+// depending on host-OS syscall constants.
+const (
+	modeTypeMask uint16 = 0o170000
+	modeDir      uint16 = 0o040000
+)
+
 // addPackageFiles expands the file list owned by p and relates each file to
 // the package node via a "contains" edge. The RPM database stores the file
 // list split across three parallel arrays — BaseNames (filename), DirIndexes
@@ -16,15 +24,18 @@ import (
 // the FileDigests/FileSizes slices. Reassembling the full path is a join of
 // DirNames[DirIndexes[i]] + BaseNames[i].
 //
-// Files whose digest is empty (typically directories, symlinks, or special
-// files) are still emitted as nodes — they're part of the package's contents
-// — but without a Hashes field.
+// Directories owned by the package are skipped — the file list captures the
+// package's content, not the tree structure. Other entries without a digest
+// (symlinks, special files) are still emitted, just without a Hashes field.
 func addPackageFiles(nl *sbom.NodeList, p *rpmdb.PackageInfo, packageID string) error {
 	if len(p.BaseNames) == 0 {
 		return nil
 	}
 	algo, hasAlgo := mapDigestAlgorithm(p.DigestAlgorithm)
 	for i, base := range p.BaseNames {
+		if i < len(p.FileModes) && p.FileModes[i]&modeTypeMask == modeDir {
+			continue
+		}
 		dir := ""
 		if i < len(p.DirIndexes) {
 			idx := int(p.DirIndexes[i])

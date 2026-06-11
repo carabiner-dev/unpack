@@ -61,9 +61,9 @@ func TestExtractFromFS_IncludeFilesClassic(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, nl)
 
-	// 1 package + 4 files ("/." is skipped)
+	// 1 package + 2 files ("/." and the directories are skipped)
 	nodes := nl.GetNodes()
-	require.Len(t, nodes, 5)
+	require.Len(t, nodes, 3)
 
 	byName := map[string]*sbom.Node{}
 	var pkgNode *sbom.Node
@@ -76,10 +76,10 @@ func TestExtractFromFS_IncludeFilesClassic(t *testing.T) {
 	}
 	require.NotNil(t, pkgNode)
 
-	// Directories appear without hashes, regular files with their MD5.
-	dir := byName["/lib"]
-	require.NotNil(t, dir)
-	assert.Empty(t, dir.GetHashes())
+	// Directories are not part of the file list; regular files carry
+	// their MD5.
+	require.NotContains(t, byName, "/lib")
+	require.NotContains(t, byName, "/lib/x86_64-linux-gnu")
 
 	so := byName["/lib/x86_64-linux-gnu/libc-2.31.so"]
 	require.NotNil(t, so)
@@ -92,7 +92,7 @@ func TestExtractFromFS_IncludeFilesClassic(t *testing.T) {
 	for _, edge := range nl.GetEdges() {
 		assert.Equal(t, pkgNode.GetId(), edge.GetFrom())
 		assert.Equal(t, sbom.Edge_contains, edge.GetType())
-		assert.Len(t, edge.GetTo(), 4)
+		assert.Len(t, edge.GetTo(), 2)
 	}
 }
 
