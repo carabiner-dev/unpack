@@ -37,9 +37,13 @@ Extract the dependency data from an SBOM:
 
 Same but output the SBOM data in another format:
 
-%s sbom --format=cyclonedx /path/to/sbom.spdx.json 
+%s sbom --format=cyclonedx /path/to/sbom.spdx.json
 
-`, appname, appname, appname, appname),
+Extract the system packages installed in a container image:
+
+%s image alpine:3.21
+
+`, appname, appname, appname, appname, appname),
 	}
 
 	rootCmd.PersistentFlags().StringVar(
@@ -65,6 +69,7 @@ func Execute() {
 	rootCmd := rootCommand()
 
 	addExtract(rootCmd)
+	addImage(rootCmd)
 	addSBOM(rootCmd)
 	addLs(rootCmd)
 	rootCmd.AddCommand(version.WithFont("doom"))
