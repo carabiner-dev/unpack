@@ -163,22 +163,142 @@ func TestExtractSingleArchIncludeFiles(t *testing.T) {
 	require.Len(t, files, 2)
 }
 
-func TestExtractIndexNotYetSupported(t *testing.T) {
+// archImage builds a platform image carrying an apk database whose musl
+// package reports the given apk architecture.
+func archImage(t *testing.T, goArch, apkArch string) v1.Image {
+	t.Helper()
+	db := strings.ReplaceAll(apkDB, "A:x86_64", "A:"+apkArch)
+	layer := makeLayer(t,
+		dir("lib"), dir("lib/apk"), dir("lib/apk/db"),
+		file("lib/apk/db/installed", db),
+		dir("etc"),
+		file("etc/os-release", alpineOSRelease),
+	)
+	img := makeImage(t, layer)
+	img, err := mutate.ConfigFile(img, &v1.ConfigFile{Architecture: goArch, OS: "linux"})
+	require.NoError(t, err)
+	return img
+}
+
+func TestExtractMultiArch(t *testing.T) {
 	t.Parallel()
 
 	host := startRegistry(t)
 
-	// Push an image index wrapping one image.
-	img := makeImage(t, makeLayer(t, file("hello.txt", "hi")))
-	idx := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{Add: img})
+	amd64 := archImage(t, "amd64", "x86_64")
+	arm64 := archImage(t, "arm64", "aarch64")
+	// A buildx-style attestation entry that must be skipped.
+	attestation := makeImage(t, makeLayer(t, file("attestation.json", "{}")))
+
+	idx := mutate.AppendManifests(empty.Index,
+		mutate.IndexAddendum{Add: amd64, Descriptor: v1.Descriptor{
+			Platform: &v1.Platform{OS: "linux", Architecture: "amd64"},
+		}},
+		mutate.IndexAddendum{Add: arm64, Descriptor: v1.Descriptor{
+			Platform: &v1.Platform{OS: "linux", Architecture: "arm64"},
+		}},
+		mutate.IndexAddendum{Add: attestation, Descriptor: v1.Descriptor{
+			Platform:    &v1.Platform{OS: "unknown", Architecture: "unknown"},
+			Annotations: map[string]string{"vnd.docker.reference.type": "attestation-manifest"},
+		}},
+	)
+
 	refStr := host + "/test/multi:v1"
+	ref, err := name.ParseReference(refStr)
+	require.NoError(t, err)
+	require.NoError(t, remote.WriteIndex(ref, idx))
+	indexDigest, err := idx.Digest()
+	require.NoError(t, err)
+
+	u := NewUnpacker()
+	lists, err := u.Extract(t.Context(), &Reference{Ref: refStr})
+	require.NoError(t, err)
+	require.Len(t, lists, 1)
+	nl := lists[0]
+
+	// One root: the index node, carrying the index digest and a purl
+	// without an arch qualifier.
+	roots := nl.GetRootNodes()
+	require.Len(t, roots, 1)
+	idxNode := roots[0]
+	assert.Equal(t, refStr, idxNode.GetName())
+	assert.Equal(t, "v1", idxNode.GetVersion())
+	assert.Equal(t, "multi-arch image index", idxNode.GetDescription())
+	assert.Equal(t, indexDigest.Hex, idxNode.GetHashes()[int32(sbom.HashAlgorithm_SHA256)])
+	idxPurl := idxNode.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)]
+	assert.NotContains(t, idxPurl, "arch=")
+	assert.Contains(t, idxPurl, "tag=v1")
+
+	// The index contains exactly the two platform images (no attestation).
+	edge := nl.GetEdgeByType(idxNode.GetId(), sbom.Edge_contains)
+	require.NotNil(t, edge)
+	require.Len(t, edge.GetTo(), 2)
+
+	archNodes := map[string]*sbom.Node{} // arch purl qualifier -> node
+	for _, id := range edge.GetTo() {
+		n := nl.GetNodeByID(id)
+		require.NotNil(t, n)
+		purl := n.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)]
+		switch {
+		case strings.Contains(purl, "arch=amd64"):
+			archNodes["amd64"] = n
+		case strings.Contains(purl, "arch=arm64"):
+			archNodes["arm64"] = n
+		}
+	}
+	require.Len(t, archNodes, 2)
+
+	for goArch, apkArch := range map[string]string{"amd64": "x86_64", "arm64": "aarch64"} {
+		archNode := archNodes[goArch]
+
+		// Platform images are addressed by digest-pinned references: the
+		// digest in the name, the hashes, and the purl version; no tag.
+		assert.Contains(t, archNode.GetName(), "@sha256:")
+		assert.Equal(t, "linux/"+goArch, archNode.GetDescription())
+		digest := archNode.GetHashes()[int32(sbom.HashAlgorithm_SHA256)]
+		assert.NotEmpty(t, digest)
+		assert.Contains(t, archNode.GetName(), digest)
+		purl := archNode.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)]
+		assert.NotContains(t, purl, "tag=")
+
+		// Each platform image contains its own packages, with the right
+		// apk arch in their purls.
+		pkgEdge := nl.GetEdgeByType(archNode.GetId(), sbom.Edge_contains)
+		require.NotNil(t, pkgEdge, "platform image %s should contain packages", goArch)
+		require.Len(t, pkgEdge.GetTo(), 2)
+		var muslPurl string
+		for _, id := range pkgEdge.GetTo() {
+			n := nl.GetNodeByID(id)
+			if n.GetName() == "musl" {
+				muslPurl = n.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)]
+			}
+		}
+		assert.Contains(t, muslPurl, "arch="+apkArch, "musl purl for %s", goArch)
+	}
+
+	// Total: 1 index + 2 platform images + 2 packages each.
+	assert.Len(t, nl.GetNodes(), 7)
+}
+
+func TestExtractIndexWithoutPlatformImages(t *testing.T) {
+	t.Parallel()
+
+	host := startRegistry(t)
+	attestation := makeImage(t, makeLayer(t, file("attestation.json", "{}")))
+	idx := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
+		Add: attestation,
+		Descriptor: v1.Descriptor{
+			Platform: &v1.Platform{OS: "unknown", Architecture: "unknown"},
+		},
+	})
+	refStr := host + "/test/empty-index:v1"
 	ref, err := name.ParseReference(refStr)
 	require.NoError(t, err)
 	require.NoError(t, remote.WriteIndex(ref, idx))
 
 	u := NewUnpacker()
 	_, err = u.Extract(t.Context(), &Reference{Ref: refStr})
-	require.ErrorContains(t, err, "multi-arch")
+	require.ErrorContains(t, err, "no platform images")
 }
 
 func TestExtractRejectsOtherSubjects(t *testing.T) {

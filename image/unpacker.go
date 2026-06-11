@@ -17,6 +17,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/uuid"
 	"github.com/protobom/protobom/pkg/sbom"
+	"golang.org/x/sync/errgroup"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/system"
@@ -101,21 +102,113 @@ func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject)
 		return nil, fmt.Errorf("fetching %q: %w", ref.Ref, err)
 	}
 
+	var nl *sbom.NodeList
 	if desc.MediaType.IsIndex() {
-		// TODO(image): multi-arch index support lands in the next phase.
-		return nil, fmt.Errorf("%q is a multi-arch image index, not yet supported", ref.Ref)
-	}
-
-	img, err := desc.Image()
-	if err != nil {
-		return nil, fmt.Errorf("reading image %q: %w", ref.Ref, err)
-	}
-
-	nl, err := u.extractImage(ctx, ref.Ref, nref, img)
-	if err != nil {
-		return nil, err
+		idx, err := desc.ImageIndex()
+		if err != nil {
+			return nil, fmt.Errorf("reading image index %q: %w", ref.Ref, err)
+		}
+		nl, err = u.extractIndex(ctx, ref.Ref, nref, idx)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		img, err := desc.Image()
+		if err != nil {
+			return nil, fmt.Errorf("reading image %q: %w", ref.Ref, err)
+		}
+		nl, err = u.extractImage(ctx, ref.Ref, nref, img)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return []*sbom.NodeList{nl}, nil
+}
+
+// extractIndex handles a multi-arch image index: each platform image is
+// squashed and extracted concurrently, and the results are assembled under
+// a node describing the index — index node → (contains) → one node per arch
+// image → (contains) → its system packages.
+func (u *Unpacker) extractIndex(ctx context.Context, refStr string, nref name.Reference, idx v1.ImageIndex) (*sbom.NodeList, error) {
+	manifest, err := idx.IndexManifest()
+	if err != nil {
+		return nil, fmt.Errorf("reading index manifest: %w", err)
+	}
+
+	// Collect the platform images, skipping non-runnable entries such as
+	// buildx attestation manifests (platform "unknown/unknown").
+	var members []*v1.Descriptor
+	for i := range manifest.Manifests {
+		m := &manifest.Manifests[i]
+		if !m.MediaType.IsImage() || isAttestation(m) {
+			continue
+		}
+		members = append(members, m)
+	}
+	if len(members) == 0 {
+		return nil, fmt.Errorf("index %q has no platform images", refStr)
+	}
+
+	// Extract every platform image in parallel. Each one is addressed by
+	// its digest-pinned reference.
+	lists := make([]*sbom.NodeList, len(members))
+	g, gctx := errgroup.WithContext(ctx)
+	for i, m := range members {
+		g.Go(func() error {
+			img, err := idx.Image(m.Digest)
+			if err != nil {
+				return fmt.Errorf("reading platform image %s: %w", m.Digest, err)
+			}
+			archRef := nref.Context().Name() + "@" + m.Digest.String()
+			archNref, err := name.ParseReference(archRef)
+			if err != nil {
+				return fmt.Errorf("building platform reference: %w", err)
+			}
+			nl, err := u.extractImage(gctx, archRef, archNref, img)
+			if err != nil {
+				return fmt.Errorf("extracting %s: %w", platformString(m.Platform), err)
+			}
+			lists[i] = nl
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	digest, err := idx.Digest()
+	if err != nil {
+		return nil, fmt.Errorf("reading index digest: %w", err)
+	}
+
+	nl := sbom.NewNodeList()
+	node := imageNode(refStr, nref, digest, "", "")
+	node.Description = "multi-arch image index"
+	nl.AddRootNode(node)
+	for _, archList := range lists {
+		if err := nl.RelateNodeListAtID(archList, node.GetId(), sbom.Edge_contains); err != nil {
+			return nil, fmt.Errorf("relating platform image to index node: %w", err)
+		}
+	}
+	return nl, nil
+}
+
+// isAttestation reports whether an index entry is a buildx attestation
+// manifest rather than a runnable platform image.
+func isAttestation(desc *v1.Descriptor) bool {
+	if desc.Annotations["vnd.docker.reference.type"] == "attestation-manifest" {
+		return true
+	}
+	return desc.Platform != nil &&
+		desc.Platform.OS == "unknown" && desc.Platform.Architecture == "unknown"
+}
+
+// platformString renders a platform for error messages, tolerating nil.
+func platformString(p *v1.Platform) string {
+	if p == nil {
+		return "unknown platform"
+	}
+	return p.String()
 }
 
 // remoteOptions assembles the go-containerregistry options used for all
