@@ -6,6 +6,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/carabiner-dev/attestation v0.2.1
 	github.com/carabiner-dev/collector v0.3.7
+	github.com/carabiner-dev/command v0.3.1
 	github.com/carabiner-dev/hasher v0.2.4
 	github.com/carabiner-dev/protograph v0.0.0-20260117204235-4dc9de9c0db5
 	github.com/carabiner-dev/signer v0.5.2
@@ -40,7 +41,6 @@ require (
 	github.com/avast/retry-go/v4 v4.7.0 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
-	github.com/carabiner-dev/command v0.3.1 // indirect
 	github.com/carabiner-dev/openeox v1.0.0-pre.1 // indirect
 	github.com/carabiner-dev/osv v0.0.0-20250124012120-b8ce4531cd92 // indirect
 	github.com/carabiner-dev/policy v0.5.0 // indirect

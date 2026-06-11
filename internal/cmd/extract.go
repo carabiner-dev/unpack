@@ -16,7 +16,6 @@ import (
 	"github.com/carabiner-dev/protograph"
 	"github.com/carabiner-dev/signer"
 	"github.com/fatih/color"
-	"github.com/protobom/protobom/pkg/formats"
 	"github.com/spf13/cobra"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
@@ -31,13 +30,11 @@ const (
 )
 
 type extractOptions struct {
+	formatOptions
+	filesOptions
 	IgnorePatterns       []string
 	Path                 string
-	Format               string
 	Networking           string
-	IndexFiles           bool
-	Attest               bool
-	Sign                 bool
 	IgnoreExtraCodebases bool
 	MultipleOutputs      bool
 	IncludeDev           bool
@@ -52,26 +49,16 @@ var validFormats = []string{formatSPDX, formatCDX, formatCDXS, formatTree}
 
 // Validates the options in context with arguments
 func (ro *extractOptions) Validate() error {
-	errs := []error{}
+	errs := []error{
+		ro.formatOptions.Validate(),
+		ro.filesOptions.Validate(),
+	}
 	if ro.Path == "" {
 		errs = append(errs, errors.New("path not defined"))
 	}
 
-	if !slices.Contains(validFormats, ro.Format) {
-		errs = append(errs, errors.New("invalid format"))
-	}
-
 	if !slices.Contains([]string{"essential", "full", "disabled"}, ro.Networking) {
 		errs = append(errs, fmt.Errorf("invalid networking level %q (must be essential, full, or disabled)", ro.Networking))
-	}
-
-	// --sign implies --attest
-	if ro.Sign {
-		ro.Attest = true
-	}
-
-	if ro.Attest && (ro.Format != formatSPDX && ro.Format != formatCDX) {
-		errs = append(errs, fmt.Errorf("attestations can only be generated when output set to SPDX or CycloneDX"))
 	}
 
 	// Tree view can handle only one codebase
@@ -84,16 +71,15 @@ func (ro *extractOptions) Validate() error {
 
 // AddFlags adds the subcommands flags
 func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
+	ro.formatOptions.AddFlags(cmd)
+	ro.filesOptions.AddFlags(cmd)
+
 	cmd.PersistentFlags().StringVarP(
 		&ro.Path, "path", "p", ".", "path to the artifact to unpack",
 	)
 
 	cmd.PersistentFlags().StringSliceVarP(
 		&ro.IgnorePatterns, "ignore", "i", []string{}, "path patterns to ignore from analysis and indexing",
-	)
-
-	cmd.PersistentFlags().StringVarP(
-		&ro.Format, "format", "f", formatTree, fmt.Sprintf("format for the output %+v", validFormats),
 	)
 
 	cmd.PersistentFlags().StringVar(
@@ -111,18 +97,6 @@ func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 
 	cmd.PersistentFlags().BoolVar(
 		&ro.IncludeOptional, "include-optional", false, "include optional dependencies",
-	)
-
-	cmd.PersistentFlags().BoolVar(
-		&ro.IndexFiles, "files", dependencies.DefaultOptions.IndexFiles, "Index all files in codebases",
-	)
-
-	cmd.PersistentFlags().BoolVar(
-		&ro.Attest, "attest", false, "output sboms in an intoto attestation (defaults to format=spdx)",
-	)
-
-	cmd.PersistentFlags().BoolVar(
-		&ro.Sign, "sign", false, "sign the attestation into a sigstore bundle (implies --attest)",
 	)
 
 	cmd.PersistentFlags().BoolVar(
@@ -197,9 +171,7 @@ to the current directory.
 
 			// Default to SPDX when --attest or --sign is used and
 			// --format was not explicitly specified.
-			if (opts.Attest || opts.Sign) && !cmd.Flags().Changed("format") {
-				opts.Format = formatSPDX
-			}
+			opts.DefaultToSPDX(cmd)
 
 			return nil
 		},
@@ -210,7 +182,7 @@ to the current directory.
 			unpacker := dependencies.NewUnpacker()
 
 			// Add all the source files from codebases
-			unpacker.Options.IndexFiles = opts.IndexFiles
+			unpacker.Options.IndexFiles = opts.Files
 
 			// Add any extra paths to ignore
 			unpacker.Options.IgnorePatterns = opts.IgnorePatterns
@@ -336,21 +308,13 @@ func handleCodeBase(ctx context.Context, opts *extractOptions, s *signer.Signer,
 		return errors.New("no dependency data found")
 	}
 
-	var format formats.Format
-
-	switch opts.Format {
-	case formatTree:
+	format, isSbom := opts.ProtobomFormat()
+	if !isSbom {
 		pg := protograph.New()
 		if err := pg.GraphNodeList(nodelist); err != nil {
 			return err
 		}
 		return nil
-	case formatSPDX:
-		format = formats.SPDX23JSON
-	case formatCDXS, formatCDX:
-		format = formats.CDX16JSON
-	default:
-		return fmt.Errorf("invalid format")
 	}
 
 	// Determine the output writer. When an output directory is set,
