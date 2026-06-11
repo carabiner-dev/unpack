@@ -6,6 +6,7 @@
 package system
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 
@@ -49,4 +50,24 @@ func (l *LocalSystem) FileSystem() (fs.FS, error) {
 		root = "/"
 	}
 	return os.DirFS(root), nil
+}
+
+// Filesystem is a System subject wrapping an arbitrary fs.FS — a squashed
+// container image, a mounted VM disk, a tar archive, etc. Unpackers that
+// crack open such artifacts use it to route the inner filesystem to the
+// SystemPackages unpacker through the registry.
+type Filesystem struct {
+	FS fs.FS
+}
+
+// DecomposableType identifies this subject as a system, routing it to the
+// SystemPackages unpacker through the registry.
+func (f *Filesystem) DecomposableType() string { return SubjectType }
+
+// FileSystem returns the wrapped filesystem.
+func (f *Filesystem) FileSystem() (fs.FS, error) {
+	if f.FS == nil {
+		return nil, fmt.Errorf("filesystem subject has no fs.FS")
+	}
+	return f.FS, nil
 }

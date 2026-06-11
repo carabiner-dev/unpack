@@ -1,0 +1,256 @@
+// SPDX-FileCopyrightText: Copyright 2025 Carabiner Systems, Inc
+// SPDX-License-Identifier: Apache-2.0
+
+package image
+
+import (
+	"context"
+	"fmt"
+	"io/fs"
+	"net/url"
+	"path"
+	"strings"
+
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/uuid"
+	"github.com/protobom/protobom/pkg/sbom"
+
+	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/system"
+)
+
+// Ensure the image unpacker satisfies the unified Unpacker interface.
+var _ api.Unpacker = (*Unpacker)(nil)
+
+// Register the image unpacker so that subjects of type "image" are routed
+// here by the registry.
+func init() {
+	api.RegisterUnpacker(SubjectType, func() api.Unpacker { return NewUnpacker() })
+}
+
+// ExtractionMode selects how the unpacker reads the image filesystem.
+type ExtractionMode int
+
+const (
+	// ModeSquash flattens all layers into a single filesystem, the way a
+	// container runtime presents the image, and extracts from the result.
+	ModeSquash ExtractionMode = iota
+
+	// ModePerLayer extracts from each layer individually. Not implemented
+	// yet.
+	ModePerLayer
+)
+
+// Options configures the image unpacker.
+type Options struct {
+	// Mode selects squashed or per-layer extraction. Defaults to ModeSquash.
+	Mode ExtractionMode
+
+	// IncludeFiles is passed through to the system decomposers: when set,
+	// every file installed by a package is emitted as a Node related to its
+	// package.
+	IncludeFiles bool
+
+	// Hooks receives download progress notifications, e.g. to render a
+	// progress indicator. Optional.
+	Hooks *PullHooks
+}
+
+// DefaultOptions is the zero-value configuration used by NewUnpacker.
+var DefaultOptions = Options{}
+
+// NewUnpacker returns an image unpacker with the default options.
+func NewUnpacker() *Unpacker {
+	return &Unpacker{Options: DefaultOptions}
+}
+
+// Unpacker extracts dependency data from container images. It downloads the
+// image, squashes its layers into the filesystem a running container would
+// see, and reads the installed system packages out of it.
+type Unpacker struct {
+	Options Options
+}
+
+// Extract pulls the image referenced by the subject and returns its
+// dependency graph: a node describing the image with the system packages
+// found in its filesystem as descendants.
+func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject) ([]*sbom.NodeList, error) {
+	if subject == nil {
+		return nil, fmt.Errorf("image unpacker received a nil subject")
+	}
+	ref, ok := subject.(*Reference)
+	if !ok {
+		return nil, fmt.Errorf(
+			"image unpacker cannot process subject of type %q", subject.DecomposableType(),
+		)
+	}
+	if u.Options.Mode == ModePerLayer {
+		return nil, fmt.Errorf("per-layer extraction is not implemented yet")
+	}
+
+	nref, err := name.ParseReference(ref.Ref)
+	if err != nil {
+		return nil, fmt.Errorf("parsing image reference %q: %w", ref.Ref, err)
+	}
+
+	desc, err := remote.Get(nref, u.remoteOptions(ctx)...)
+	if err != nil {
+		return nil, fmt.Errorf("fetching %q: %w", ref.Ref, err)
+	}
+
+	if desc.MediaType.IsIndex() {
+		// TODO(image): multi-arch index support lands in the next phase.
+		return nil, fmt.Errorf("%q is a multi-arch image index, not yet supported", ref.Ref)
+	}
+
+	img, err := desc.Image()
+	if err != nil {
+		return nil, fmt.Errorf("reading image %q: %w", ref.Ref, err)
+	}
+
+	nl, err := u.extractImage(ctx, ref.Ref, nref, img)
+	if err != nil {
+		return nil, err
+	}
+	return []*sbom.NodeList{nl}, nil
+}
+
+// remoteOptions assembles the go-containerregistry options used for all
+// registry operations: the caller's context and the ambient credentials
+// (docker config et al.).
+func (u *Unpacker) remoteOptions(ctx context.Context) []remote.Option {
+	return []remote.Option{
+		remote.WithContext(ctx),
+		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+	}
+}
+
+// extractImage squashes a single-arch image and returns a NodeList rooted
+// at a node describing the image, with the system packages found in the
+// filesystem related to it as descendants.
+func (u *Unpacker) extractImage(ctx context.Context, refStr string, nref name.Reference, img v1.Image) (*sbom.NodeList, error) {
+	digest, err := img.Digest()
+	if err != nil {
+		return nil, fmt.Errorf("reading image digest: %w", err)
+	}
+	var arch, osName string
+	if cfg, err := img.ConfigFile(); err == nil && cfg != nil {
+		arch, osName = cfg.Architecture, cfg.OS
+	}
+
+	fsys, cleanup, err := squashToFS(ctx, img, u.Options.Hooks)
+	if err != nil {
+		return nil, fmt.Errorf("squashing image filesystem: %w", err)
+	}
+	defer cleanup() //nolint:errcheck // best-effort temp cleanup
+
+	pkgLists, err := u.extractSystemPackages(ctx, fsys)
+	if err != nil {
+		return nil, err
+	}
+
+	nl := sbom.NewNodeList()
+	node := imageNode(refStr, nref, digest, arch, osName)
+	nl.AddRootNode(node)
+	for _, pkgs := range pkgLists {
+		if err := nl.RelateNodeListAtID(pkgs, node.GetId(), sbom.Edge_contains); err != nil {
+			return nil, fmt.Errorf("relating packages to image node: %w", err)
+		}
+	}
+	return nl, nil
+}
+
+// extractSystemPackages routes the squashed filesystem to the SystemPackages
+// unpacker through the registry, passing down the files option.
+func (u *Unpacker) extractSystemPackages(ctx context.Context, fsys fs.FS) ([]*sbom.NodeList, error) {
+	subject := &system.Filesystem{FS: fsys}
+	unpacker, err := api.UnpackerFor(subject)
+	if err != nil {
+		return nil, fmt.Errorf("locating system unpacker: %w", err)
+	}
+	if su, ok := unpacker.(*system.Unpacker); ok {
+		su.Options.IncludeFiles = u.Options.IncludeFiles
+	}
+
+	lists, err := unpacker.Extract(ctx, subject)
+	if err != nil {
+		return nil, fmt.Errorf("extracting system packages: %w", err)
+	}
+	return lists, nil
+}
+
+// imageNode builds the node describing a single-arch image: the reference
+// as the name, the manifest digest in the hashes, and a pkg:oci purl.
+func imageNode(refStr string, nref name.Reference, digest v1.Hash, arch, osName string) *sbom.Node {
+	node := &sbom.Node{
+		Id:   uuid.NewString(),
+		Type: sbom.Node_PACKAGE,
+		Name: refStr,
+		Identifiers: map[int32]string{
+			int32(sbom.SoftwareIdentifierType_PURL): ociPurl(nref, digest, arch),
+		},
+		PrimaryPurpose: []sbom.Purpose{sbom.Purpose_CONTAINER},
+	}
+	if tag, ok := nref.(name.Tag); ok {
+		node.Version = tag.TagStr()
+	}
+	if algo := hashAlgorithm(digest.Algorithm); algo != sbom.HashAlgorithm_UNKNOWN {
+		node.Hashes = map[int32]string{int32(algo): digest.Hex}
+	}
+	if osName != "" {
+		// Record the platform on the node for human consumption; the purl
+		// carries the arch qualifier for machines.
+		node.Description = osName + "/" + arch
+	}
+	return node
+}
+
+// ociPurl builds a pkg:oci purl per the purl-spec oci definition: the name
+// is the last path component of the repository, the version is the manifest
+// digest, and qualifiers carry the arch, repository URL and tag.
+//
+//	pkg:oci/debian@sha256%3A244fd47e07d1...?repository_url=index.docker.io%2Flibrary%2Fdebian&tag=latest
+func ociPurl(nref name.Reference, digest v1.Hash, arch string) string {
+	repo := nref.Context()
+
+	var b strings.Builder
+	b.WriteString("pkg:oci/")
+	b.WriteString(strings.ToLower(path.Base(repo.RepositoryStr())))
+	b.WriteByte('@')
+	// The digest is the purl version; its colon must be percent-encoded.
+	b.WriteString(strings.ReplaceAll(digest.String(), ":", "%3A"))
+
+	q := url.Values{}
+	if arch != "" {
+		q.Set("arch", strings.ToLower(arch))
+	}
+	q.Set("repository_url", repo.Name())
+	if tag, ok := nref.(name.Tag); ok {
+		q.Set("tag", tag.TagStr())
+	}
+	b.WriteByte('?')
+	b.WriteString(q.Encode())
+	return b.String()
+}
+
+// hashAlgorithm maps an OCI digest algorithm to protobom's enum.
+func hashAlgorithm(algo string) sbom.HashAlgorithm {
+	switch strings.ToLower(algo) {
+	case "sha256":
+		return sbom.HashAlgorithm_SHA256
+	case "sha512":
+		return sbom.HashAlgorithm_SHA512
+	}
+	return sbom.HashAlgorithm_UNKNOWN
+}
+
+// RegisterDecomposer is a no-op: the image unpacker has no decomposers of
+// its own; it delegates to the unpackers of the subjects it discovers
+// inside the image.
+func (u *Unpacker) RegisterDecomposer(api.Decomposer) {}
+
+// UnregisterDecomposer is a no-op; see RegisterDecomposer.
+func (u *Unpacker) UnregisterDecomposer(api.Decomposer) {}
