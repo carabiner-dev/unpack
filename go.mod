@@ -5,7 +5,7 @@ go 1.25.11
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/carabiner-dev/attestation v0.2.1
-	github.com/carabiner-dev/collector v0.3.7
+	github.com/carabiner-dev/collector v0.3.8
 	github.com/carabiner-dev/command v0.3.1
 	github.com/carabiner-dev/hasher v0.2.4
 	github.com/carabiner-dev/protograph v0.0.0-20260117204235-4dc9de9c0db5
@@ -128,7 +128,7 @@ require (
 	github.com/sigstore/rekor v1.5.2 // indirect
 	github.com/sigstore/rekor-tiles/v2 v2.2.2-0.20260601073857-5d098a2b6443 // indirect
 	github.com/sigstore/sigstore v1.10.8 // indirect
-	github.com/sigstore/sigstore-go v1.2.0 // indirect
+	github.com/sigstore/sigstore-go v1.2.1 // indirect
 	github.com/sigstore/timestamp-authority/v2 v2.1.2 // indirect
 	github.com/skeema/knownhosts v1.3.2 // indirect
 	github.com/spdx/tools-golang v0.5.7 // indirect
