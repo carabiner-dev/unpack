@@ -24,7 +24,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/mod v0.38.0
-	golang.org/x/sync v0.21.0
+	golang.org/x/sync v0.22.0
 	golang.org/x/text v0.39.0
 	google.golang.org/protobuf v1.36.11
 	sigs.k8s.io/release-utils v0.12.4
