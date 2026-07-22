@@ -43,7 +43,11 @@ Extract the system packages installed in a container image:
 
 %s image alpine:3.21
 
-`, appname, appname, appname, appname, appname),
+Extract the artifacts published in a GitHub release:
+
+%s release github:carabiner-dev/unpack@v0.2.0
+
+`, appname, appname, appname, appname, appname, appname),
 	}
 
 	rootCmd.PersistentFlags().StringVar(
@@ -72,6 +76,7 @@ func Execute() {
 	addImage(rootCmd)
 	addSBOM(rootCmd)
 	addLs(rootCmd)
+	addRelease(rootCmd)
 	rootCmd.AddCommand(version.WithFont("doom"))
 
 	if err := rootCmd.Execute(); err != nil {
