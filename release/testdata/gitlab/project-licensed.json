@@ -1,0 +1,13 @@
+{
+  "id": 1234,
+  "name": "demo",
+  "path_with_namespace": "carabiner-dev/demo",
+  "license_url": "https://gitlab.com/carabiner-dev/demo/-/blob/main/LICENSE",
+  "license": {
+    "key": "apache-2.0",
+    "name": "Apache License 2.0",
+    "nickname": null,
+    "html_url": "http://choosealicense.com/licenses/apache-2.0/",
+    "source_url": "http://www.apache.org/licenses/LICENSE-2.0.html"
+  }
+}

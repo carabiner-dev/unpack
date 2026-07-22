@@ -52,23 +52,25 @@ func addRelease(parent *cobra.Command) {
 		Short: "extract the artifact data of a software release",
 		Long: fmt.Sprintf(`%s release: software release artifact extractor
 
-Unpack release reads a release published on a supported forge (GitHub for
-now, GitLab soon) and extracts its data: the release itself at the top of
-the tree, pinned to the commit it was built from, with one node per
-published artifact carrying its name, download location and digests.
+Unpack release reads a release published on a supported forge (GitHub and
+GitLab, including self-managed instances) and extracts its data: the
+release itself at the top of the tree, pinned to the commit it was built
+from, with one node per published artifact carrying its name, download
+location and digests.
 
 Releases are referenced by a string locating the forge type, the instance
 host, the repository and, optionally, the release tag. Three forms are
 understood:
 
   github:org/repo@v1.0.0                       Shorthand, public instance
+  gitlab:group/subgroup/project@v1.0.0         GitLab paths may nest groups
   github:ghe.example.com/org/repo@v1.0.0       Shorthand, self-managed host
   github+https://github.com/org/repo@v1.0.0    Canonical form
   https://github.com/org/repo/releases/tag/v1  A pasted release page URL
 
 Omitting the @tag points the reference at the repository's latest release.
-Public releases need no credentials; a token in GITHUB_TOKEN is used when
-present (and needed for private repositories).
+Public releases need no credentials; a token in GITHUB_TOKEN or
+GITLAB_TOKEN is used when present (and needed for private repositories).
 
 By default, the release data is displayed as an ASCII tree in the terminal
 but it can be exported as an SPDX or CycloneDX SBOM, wrapped in an in-toto

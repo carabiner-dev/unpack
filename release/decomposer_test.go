@@ -293,6 +293,7 @@ func TestNewDecomposerDefaultBackends(t *testing.T) {
 	t.Parallel()
 	d := NewDecomposer()
 	assert.Contains(t, d.backends, ForgeGitHub)
+	assert.Contains(t, d.backends, ForgeGitLab)
 }
 
 func TestExtractReleaseNilReference(t *testing.T) {

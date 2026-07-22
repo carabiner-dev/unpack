@@ -28,6 +28,7 @@ func NewDecomposer() *Decomposer {
 	return &Decomposer{
 		backends: map[string]Backend{
 			ForgeGitHub: NewGitHubBackend(),
+			ForgeGitLab: NewGitLabBackend(),
 		},
 	}
 }
