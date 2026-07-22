@@ -83,6 +83,15 @@ Usage patterns:
   %[1]s release --attest github:org/repo@v1.0.0   Wrap the SBOM in an attestation
   %[1]s release --sign -o a.json github:org/repo@v1.0.0  Sign it into a bundle
 
+Examples:
+  Decompose the latest release of a project hosted on github.com:
+
+    %[1]s release github:carabiner-dev/unpack
+
+  Decompose a tagged release of a project hosted on gitlab.com:
+
+    %[1]s release gitlab:gitlab-org/cli@v1.109.0
+
 `, appname),
 		Use:               "release [flags] REFERENCE",
 		SilenceUsage:      false,
