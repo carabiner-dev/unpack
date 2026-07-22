@@ -1,0 +1,23 @@
+{
+  "node_id": "TA_kwDOLxQ2W84AEnLa",
+  "sha": "ad83c0e21b0f4f7d9f6f0d1a2b3c4d5e6f708192",
+  "url": "https://api.github.com/repos/carabiner-dev/demo/git/tags/ad83c0e21b0f4f7d9f6f0d1a2b3c4d5e6f708192",
+  "tagger": {
+    "name": "Adolfo Garcia",
+    "email": "puerco@example.com",
+    "date": "2026-03-01T09:58:00Z"
+  },
+  "object": {
+    "sha": "1f2e3d4c5b6a79880912233445566778899aabbc",
+    "type": "commit",
+    "url": "https://api.github.com/repos/carabiner-dev/demo/git/commits/1f2e3d4c5b6a79880912233445566778899aabbc"
+  },
+  "tag": "v1.0.0",
+  "message": "Release v1.0.0\n",
+  "verification": {
+    "verified": false,
+    "reason": "unsigned",
+    "signature": null,
+    "payload": null
+  }
+}

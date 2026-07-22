@@ -1,0 +1,18 @@
+{
+  "id": 861002,
+  "node_id": "R_kgDOLxQ2XA",
+  "name": "demo",
+  "full_name": "carabiner-dev/demo",
+  "private": false,
+  "owner": {
+    "login": "carabiner-dev",
+    "id": 152525,
+    "type": "Organization"
+  },
+  "html_url": "https://github.com/carabiner-dev/demo",
+  "description": "Demo project releasing binaries",
+  "fork": false,
+  "default_branch": "main",
+  "visibility": "public",
+  "license": null
+}

@@ -1,0 +1,10 @@
+{
+  "ref": "refs/tags/v2.0.0",
+  "node_id": "REF_kwDOLxQ2W7ByZWZzL3RhZ3MvdjIuMC4w",
+  "url": "https://api.github.com/repos/carabiner-dev/demo/git/refs/tags/v2.0.0",
+  "object": {
+    "sha": "c0ffee0123456789abcdef0123456789abcdef01",
+    "type": "commit",
+    "url": "https://api.github.com/repos/carabiner-dev/demo/git/commits/c0ffee0123456789abcdef0123456789abcdef01"
+  }
+}

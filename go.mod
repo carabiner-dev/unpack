@@ -7,6 +7,7 @@ require (
 	github.com/carabiner-dev/attestation v0.2.1
 	github.com/carabiner-dev/collector v0.3.9
 	github.com/carabiner-dev/command v0.3.1
+	github.com/carabiner-dev/github v0.2.3
 	github.com/carabiner-dev/hasher v0.2.4
 	github.com/carabiner-dev/protograph v0.0.0-20260117204235-4dc9de9c0db5
 	github.com/carabiner-dev/signer v0.5.2
@@ -19,6 +20,7 @@ require (
 	github.com/in-toto/attestation v1.2.0
 	github.com/knqyf263/go-rpmdb v0.1.1
 	github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
+	github.com/package-url/packageurl-go v0.1.6
 	github.com/protobom/protobom v0.5.8
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
@@ -114,7 +116,6 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/openvex/go-vex v0.2.8 // indirect
-	github.com/package-url/packageurl-go v0.1.6 // indirect
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
