@@ -21,11 +21,14 @@ import (
 
 var _ api.Decomposer = (*Decomposer)(nil)
 
-// NewDecomposer returns a release decomposer with an empty backend registry.
-// Register the forge backends it should drive with RegisterBackend.
+// NewDecomposer returns a release decomposer with the builtin forge backends
+// preregistered. Additional (or replacement) backends can be plugged in with
+// RegisterBackend.
 func NewDecomposer() *Decomposer {
 	return &Decomposer{
-		backends: map[string]Backend{},
+		backends: map[string]Backend{
+			ForgeGitHub: NewGitHubBackend(),
+		},
 	}
 }
 

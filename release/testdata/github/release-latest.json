@@ -1,0 +1,39 @@
+{
+  "url": "https://api.github.com/repos/carabiner-dev/demo/releases/210002",
+  "assets_url": "https://api.github.com/repos/carabiner-dev/demo/releases/210002/assets",
+  "html_url": "https://github.com/carabiner-dev/demo/releases/tag/v2.0.0",
+  "id": 210002,
+  "node_id": "RE_kwDOLxQ2W84ADSSy",
+  "tag_name": "v2.0.0",
+  "target_commitish": "main",
+  "name": null,
+  "draft": false,
+  "prerelease": false,
+  "created_at": "2026-06-14T18:00:00Z",
+  "published_at": "2026-06-15T08:00:00Z",
+  "author": {
+    "login": "puerco",
+    "id": 9909,
+    "type": "User"
+  },
+  "assets": [
+    {
+      "url": "https://api.github.com/repos/carabiner-dev/demo/releases/assets/320001",
+      "id": 320001,
+      "node_id": "RA_kwDOLxQ2W84AEnKa",
+      "name": "demo_v2.0.0_linux_amd64.tar.gz",
+      "label": "",
+      "content_type": "application/gzip",
+      "state": "uploaded",
+      "size": 4718592,
+      "digest": "sha256:4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
+      "download_count": 8,
+      "created_at": "2026-06-15T07:59:00Z",
+      "updated_at": "2026-06-15T07:59:05Z",
+      "browser_download_url": "https://github.com/carabiner-dev/demo/releases/download/v2.0.0/demo_v2.0.0_linux_amd64.tar.gz"
+    }
+  ],
+  "tarball_url": "https://api.github.com/repos/carabiner-dev/demo/tarball/v2.0.0",
+  "zipball_url": "https://api.github.com/repos/carabiner-dev/demo/zipball/v2.0.0",
+  "body": "## What's Changed\n\n* Second major release.\n"
+}

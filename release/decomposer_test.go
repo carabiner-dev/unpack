@@ -289,6 +289,12 @@ func TestExtractRelease(t *testing.T) {
 	}
 }
 
+func TestNewDecomposerDefaultBackends(t *testing.T) {
+	t.Parallel()
+	d := NewDecomposer()
+	assert.Contains(t, d.backends, ForgeGitHub)
+}
+
 func TestExtractReleaseNilReference(t *testing.T) {
 	t.Parallel()
 	d := NewDecomposer()
