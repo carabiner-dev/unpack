@@ -55,6 +55,13 @@ type Options struct {
 	// package.
 	IncludeFiles bool
 
+	// RecordLayers adds one structural node per image layer, related to
+	// the image through a contains edge. Layers are identified by their
+	// diff id — the digest of the uncompressed layer — and carry no
+	// packages: the package inventory always reads from the squashed
+	// filesystem.
+	RecordLayers bool
+
 	// Hooks receives download progress notifications, e.g. to render a
 	// progress indicator. Optional.
 	Hooks *PullHooks
@@ -75,9 +82,10 @@ type Unpacker struct {
 	Options Options
 }
 
-// Extract pulls the image referenced by the subject and returns its
-// dependency graph: a node describing the image with the system packages
-// found in its filesystem as descendants.
+// Extract pulls the image referenced by the subject — or reads it from
+// the subject's archive — and returns its dependency graph: a node
+// describing the image with the system packages found in its filesystem
+// as descendants.
 func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject) ([]*sbom.NodeList, error) {
 	if subject == nil {
 		return nil, fmt.Errorf("image unpacker received a nil subject")
@@ -90,6 +98,10 @@ func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject)
 	}
 	if u.Options.Mode == ModePerLayer {
 		return nil, fmt.Errorf("per-layer extraction is not implemented yet")
+	}
+
+	if ref.Archive != "" {
+		return u.extractArchive(ctx, ref)
 	}
 
 	nref, err := name.ParseReference(ref.Ref)
@@ -272,7 +284,43 @@ func (u *Unpacker) extractImage(ctx context.Context, refStr string, nref name.Re
 			return nil, fmt.Errorf("relating packages to image node: %w", err)
 		}
 	}
+	if u.Options.RecordLayers {
+		if err := recordLayers(nl, node, img); err != nil {
+			return nil, err
+		}
+	}
 	return nl, nil
+}
+
+// recordLayers adds the image's layers to the node list as structural
+// nodes hanging off the image node, in layer order, each carrying its
+// diff id as name and hash.
+func recordLayers(nl *sbom.NodeList, image *sbom.Node, img v1.Image) error {
+	layers, err := img.Layers()
+	if err != nil {
+		return fmt.Errorf("reading image layers: %w", err)
+	}
+	layerList := sbom.NewNodeList()
+	for _, layer := range layers {
+		diffID, err := layer.DiffID()
+		if err != nil {
+			return fmt.Errorf("reading layer diff id: %w", err)
+		}
+		node := &sbom.Node{
+			Id:      uuid.NewString(),
+			Type:    sbom.Node_PACKAGE,
+			Name:    diffID.String(),
+			Comment: "container image layer",
+		}
+		if algo := hashAlgorithm(diffID.Algorithm); algo != sbom.HashAlgorithm_UNKNOWN {
+			node.Hashes = map[int32]string{int32(algo): diffID.Hex}
+		}
+		layerList.AddRootNode(node)
+	}
+	if err := nl.RelateNodeListAtID(layerList, image.GetId(), sbom.Edge_contains); err != nil {
+		return fmt.Errorf("relating layers to image node: %w", err)
+	}
+	return nil
 }
 
 // extractSystemPackages routes the squashed filesystem to the SystemPackages
@@ -298,16 +346,20 @@ func (u *Unpacker) extractSystemPackages(ctx context.Context, fsys fs.FS) ([]*sb
 // as the name, the manifest digest in the hashes, and a pkg:oci purl.
 func imageNode(refStr string, nref name.Reference, digest v1.Hash, arch, osName string) *sbom.Node {
 	node := &sbom.Node{
-		Id:   uuid.NewString(),
-		Type: sbom.Node_PACKAGE,
-		Name: refStr,
-		Identifiers: map[int32]string{
-			int32(sbom.SoftwareIdentifierType_PURL): ociPurl(nref, digest, arch),
-		},
+		Id:             uuid.NewString(),
+		Type:           sbom.Node_PACKAGE,
+		Name:           refStr,
 		PrimaryPurpose: []sbom.Purpose{sbom.Purpose_CONTAINER},
 	}
-	if tag, ok := nref.(name.Tag); ok {
-		node.Version = tag.TagStr()
+	// Untagged archive images have no reference to derive a purl or a
+	// version from; their name is the image digest.
+	if nref != nil {
+		node.Identifiers = map[int32]string{
+			int32(sbom.SoftwareIdentifierType_PURL): ociPurl(nref, digest, arch),
+		}
+		if tag, ok := nref.(name.Tag); ok {
+			node.Version = tag.TagStr()
+		}
 	}
 	if algo := hashAlgorithm(digest.Algorithm); algo != sbom.HashAlgorithm_UNKNOWN {
 		node.Hashes = map[int32]string{int32(algo): digest.Hex}
