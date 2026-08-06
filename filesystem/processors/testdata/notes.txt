@@ -1,0 +1,2 @@
+Meeting notes: discuss the roadmap for the file scanner and agree on
+the release schedule for the next milestone.

@@ -133,22 +133,6 @@ func (d *Decomposer) readtTree(source fs.FS) ([]string, error) {
 	return fileList, nil
 }
 
-// func (d *Decomposer) ReadLicense() {
-// 	reader, err := di.LicenseReader(opts)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("creating license reader: %w", err)
-// 	}
-
-// 	licenseTag := ""
-// 	lic, err := di.GetDirectoryLicense(reader, dirPath, opts)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("scanning directory for licenses: %w", err)
-// 	}
-// 	if lic != nil {
-// 		licenseTag = lic.LicenseID
-// 	}
-// }
-
 // ignorePatterns compiles the list of gitignore patterns from options and
 // from the gitignore file.
 func (d *Decomposer) ignorePatterns(source fs.FS, dirPath string) ([]gitignore.Pattern, error) {
