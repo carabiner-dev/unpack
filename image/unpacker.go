@@ -55,6 +55,13 @@ type Options struct {
 	// package.
 	IncludeFiles bool
 
+	// RecordLayers adds one structural node per image layer, related to
+	// the image through a contains edge. Layers are identified by their
+	// diff id — the digest of the uncompressed layer — and carry no
+	// packages: the package inventory always reads from the squashed
+	// filesystem.
+	RecordLayers bool
+
 	// Hooks receives download progress notifications, e.g. to render a
 	// progress indicator. Optional.
 	Hooks *PullHooks
@@ -277,7 +284,43 @@ func (u *Unpacker) extractImage(ctx context.Context, refStr string, nref name.Re
 			return nil, fmt.Errorf("relating packages to image node: %w", err)
 		}
 	}
+	if u.Options.RecordLayers {
+		if err := recordLayers(nl, node, img); err != nil {
+			return nil, err
+		}
+	}
 	return nl, nil
+}
+
+// recordLayers adds the image's layers to the node list as structural
+// nodes hanging off the image node, in layer order, each carrying its
+// diff id as name and hash.
+func recordLayers(nl *sbom.NodeList, image *sbom.Node, img v1.Image) error {
+	layers, err := img.Layers()
+	if err != nil {
+		return fmt.Errorf("reading image layers: %w", err)
+	}
+	layerList := sbom.NewNodeList()
+	for _, layer := range layers {
+		diffID, err := layer.DiffID()
+		if err != nil {
+			return fmt.Errorf("reading layer diff id: %w", err)
+		}
+		node := &sbom.Node{
+			Id:      uuid.NewString(),
+			Type:    sbom.Node_PACKAGE,
+			Name:    diffID.String(),
+			Comment: "container image layer",
+		}
+		if algo := hashAlgorithm(diffID.Algorithm); algo != sbom.HashAlgorithm_UNKNOWN {
+			node.Hashes = map[int32]string{int32(algo): diffID.Hex}
+		}
+		layerList.AddRootNode(node)
+	}
+	if err := nl.RelateNodeListAtID(layerList, image.GetId(), sbom.Edge_contains); err != nil {
+		return fmt.Errorf("relating layers to image node: %w", err)
+	}
+	return nil
 }
 
 // extractSystemPackages routes the squashed filesystem to the SystemPackages
