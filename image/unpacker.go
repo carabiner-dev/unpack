@@ -75,9 +75,10 @@ type Unpacker struct {
 	Options Options
 }
 
-// Extract pulls the image referenced by the subject and returns its
-// dependency graph: a node describing the image with the system packages
-// found in its filesystem as descendants.
+// Extract pulls the image referenced by the subject — or reads it from
+// the subject's archive — and returns its dependency graph: a node
+// describing the image with the system packages found in its filesystem
+// as descendants.
 func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject) ([]*sbom.NodeList, error) {
 	if subject == nil {
 		return nil, fmt.Errorf("image unpacker received a nil subject")
@@ -90,6 +91,10 @@ func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject)
 	}
 	if u.Options.Mode == ModePerLayer {
 		return nil, fmt.Errorf("per-layer extraction is not implemented yet")
+	}
+
+	if ref.Archive != "" {
+		return u.extractArchive(ctx, ref)
 	}
 
 	nref, err := name.ParseReference(ref.Ref)
@@ -298,16 +303,20 @@ func (u *Unpacker) extractSystemPackages(ctx context.Context, fsys fs.FS) ([]*sb
 // as the name, the manifest digest in the hashes, and a pkg:oci purl.
 func imageNode(refStr string, nref name.Reference, digest v1.Hash, arch, osName string) *sbom.Node {
 	node := &sbom.Node{
-		Id:   uuid.NewString(),
-		Type: sbom.Node_PACKAGE,
-		Name: refStr,
-		Identifiers: map[int32]string{
-			int32(sbom.SoftwareIdentifierType_PURL): ociPurl(nref, digest, arch),
-		},
+		Id:             uuid.NewString(),
+		Type:           sbom.Node_PACKAGE,
+		Name:           refStr,
 		PrimaryPurpose: []sbom.Purpose{sbom.Purpose_CONTAINER},
 	}
-	if tag, ok := nref.(name.Tag); ok {
-		node.Version = tag.TagStr()
+	// Untagged archive images have no reference to derive a purl or a
+	// version from; their name is the image digest.
+	if nref != nil {
+		node.Identifiers = map[int32]string{
+			int32(sbom.SoftwareIdentifierType_PURL): ociPurl(nref, digest, arch),
+		}
+		if tag, ok := nref.(name.Tag); ok {
+			node.Version = tag.TagStr()
+		}
 	}
 	if algo := hashAlgorithm(digest.Algorithm); algo != sbom.HashAlgorithm_UNKNOWN {
 		node.Hashes = map[int32]string{int32(algo): digest.Hex}
