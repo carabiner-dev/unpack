@@ -57,6 +57,27 @@ func TestApkPurl(t *testing.T) {
 			osr:  osrelease.Data{},
 			want: "pkg:apk/musl@1.2.6-r2?arch=x86_64",
 		},
+		{
+			name: "no version",
+			pkg: apkPackage{
+				Name: "musl", Arch: "x86_64",
+			},
+			osr:  osrelease.Data{ID: "alpine", VersionID: "3.24.0"},
+			want: "pkg:apk/alpine/musl?arch=x86_64&distro=alpine-3.24.0",
+		},
+		{
+			// '+' is reserved by the purl spec and must be percent-encoded
+			// as %2B in every component, or string-matching consumers
+			// (vulnerability scanners) miss the package.
+			name: "plus signs percent-encoded in name and version",
+			pkg: apkPackage{
+				Name: "libstdc++", Version: "14.3.0+git-r2", Arch: "x86_64",
+				Origin: "gcc+patched",
+			},
+			osr: osrelease.Data{ID: "alpine", VersionID: "3.24.0"},
+			want: "pkg:apk/alpine/libstdc%2B%2B@14.3.0%2Bgit-r2?" +
+				"arch=x86_64&distro=alpine-3.24.0&upstream=gcc%2Bpatched",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -118,6 +139,13 @@ func TestExtractFromFS_Alpine(t *testing.T) {
 		musl.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)],
 	)
 
+	// Alpine mirrors are not derivable from the installed database, so no
+	// download location is synthesized for them.
+	for _, n := range nodes {
+		assert.Empty(t, n.GetUrlDownload(),
+			"alpine packages must not get a guessed download location: %s", n.GetName())
+	}
+
 	// Subpackage: origin differs from name and becomes the upstream
 	// qualifier.
 	binsh := byName["busybox-binsh"]
@@ -158,5 +186,128 @@ func TestExtractFromFS_AlpineIncludeFiles(t *testing.T) {
 	assert.Equal(t,
 		"ef2277245372a40e26c61249af4a2ee82cec2552",
 		loader.GetHashes()[int32(sbom.HashAlgorithm_SHA1)],
+	)
+}
+
+func TestApkDownloadLocation(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		pkg  apkPackage
+		osr  osrelease.Data
+		want string
+	}{
+		{
+			name: "wolfi package gets the well-known host",
+			pkg: apkPackage{
+				Name: "glibc", Version: "2.41-r3", Arch: "x86_64",
+			},
+			osr:  osrelease.Data{ID: "wolfi", VersionID: "20230201"},
+			want: "https://packages.wolfi.dev/os/x86_64/glibc-2.41-r3.apk",
+		},
+		{
+			name: "wolfi id is matched case-insensitively",
+			pkg: apkPackage{
+				Name: "glibc", Version: "2.41-r3", Arch: "aarch64",
+			},
+			osr:  osrelease.Data{ID: "Wolfi", VersionID: "20230201"},
+			want: "https://packages.wolfi.dev/os/aarch64/glibc-2.41-r3.apk",
+		},
+		{
+			name: "alpine gets none: its mirrors are not derivable",
+			pkg: apkPackage{
+				Name: "musl", Version: "1.2.6-r2", Arch: "x86_64",
+			},
+			osr:  osrelease.Data{ID: "alpine", VersionID: "3.24.0"},
+			want: "",
+		},
+		{
+			name: "no os-release: none",
+			pkg: apkPackage{
+				Name: "musl", Version: "1.2.6-r2", Arch: "x86_64",
+			},
+			osr:  osrelease.Data{},
+			want: "",
+		},
+		{
+			name: "wolfi without arch: none",
+			pkg: apkPackage{
+				Name: "glibc", Version: "2.41-r3",
+			},
+			osr:  osrelease.Data{ID: "wolfi", VersionID: "20230201"},
+			want: "",
+		},
+		{
+			name: "wolfi without version: none",
+			pkg: apkPackage{
+				Name: "glibc", Arch: "x86_64",
+			},
+			osr:  osrelease.Data{ID: "wolfi", VersionID: "20230201"},
+			want: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, apkDownloadLocation(&tc.pkg, tc.osr))
+		})
+	}
+}
+
+// TestExtractFromFS_Wolfi drives the full path over a synthetic Wolfi system
+// root: Wolfi is the only apk distro whose download locations we synthesize.
+func TestExtractFromFS_Wolfi(t *testing.T) {
+	t.Parallel()
+	d := New()
+	nl, err := d.ExtractFromFS(fstest.MapFS{
+		"etc/os-release": &fstest.MapFile{
+			Data: []byte("ID=wolfi\nNAME=\"Wolfi\"\nVERSION_ID=20230201\n"),
+		},
+		"lib/apk/db/installed": &fstest.MapFile{Data: []byte(
+			"C:Q1D1L4TGN2vT+ZBmpKtWDXwLmVGgg=\n" +
+				"P:glibc\n" +
+				"V:2.41-r3\n" +
+				"A:x86_64\n" +
+				"T:the GNU C library\n" +
+				"o:glibc\n" +
+				"\n" +
+				"C:Q1yNZ7cLzTIYSHZ2Wj5vAlZzWuKmA=\n" +
+				"P:libstdc++\n" +
+				"V:14.2.0-r6\n" +
+				"A:x86_64\n" +
+				"o:gcc\n" +
+				"\n",
+		)},
+	}, nil)
+	require.NoError(t, err)
+	require.NotNil(t, nl)
+
+	byName := map[string]*sbom.Node{}
+	for _, n := range nl.GetNodes() {
+		byName[n.GetName()] = n
+	}
+	require.Len(t, byName, 2)
+
+	glibc := byName["glibc"]
+	require.NotNil(t, glibc)
+	assert.Equal(t,
+		"pkg:apk/wolfi/glibc@2.41-r3?arch=x86_64&distro=wolfi-20230201",
+		glibc.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)],
+	)
+	assert.Equal(t,
+		"https://packages.wolfi.dev/os/x86_64/glibc-2.41-r3.apk",
+		glibc.GetUrlDownload(),
+	)
+
+	// The '+' in the name is percent-encoded in the purl but stays literal
+	// in the download URL, which is a plain path.
+	stdcpp := byName["libstdc++"]
+	require.NotNil(t, stdcpp)
+	assert.Equal(t,
+		"pkg:apk/wolfi/libstdc%2B%2B@14.2.0-r6?arch=x86_64&distro=wolfi-20230201&upstream=gcc",
+		stdcpp.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)],
+	)
+	assert.Equal(t,
+		"https://packages.wolfi.dev/os/x86_64/libstdc++-14.2.0-r6.apk",
+		stdcpp.GetUrlDownload(),
 	)
 }

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net/url"
 	"os"
 	"path"
 	"strconv"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	rpmdb "github.com/knqyf263/go-rpmdb/pkg"
+	"github.com/package-url/packageurl-go"
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
@@ -239,44 +239,41 @@ func versionRelease(p *rpmdb.PackageInfo) string {
 // rpm-definition: namespace is the lowercased distro id (e.g. "fedora"),
 // version is the combined version-release, and qualifiers include arch,
 // epoch (when > 0), upstream (the source RPM), distro (id-version_id), and
-// the Fedora modularity label when present. Qualifiers are sorted
-// alphabetically and percent-encoded.
+// the Fedora modularity label when present.
+//
+// Assembly is delegated to packageurl-go so every component carries the
+// canonical purl encoding: qualifiers come out sorted alphabetically and the
+// characters the spec reserves get percent-encoded. That matters for RPM in
+// particular because "+" (which the spec requires to be written "%2B") is
+// common in upstream versions and modular release tags. Scanners match purls
+// by string comparison, so a non-canonical encoding silently misses.
 //
 //	pkg:rpm/fedora/curl@7.50.3-1.fc25?arch=i386&distro=fedora-25
+//	pkg:rpm/fedora/nodejs@14.21.3-1.module_f38%2B18119%2B78d34c93?arch=x86_64&distro=fedora-38
 func rpmPurl(p *rpmdb.PackageInfo, osr osrelease.Data) string {
-	var b strings.Builder
-	b.WriteString("pkg:rpm/")
-	if ns := osr.Namespace(); ns != "" {
-		b.WriteString(ns)
-		b.WriteByte('/')
-	}
-	b.WriteString(p.Name)
-	if v := versionRelease(p); v != "" {
-		b.WriteByte('@')
-		b.WriteString(v)
-	}
-
-	q := url.Values{}
+	q := map[string]string{}
 	if p.Arch != "" {
-		q.Set("arch", strings.ToLower(p.Arch))
+		q["arch"] = strings.ToLower(p.Arch)
 	}
 	if p.Epoch != nil && *p.Epoch > 0 {
-		q.Set("epoch", strconv.Itoa(*p.Epoch))
+		q["epoch"] = strconv.Itoa(*p.Epoch)
 	}
 	if p.SourceRpm != "" {
-		q.Set("upstream", p.SourceRpm)
+		q["upstream"] = p.SourceRpm
 	}
 	if d := osr.Distro(); d != "" {
-		q.Set("distro", d)
+		q["distro"] = d
 	}
 	if p.Modularitylabel != "" {
-		q.Set("modularitylabel", p.Modularitylabel)
+		q["modularitylabel"] = p.Modularitylabel
 	}
-	if enc := q.Encode(); enc != "" {
-		b.WriteByte('?')
-		b.WriteString(enc)
-	}
-	return b.String()
+
+	// The name is passed through verbatim: RPM package names are
+	// case-sensitive and packageurl-go does not case-fold them.
+	return packageurl.NewPackageURL(
+		packageurl.TypeRPM, osr.Namespace(), p.Name, versionRelease(p),
+		packageurl.QualifiersFromMap(q), "",
+	).ToString()
 }
 
 // getOptions extracts RPM-specific options from DecomposerOptions, falling

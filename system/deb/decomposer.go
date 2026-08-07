@@ -11,12 +11,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"os"
 	"path"
 	"strings"
+	"unicode"
 
 	"github.com/google/uuid"
+	"github.com/package-url/packageurl-go"
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
@@ -197,11 +198,16 @@ func packagesToNodeList(source fs.FS, pkgs []*dpkgPackage, osr osrelease.Data, f
 		licenses, concluded := packageLicenses(source, p.Name)
 		node.Licenses = licenses
 		node.LicenseConcluded = concluded
+		if dl := debDownloadLocation(p, osr); dl != "" {
+			node.UrlDownload = dl
+		}
 		if p.Maintainer != "" {
-			// Maintainers are mostly teams (e.g. "Debian GNU Libc
-			// Maintainers"), so flag them as orgs like we do for RPM vendors.
+			// The Maintainer field mixes packaging teams ("Debian OpenSSL
+			// Team") with individual developers ("Santiago Vila") and carries
+			// nothing that tells them apart, so we guess from the name.
 			node.Suppliers = []*sbom.Person{{
-				Name: p.Maintainer, Email: p.Email, IsOrg: true,
+				Name: p.Maintainer, Email: p.Email,
+				IsOrg: maintainerIsOrg(p.Maintainer),
 			}}
 		}
 		nl.AddRootNode(node)
@@ -219,42 +225,148 @@ func packagesToNodeList(source fs.FS, pkgs []*dpkgPackage, osr osrelease.Data, f
 // deb definition: namespace is the lowercased distro id (e.g. "debian"),
 // version is the complete Debian version (the epoch travels inside it), and
 // qualifiers include arch, distro (id-version_id), and upstream (the source
-// package, with its version when the stanza carries one). Qualifiers are
-// sorted alphabetically and percent-encoded.
+// package, with its version when the stanza carries one). packageurl-go
+// sorts the qualifiers alphabetically and applies the canonical
+// percent-encoding, which notably escapes the '+' that Debian versions are
+// full of as %2B.
 //
-//	pkg:deb/debian/curl@7.74.0-1.3+deb11u7?arch=amd64&distro=debian-11
+//	pkg:deb/debian/curl@7.74.0-1.3%2Bdeb11u7?arch=amd64&distro=debian-11
 func debPurl(p *dpkgPackage, osr osrelease.Data) string {
-	var b strings.Builder
-	b.WriteString("pkg:deb/")
-	if ns := osr.Namespace(); ns != "" {
-		b.WriteString(ns)
-		b.WriteByte('/')
-	}
-	b.WriteString(strings.ToLower(p.Name))
-	if p.Version != "" {
-		b.WriteByte('@')
-		b.WriteString(p.Version)
-	}
-
-	q := url.Values{}
+	q := map[string]string{}
 	if p.Architecture != "" {
-		q.Set("arch", strings.ToLower(p.Architecture))
+		q["arch"] = strings.ToLower(p.Architecture)
 	}
 	if d := osr.Distro(); d != "" {
-		q.Set("distro", d)
+		q["distro"] = d
 	}
 	if p.Source != "" {
 		upstream := p.Source
 		if p.SourceVersion != "" {
 			upstream += "@" + p.SourceVersion
 		}
-		q.Set("upstream", upstream)
+		q["upstream"] = upstream
 	}
-	if enc := q.Encode(); enc != "" {
-		b.WriteByte('?')
-		b.WriteString(enc)
+
+	return packageurl.NewPackageURL(
+		packageurl.TypeDebian,
+		osr.Namespace(),
+		strings.ToLower(p.Name),
+		p.Version,
+		packageurl.QualifiersFromMap(q),
+		"",
+	).ToString()
+}
+
+// orgMaintainerWords are the words that mark a Maintainer name as a
+// packaging team rather than a single developer. Both the singular and the
+// plural forms are listed because Debian uses both ("Debian Perl Group",
+// "GNU Libc Maintainers").
+var orgMaintainerWords = map[string]struct{}{
+	"alliance":    {},
+	"alliances":   {},
+	"developer":   {},
+	"developers":  {},
+	"foundation":  {},
+	"foundations": {},
+	"group":       {},
+	"groups":      {},
+	"maintainer":  {},
+	"maintainers": {},
+	"packager":    {},
+	"packagers":   {},
+	"packaging":   {},
+	"project":     {},
+	"projects":    {},
+	"team":        {},
+	"teams":       {},
+}
+
+// maintainerIsOrg guesses whether a Debian Maintainer name denotes an
+// organization (a packaging team) rather than a person. It is a heuristic:
+// the dpkg database records maintainers as free-form RFC822 names with no
+// marker distinguishing "Debian OpenSSL Team" from "Santiago Vila", and SPDX
+// wants us to pick one of Person: or Organization:.
+//
+// The name is split on everything that is not a letter or a digit so that
+// only whole words are considered ("Steam" is not a team, "Grouper" is not a
+// group), and any word in orgMaintainerWords makes it an organization.
+// Anything else is taken to be a person, so unusual team names are reported
+// as people rather than the other way around.
+func maintainerIsOrg(name string) bool {
+	words := strings.FieldsFunc(name, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	for _, w := range words {
+		if _, ok := orgMaintainerWords[strings.ToLower(w)]; ok {
+			return true
+		}
 	}
-	return b.String()
+	return false
+}
+
+const (
+	// debianNamespace is the os-release ID of Debian proper. Only Debian
+	// gets a synthesized download location: derivatives publish elsewhere
+	// (Ubuntu's pool lives on archive.ubuntu.com and is split across
+	// components dpkg never records), so guessing for them yields 404s.
+	debianNamespace = "debian"
+
+	// debianPoolURL is the root of the Debian package pool.
+	debianPoolURL = "http://ftp.debian.org/debian/pool"
+)
+
+// debDownloadLocation synthesizes the URL the binary package can be fetched
+// from in the Debian pool, or "" when we cannot name the file with
+// confidence.
+//
+// The pool is laid out by SOURCE package — pool/main/o/openssl holds every
+// binary built from openssl, libssl3 included — while the .deb file itself
+// is named after the binary package. We assume the "main" component because
+// the dpkg status file does not record which component a package came from,
+// and main is where the overwhelming majority of a Debian system comes from;
+// packages from contrib or non-free get a URL that does not resolve.
+func debDownloadLocation(p *dpkgPackage, osr osrelease.Data) string {
+	if osr.Namespace() != debianNamespace {
+		return ""
+	}
+	if p.Name == "" || p.Version == "" || p.Architecture == "" {
+		return ""
+	}
+
+	// Debian leaves the epoch out of .deb filenames: version "1:2.36-9" is
+	// published as "..._2.36-9_amd64.deb". Drop it, or the URL is wrong for
+	// every package that carries one.
+	version := p.Version
+	if _, rest, found := strings.Cut(version, ":"); found {
+		version = rest
+	}
+	if version == "" {
+		return ""
+	}
+
+	// The Source field is only set when the source package name differs
+	// from the binary one; otherwise they are the same.
+	src := p.Source
+	if src == "" {
+		src = p.Name
+	}
+
+	return fmt.Sprintf(
+		"%s/main/%s/%s/%s_%s_%s.deb",
+		debianPoolURL, debPoolDir(src), src, p.Name, version, p.Architecture,
+	)
+}
+
+// debPoolDir returns the sharding directory a source package sits in inside
+// the pool: the first letter of its name, or the first four characters when
+// it starts with "lib". "lib" is common enough that Debian subdivides it,
+// so glibc lands in pool/main/g/glibc but libzip lands in
+// pool/main/libz/libzip.
+func debPoolDir(source string) string {
+	if len(source) >= 4 && strings.HasPrefix(source, "lib") {
+		return source[:4]
+	}
+	return source[:1]
 }
 
 // getOptions extracts dpkg-specific options from DecomposerOptions, falling

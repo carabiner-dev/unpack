@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	rpmdb "github.com/knqyf263/go-rpmdb/pkg"
+	"github.com/package-url/packageurl-go"
 	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,14 +80,48 @@ func TestRpmPurl(t *testing.T) {
 			want: "pkg:rpm/fedora/kernel@6.4.6-200.fc38?arch=x86_64&distro=fedora-38",
 		},
 		{
-			name: "modularitylabel encoded",
+			// "+" in the version has to be written as %2B, while ":" is
+			// allowed unencoded inside a qualifier value.
+			name: "version plus encoded, modularitylabel colons left as-is",
 			pkg: rpmdb.PackageInfo{
 				Name: "nodejs", Version: "14.21.3", Release: "1.module_f38+18119+78d34c93",
 				Arch:            "x86_64",
 				Modularitylabel: "nodejs:14:8060020220421152133:e6e4d6a4",
 			},
 			osr:  osrelease.Data{ID: "fedora", VersionID: "38"},
-			want: "pkg:rpm/fedora/nodejs@14.21.3-1.module_f38+18119+78d34c93?arch=x86_64&distro=fedora-38&modularitylabel=nodejs%3A14%3A8060020220421152133%3Ae6e4d6a4",
+			want: "pkg:rpm/fedora/nodejs@14.21.3-1.module_f38%2B18119%2B78d34c93?arch=x86_64&distro=fedora-38&modularitylabel=nodejs:14:8060020220421152133:e6e4d6a4",
+		},
+		{
+			// RPM names are case-sensitive and may carry underscores; neither
+			// may be folded or escaped away.
+			name: "name case and underscores preserved verbatim",
+			pkg: rpmdb.PackageInfo{
+				Name: "perl-IO_Compress", Version: "2.102", Release: "1.fc38",
+				Arch: "noarch",
+			},
+			osr:  osrelease.Data{ID: "fedora", VersionID: "38"},
+			want: "pkg:rpm/fedora/perl-IO_Compress@2.102-1.fc38?arch=noarch&distro=fedora-38",
+		},
+		{
+			// "+" is not safe in a purl name either.
+			name: "plus in name encoded",
+			pkg: rpmdb.PackageInfo{
+				Name: "libstdc++", Version: "13.2.1", Release: "1.fc38",
+				Arch: "x86_64",
+			},
+			osr:  osrelease.Data{ID: "fedora", VersionID: "38"},
+			want: "pkg:rpm/fedora/libstdc%2B%2B@13.2.1-1.fc38?arch=x86_64&distro=fedora-38",
+		},
+		{
+			// "^" marks a post-release snapshot in RPM versioning and is not
+			// a safe purl character either.
+			name: "caret release marker encoded",
+			pkg: rpmdb.PackageInfo{
+				Name: "golang", Version: "1.22.0", Release: "0.1^20240101gitabc123.fc40",
+				Arch: "x86_64",
+			},
+			osr:  osrelease.Data{ID: "fedora", VersionID: "40"},
+			want: "pkg:rpm/fedora/golang@1.22.0-0.1%5E20240101gitabc123.fc40?arch=x86_64&distro=fedora-40",
 		},
 		{
 			name: "no os-release info: namespace and distro omitted",
@@ -111,6 +146,31 @@ func TestRpmPurl(t *testing.T) {
 			t.Parallel()
 			got := rpmPurl(&tc.pkg, tc.osr)
 			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// TestRpmPurlRoundTrip checks that the percent-encoding rpmPurl emits is
+// lossless: parsing the purl back has to return the exact RPM name and
+// version-release it was built from, including the characters the spec
+// requires to be escaped.
+func TestRpmPurlRoundTrip(t *testing.T) {
+	t.Parallel()
+	for _, pkg := range []rpmdb.PackageInfo{
+		{Name: "perl-IO_Compress", Version: "2.102", Release: "1.fc38"},
+		{Name: "libstdc++", Version: "13.2.1", Release: "1.fc38"},
+		{Name: "nodejs", Version: "14.21.3", Release: "1.module_f38+18119+78d34c93"},
+		{Name: "golang", Version: "1.22.0", Release: "0.1^20240101git.fc40"},
+		{Name: "foo", Version: "1.0~rc1", Release: "1.fc38"},
+	} {
+		t.Run(pkg.Name, func(t *testing.T) {
+			t.Parallel()
+			parsed, err := packageurl.FromString(
+				rpmPurl(&pkg, osrelease.Data{ID: "fedora", VersionID: "38"}),
+			)
+			require.NoError(t, err)
+			assert.Equal(t, pkg.Name, parsed.Name)
+			assert.Equal(t, versionRelease(&pkg), parsed.Version)
 		})
 	}
 }

@@ -9,11 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"os"
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/package-url/packageurl-go"
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
@@ -27,6 +27,16 @@ var apkDBLocations = []string{
 	"lib/apk/db/installed",
 	"usr/lib/apk/db/installed", // usr-merged layouts
 }
+
+const (
+	// wolfiNamespace is the os-release ID of Wolfi, the one apk distro whose
+	// package host we can derive download locations from.
+	wolfiNamespace = "wolfi"
+
+	// wolfiPackageHost is the well-known host serving the Wolfi apk
+	// repository. Every Wolfi package is published under it.
+	wolfiPackageHost = "https://packages.wolfi.dev/os"
+)
 
 var _ api.Decomposer = (*Decomposer)(nil)
 
@@ -140,6 +150,9 @@ func packagesToNodeList(pkgs []*apkPackage, osr osrelease.Data, includeFiles boo
 			},
 			PrimaryPurpose: []sbom.Purpose{sbom.Purpose_LIBRARY},
 		}
+		if dl := apkDownloadLocation(p, osr); dl != "" {
+			node.UrlDownload = dl
+		}
 		if p.License != "" {
 			// Alpine's L: field already carries SPDX expressions for the
 			// most part; Normalize fixes stray aliases and leaves
@@ -196,37 +209,49 @@ func addPackageFiles(nl *sbom.NodeList, p *apkPackage, packageID string) error {
 // apk definition: namespace is the lowercased distro id (e.g. "alpine"),
 // and qualifiers include arch, distro (id-version_id), and upstream (the
 // origin/source package when it differs from the package name). Qualifiers
-// are sorted alphabetically and percent-encoded.
+// are sorted alphabetically. Every component is percent-encoded canonically
+// by packageurl-go, so characters the spec reserves — notably '+', which is
+// common in apk package names — come out as %2B and not raw:
 //
-//	pkg:apk/alpine/musl@1.2.4-r2?arch=x86_64&distro=alpine-3.24.0
+//	pkg:apk/alpine/libstdc%2B%2B@14.3.0-r2?arch=x86_64&distro=alpine-3.24.0
 func apkPurl(p *apkPackage, osr osrelease.Data) string {
-	var b strings.Builder
-	b.WriteString("pkg:apk/")
-	if ns := osr.Namespace(); ns != "" {
-		b.WriteString(ns)
-		b.WriteByte('/')
-	}
-	b.WriteString(strings.ToLower(p.Name))
-	if p.Version != "" {
-		b.WriteByte('@')
-		b.WriteString(p.Version)
-	}
-
-	q := url.Values{}
+	q := map[string]string{}
 	if p.Arch != "" {
-		q.Set("arch", strings.ToLower(p.Arch))
+		q["arch"] = strings.ToLower(p.Arch)
 	}
 	if d := osr.Distro(); d != "" {
-		q.Set("distro", d)
+		q["distro"] = d
 	}
 	if p.Origin != "" && p.Origin != p.Name {
-		q.Set("upstream", p.Origin)
+		q["upstream"] = p.Origin
 	}
-	if enc := q.Encode(); enc != "" {
-		b.WriteByte('?')
-		b.WriteString(enc)
+
+	return packageurl.NewPackageURL(
+		packageurl.TypeApk,
+		osr.Namespace(),
+		strings.ToLower(p.Name),
+		p.Version,
+		packageurl.QualifiersFromMap(q),
+		"",
+	).ToString()
+}
+
+// apkDownloadLocation synthesizes the URL a package can be fetched from.
+// Only Wolfi gets one: all of its packages are published under a single
+// well-known host, so the location follows from the installed database
+// alone. Alpine's are spread over user-configured mirrors and per-release
+// repositories that the installed database does not record, so Alpine
+// packages deliberately get no download location rather than a guessed one.
+func apkDownloadLocation(p *apkPackage, osr osrelease.Data) string {
+	if osr.Namespace() != wolfiNamespace {
+		return ""
 	}
-	return b.String()
+	if p.Name == "" || p.Version == "" || p.Arch == "" {
+		return ""
+	}
+	return fmt.Sprintf(
+		"%s/%s/%s-%s.apk", wolfiPackageHost, p.Arch, p.Name, p.Version,
+	)
 }
 
 // getOptions extracts apk-specific options from DecomposerOptions, falling
