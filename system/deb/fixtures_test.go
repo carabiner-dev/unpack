@@ -86,12 +86,20 @@ func TestExtractFromFS_DebianSlim(t *testing.T) {
 	if assert.Len(t, libc.GetSuppliers(), 1) {
 		assert.Equal(t, "GNU Libc Maintainers", libc.GetSuppliers()[0].GetName())
 		assert.Equal(t, "debian-glibc@lists.debian.org", libc.GetSuppliers()[0].GetEmail())
+		assert.True(t, libc.GetSuppliers()[0].GetIsOrg(), `"Maintainers" marks a team`)
 	}
 
 	// Namespace and distro come from etc/os-release; upstream from Source.
 	assert.Equal(t,
-		"pkg:deb/debian/libc6@2.41-12+deb13u3?arch=amd64&distro=debian-13&upstream=glibc",
+		"pkg:deb/debian/libc6@2.41-12%2Bdeb13u3?arch=amd64&distro=debian-13&upstream=glibc",
 		libc.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)],
+	)
+
+	// libc6 is built from the glibc source package, so it lives under
+	// pool/main/g/glibc even though the file carries the binary name.
+	assert.Equal(t,
+		"http://ftp.debian.org/debian/pool/main/g/glibc/libc6_2.41-12+deb13u3_amd64.deb",
+		libc.GetUrlDownload(),
 	)
 
 	// Licenses come from the DEP-5 copyright file: the "Files: *" license is
@@ -106,6 +114,16 @@ func TestExtractFromFS_DebianSlim(t *testing.T) {
 	require.NotNil(t, base)
 	assert.Equal(t, "GPL-2.0-or-later", base.GetLicenseConcluded())
 	assert.Equal(t, []string{"GPL-2.0-or-later", "verbatim"}, base.GetLicenses())
+
+	// base-files has no Source field, so it is its own source package.
+	assert.Equal(t,
+		"http://ftp.debian.org/debian/pool/main/b/base-files/base-files_13.8+deb13u5_amd64.deb",
+		base.GetUrlDownload(),
+	)
+	if assert.Len(t, base.GetSuppliers(), 1) {
+		assert.Equal(t, "Santiago Vila", base.GetSuppliers()[0].GetName())
+		assert.False(t, base.GetSuppliers()[0].GetIsOrg(), "a lone developer is a person")
+	}
 }
 
 // TestExtractFromFS_DebianSlimIncludeFiles flips IncludeFiles on and checks
@@ -161,11 +179,11 @@ func TestExtractFromFS_Distroless(t *testing.T) {
 		byName[n.GetName()] = n.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)]
 	}
 	assert.Equal(t,
-		"pkg:deb/debian/base-files@12.4+deb12u14?arch=amd64&distro=debian-12",
+		"pkg:deb/debian/base-files@12.4%2Bdeb12u14?arch=amd64&distro=debian-12",
 		byName["base-files"],
 	)
 	assert.Equal(t,
-		"pkg:deb/debian/tzdata@2026b-0+deb12u1?arch=all&distro=debian-12",
+		"pkg:deb/debian/tzdata@2026b-0%2Bdeb12u1?arch=all&distro=debian-12",
 		byName["tzdata"],
 	)
 	assert.Contains(t, byName, "netbase")
@@ -182,6 +200,31 @@ func TestExtractFromFS_Distroless(t *testing.T) {
 	assert.Equal(t, "GPL-2.0-only", byNodeName["netbase"].GetLicenseConcluded())
 	assert.Empty(t, byNodeName["base-files"].GetLicenses())
 	assert.Empty(t, byNodeName["base-files"].GetLicenseConcluded())
+
+	// None of these stanzas carry a Source field, so each package is its own
+	// source and the pool directory is the first letter of its own name.
+	for name, want := range map[string]string{
+		"base-files":  "http://ftp.debian.org/debian/pool/main/b/base-files/base-files_12.4+deb12u14_amd64.deb",
+		"media-types": "http://ftp.debian.org/debian/pool/main/m/media-types/media-types_10.0.0_all.deb",
+		"netbase":     "http://ftp.debian.org/debian/pool/main/n/netbase/netbase_6.4_all.deb",
+		"tzdata":      "http://ftp.debian.org/debian/pool/main/t/tzdata/tzdata_2026b-0+deb12u1_all.deb",
+	} {
+		assert.Equal(t, want, byNodeName[name].GetUrlDownload(), name)
+	}
+
+	// The four maintainers of this image cover both sides of the person vs
+	// organization heuristic.
+	for name, wantOrg := range map[string]bool{
+		"base-files":  false, // Santiago Vila
+		"netbase":     false, // Marco d'Itri
+		"media-types": true,  // Mime-Support Packagers
+		"tzdata":      true,  // GNU Libc Maintainers
+	} {
+		if assert.Len(t, byNodeName[name].GetSuppliers(), 1, name) {
+			assert.Equal(t, wantOrg, byNodeName[name].GetSuppliers()[0].GetIsOrg(),
+				"%s: %q", name, byNodeName[name].GetSuppliers()[0].GetName())
+		}
+	}
 }
 
 // TestExtractFromFS_DistrolessIncludeFiles checks the distroless file lists
