@@ -35,16 +35,31 @@ func (bc *bcloser) Write(d []byte) (int, error) {
 	return bc.Buffer.Write(d)
 }
 
+// predicateTypeFor returns the in-toto predicate type naming what a document
+// in this format is.
+//
+// SPDX 3 has one of its own. It is a different serialization of a different
+// model, not a new version of the same document, so a consumer has to be able
+// to tell from the statement whether it can read the predicate without first
+// parsing it.
+func predicateTypeFor(format formats.Format) (string, error) {
+	switch {
+	case format == formats.SPDX3JSON:
+		return "https://spdx.dev/Document/v3", nil
+	case format.Type() == formats.SPDXFORMAT:
+		return "https://spdx.dev/Document", nil
+	case format.Type() == formats.CDXFORMAT:
+		return "https://cyclonedx.org/bom", nil
+	default:
+		return "", fmt.Errorf("unsupported format to attest: %s", format)
+	}
+}
+
 // nodeLlistToAttestation writes the nodelist to an attestation
 func nodeListToAttestation(wr io.WriteCloser, format formats.Format, nl *sbom.NodeList) error {
-	var predicateType string
-	switch format.Type() {
-	case formatSPDX:
-		predicateType = "https://spdx.dev/Document"
-	case formatCDX:
-		predicateType = "https://cyclonedx.org/bom"
-	default:
-		return fmt.Errorf("unsupported format to attest")
+	predicateType, err := predicateTypeFor(format)
+	if err != nil {
+		return err
 	}
 
 	// Create the new attestation

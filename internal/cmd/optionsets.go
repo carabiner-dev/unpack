@@ -82,7 +82,7 @@ func (fo *formatOptions) Validate() error {
 		fo.Attest = true
 	}
 
-	if fo.Attest && (fo.Format != formatSPDX && fo.Format != formatCDX && fo.Format != formatCDXS) {
+	if fo.Attest && !slices.Contains(sbomFormats, fo.Format) {
 		errs = append(errs, errors.New("attestations can only be generated when output set to SPDX or CycloneDX"))
 	}
 	return errors.Join(errs...)
@@ -106,8 +106,10 @@ func (fo *formatOptions) ProtobomFormat() (formats.Format, bool) {
 	switch fo.Format {
 	case formatSPDX:
 		return formats.SPDX23JSON, true
+	case formatSPDX3:
+		return formats.SPDX3JSON, true
 	case formatCDX, formatCDXS:
-		return formats.CDX16JSON, true
+		return formats.CDX17JSON, true
 	default:
 		return "", false
 	}

@@ -37,9 +37,11 @@ func TestFormatOptionsValidate(t *testing.T) {
 	}{
 		{"default tree", formatOptions{Format: formatTree}, ""},
 		{"spdx", formatOptions{Format: formatSPDX}, ""},
+		{"spdx3", formatOptions{Format: formatSPDX3}, ""},
 		{"bogus format", formatOptions{Format: "yaml"}, "invalid format"},
 		{"attest needs sbom format", formatOptions{Format: formatTree, Attest: true}, "attestations can only"},
 		{"attest with cdx", formatOptions{Format: formatCDXS, Attest: true}, ""},
+		{"attest with spdx3", formatOptions{Format: formatSPDX3, Attest: true}, ""},
 		{"sign implies attest", formatOptions{Format: formatSPDX, Sign: true}, ""},
 		{"sign with tree fails", formatOptions{Format: formatTree, Sign: true}, "attestations can only"},
 	} {
