@@ -43,7 +43,7 @@ func (fo *formatOptions) Config() *command.OptionsSetConfig {
 				},
 				"attest": {
 					Long: "attest",
-					Help: "output sboms in an intoto attestation (defaults to format=spdx)",
+					Help: "output sboms in an intoto attestation (defaults to format=spdx3)",
 				},
 				"sign": {
 					Long: "sign",
@@ -91,11 +91,15 @@ func (fo *formatOptions) Validate() error {
 // DefaultToSPDX switches the format to SPDX when attesting or signing was
 // requested but no explicit format was chosen. Call it from PreRun, where
 // the flag change state is known.
+//
+// The SPDX it picks is 3.0.1. Asking for "spdx" still writes 2.3, for
+// everyone who has that in a script; it is only the choice made on the
+// caller's behalf that moves.
 func (fo *formatOptions) DefaultToSPDX(cmd *cobra.Command) {
 	flag := fo.Config().LongFlag("format")
 	if (fo.Attest || fo.Sign) &&
 		!cmd.Flags().Changed(flag) && !cmd.PersistentFlags().Changed(flag) {
-		fo.Format = formatSPDX
+		fo.Format = formatSPDX3
 	}
 }
 

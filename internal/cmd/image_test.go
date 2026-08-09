@@ -72,7 +72,7 @@ func TestFormatOptionsDefaultToSPDX(t *testing.T) {
 
 	require.NoError(t, cmd.PersistentFlags().Set("attest", "true"))
 	opts.DefaultToSPDX(cmd)
-	assert.Equal(t, formatSPDX, opts.Format)
+	assert.Equal(t, formatSPDX3, opts.Format)
 
 	// An explicit format is respected.
 	opts2 := &formatOptions{}
@@ -82,6 +82,15 @@ func TestFormatOptionsDefaultToSPDX(t *testing.T) {
 	require.NoError(t, cmd2.PersistentFlags().Set("attest", "true"))
 	opts2.DefaultToSPDX(cmd2)
 	assert.Equal(t, formatCDXS, opts2.Format)
+
+	// Including an explicit SPDX 2.3, which must not be quietly upgraded.
+	opts3 := &formatOptions{}
+	cmd3 := &cobra.Command{}
+	opts3.AddFlags(cmd3)
+	require.NoError(t, cmd3.PersistentFlags().Set("format", formatSPDX))
+	require.NoError(t, cmd3.PersistentFlags().Set("attest", "true"))
+	opts3.DefaultToSPDX(cmd3)
+	assert.Equal(t, formatSPDX, opts3.Format)
 }
 
 // imageTestDB is a one-package apk database for the CLI round-trip.

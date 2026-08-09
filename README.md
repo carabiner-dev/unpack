@@ -77,9 +77,17 @@ The output formats are:
 
 **Example: Create a Signed Attestation**
 ```bash
-# Generate an SPDX SBOM and wrap it in a signed in-toto attestation
+# Generate an SBOM and wrap it in a signed in-toto attestation.
+# Attesting without naming a format writes SPDX 3.0.1.
+unpack extract --attest /path/to/your/code
+
+# ...or name the format yourself
 unpack extract --attest --format=spdx /path/to/your/code
 ```
+
+Attestations are made under the predicate type of what they carry:
+`https://spdx.dev/Document/v3` for SPDX 3, `https://spdx.dev/Document` for
+SPDX 2, and `https://cyclonedx.org/bom` for CycloneDX.
 
 ### `unpack sbom`: Process Existing SBOMs
 
