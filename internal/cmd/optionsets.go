@@ -43,7 +43,7 @@ func (fo *formatOptions) Config() *command.OptionsSetConfig {
 				},
 				"attest": {
 					Long: "attest",
-					Help: "output sboms in an intoto attestation (defaults to format=spdx)",
+					Help: "output sboms in an intoto attestation (defaults to format=spdx3)",
 				},
 				"sign": {
 					Long: "sign",
@@ -82,7 +82,7 @@ func (fo *formatOptions) Validate() error {
 		fo.Attest = true
 	}
 
-	if fo.Attest && (fo.Format != formatSPDX && fo.Format != formatCDX && fo.Format != formatCDXS) {
+	if fo.Attest && !slices.Contains(sbomFormats, fo.Format) {
 		errs = append(errs, errors.New("attestations can only be generated when output set to SPDX or CycloneDX"))
 	}
 	return errors.Join(errs...)
@@ -91,11 +91,15 @@ func (fo *formatOptions) Validate() error {
 // DefaultToSPDX switches the format to SPDX when attesting or signing was
 // requested but no explicit format was chosen. Call it from PreRun, where
 // the flag change state is known.
+//
+// The SPDX it picks is 3.0.1. Asking for "spdx" still writes 2.3, for
+// everyone who has that in a script; it is only the choice made on the
+// caller's behalf that moves.
 func (fo *formatOptions) DefaultToSPDX(cmd *cobra.Command) {
 	flag := fo.Config().LongFlag("format")
 	if (fo.Attest || fo.Sign) &&
 		!cmd.Flags().Changed(flag) && !cmd.PersistentFlags().Changed(flag) {
-		fo.Format = formatSPDX
+		fo.Format = formatSPDX3
 	}
 }
 
@@ -106,8 +110,10 @@ func (fo *formatOptions) ProtobomFormat() (formats.Format, bool) {
 	switch fo.Format {
 	case formatSPDX:
 		return formats.SPDX23JSON, true
+	case formatSPDX3:
+		return formats.SPDX3JSON, true
 	case formatCDX, formatCDXS:
-		return formats.CDX16JSON, true
+		return formats.CDX17JSON, true
 	default:
 		return "", false
 	}

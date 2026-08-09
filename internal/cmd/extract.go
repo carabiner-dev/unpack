@@ -23,10 +23,15 @@ import (
 )
 
 const (
-	formatSPDX = "spdx"
-	formatCDX  = "cyclonedx"
-	formatCDXS = "cdx"
-	formatTree = "tree"
+	// The SBOM formats the output can be written in. A bare name selects
+	// the version of that standard unpack writes by default; SPDX 3 is a
+	// name of its own so that a caller asking for "spdx" keeps getting the
+	// SPDX 2.3 it has always got.
+	formatSPDX  = "spdx"
+	formatSPDX3 = "spdx3"
+	formatCDX   = "cyclonedx"
+	formatCDXS  = "cdx"
+	formatTree  = "tree"
 )
 
 type extractOptions struct {
@@ -45,7 +50,11 @@ type extractOptions struct {
 	OutputPrefix         string
 }
 
-var validFormats = []string{formatSPDX, formatCDX, formatCDXS, formatTree}
+var validFormats = []string{formatSPDX, formatSPDX3, formatCDX, formatCDXS, formatTree}
+
+// sbomFormats are the formats that produce a document, as opposed to the
+// tree view. Only these can be attested.
+var sbomFormats = []string{formatSPDX, formatSPDX3, formatCDX, formatCDXS}
 
 // Validates the options in context with arguments
 func (ro *extractOptions) Validate() error {

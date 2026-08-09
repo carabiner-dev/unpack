@@ -43,7 +43,7 @@ func (ro *sbomOptions) Validate() error {
 		ro.Attest = true
 	}
 
-	if ro.Attest && (ro.Format != formatSPDX && ro.Format != formatCDX) {
+	if ro.Attest && !slices.Contains(sbomFormats, ro.Format) {
 		errs = append(errs, fmt.Errorf("attestations can only be generated when output set to SPDX or CycloneDX"))
 	}
 
@@ -130,8 +130,10 @@ Unpack sbom takes an SBOM document and returns dependency data from its contents
 				return nil
 			case formatSPDX:
 				format = formats.SPDX23JSON
+			case formatSPDX3:
+				format = formats.SPDX3JSON
 			case formatCDXS, formatCDX:
-				format = formats.CDX16JSON
+				format = formats.CDX17JSON
 			default:
 				return fmt.Errorf("invalid format")
 			}

@@ -21,7 +21,7 @@ require (
 	github.com/knqyf263/go-rpmdb v0.1.1
 	github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
 	github.com/package-url/packageurl-go v0.1.6
-	github.com/protobom/protobom v0.5.8
+	github.com/protobom/protobom v0.5.9-0.20260808221622-938f35bcd0da
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
@@ -47,6 +47,7 @@ require (
 	github.com/carabiner-dev/osv v0.1.1 // indirect
 	github.com/carabiner-dev/policy v0.5.1 // indirect
 	github.com/carabiner-dev/predicates v0.5.0 // indirect
+	github.com/carabiner-dev/spdx3 v0.1.0 // indirect
 	github.com/carabiner-dev/vcslocator v0.4.6 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

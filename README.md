@@ -11,7 +11,7 @@ Whether you're a developer, security researcher, or compliance officer, Unpack h
 ## Key Features
 
 - **Dependency Extraction**: Analyzes source code to discover dependencies for various languages.
-- **SBOM Parsing**: Reads and understands major SBOM formats like SPDX and CycloneDX.
+- **SBOM Parsing**: Reads and understands major SBOM formats: SPDX 2.2, 2.3 and 3.0.1, and CycloneDX.
 - **Multiple Output Formats**: Displays dependencies as a visual tree or exports to standard SBOM formats.
 - **Extensible Architecture**: Easily extendable to support new languages and package managers.
 - **Attestation Support**: Wraps SBOM outputs in an in-toto attestation for verifiable supply chain security.
@@ -59,26 +59,49 @@ pkg:golang/github.com/carabiner-dev/unpack@v0.1.0-pre3.1+0400cac1
 
 **Example: Generate an SPDX SBOM**
 ```bash
-# Output the dependency graph as an SPDX JSON file
-unpack extract --format=spdx-json /path/to/your/code > my-project.spdx.json
+# Output the dependency graph as an SPDX 2.3 JSON file
+unpack extract --format=spdx /path/to/your/code > my-project.spdx.json
+
+# ...or as SPDX 3.0.1
+unpack extract --format=spdx3 /path/to/your/code > my-project.spdx3.json
 ```
+
+The output formats are:
+
+| `--format` | Writes |
+|---|---|
+| `tree` | an ASCII dependency tree (the default) |
+| `spdx` | SPDX 2.3, JSON |
+| `spdx3` | SPDX 3.0.1, JSON-LD |
+| `cyclonedx`, `cdx` | CycloneDX 1.7, JSON |
 
 **Example: Create a Signed Attestation**
 ```bash
-# Generate an SPDX SBOM and wrap it in a signed in-toto attestation
-unpack extract --attest --format=spdx-json /path/to/your/code
+# Generate an SBOM and wrap it in a signed in-toto attestation.
+# Attesting without naming a format writes SPDX 3.0.1.
+unpack extract --attest /path/to/your/code
+
+# ...or name the format yourself
+unpack extract --attest --format=spdx /path/to/your/code
 ```
+
+Attestations are made under the predicate type of what they carry:
+`https://spdx.dev/Document/v3` for SPDX 3, `https://spdx.dev/Document` for
+SPDX 2, and `https://cyclonedx.org/bom` for CycloneDX.
 
 ### `unpack sbom`: Process Existing SBOMs
 
 Use `sbom` to read, convert, and re-export existing SBOM files.
 
 ```bash
-# Read an SPDX SBOM and display its contents as a tree
-unpack sbom /path/to/sbom.spdx.json
+# Read an SBOM and display its contents as a tree
+unpack sbom -p /path/to/sbom.spdx.json
 
-# Convert an SPDX SBOM to the CycloneDX format
-unpack sbom --format=cyclonedx-json /path/to/sbom.spdx.json
+# Convert an SBOM to CycloneDX
+unpack sbom -p /path/to/sbom.spdx.json --format=cyclonedx
+
+# Convert an SPDX 2.3 SBOM to SPDX 3.0.1
+unpack sbom -p /path/to/sbom.spdx.json --format=spdx3
 ```
 
 ### `unpack ls`: List Discovered Codebases

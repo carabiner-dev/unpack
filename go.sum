@@ -111,6 +111,8 @@ github.com/carabiner-dev/protograph v0.0.0-20260117204235-4dc9de9c0db5 h1:afkSTk
 github.com/carabiner-dev/protograph v0.0.0-20260117204235-4dc9de9c0db5/go.mod h1:oP90agfO9tjU30S5N9gDSIgmUg5x94C1uCjeugjJtn4=
 github.com/carabiner-dev/signer v0.5.3-0.20260728042848-608f5e258e3a h1:7q9CaMyYk8X2noWY7wgysu3aeVEdFN0a5CnY1GR4/gs=
 github.com/carabiner-dev/signer v0.5.3-0.20260728042848-608f5e258e3a/go.mod h1:Dyy5pd6seCI6ao/IP/qy8hywnrOLcfjOmT64vlwJ5zI=
+github.com/carabiner-dev/spdx3 v0.1.0 h1:Q6nMLXV0BhtqDQuwRDOaJDZR670TK4jdOvZqvTW/ctY=
+github.com/carabiner-dev/spdx3 v0.1.0/go.mod h1:d/t010TrZvYZBeYGpvHeId6QpRvGLlqK7cy0E81npPA=
 github.com/carabiner-dev/termtable v1.1.0 h1:b/7IqM52Wqwi9njjnAEIDddUYyX23msFkQVihkwarDs=
 github.com/carabiner-dev/termtable v1.1.0/go.mod h1:f2kBeZo0N9vQEMhfDfxv+DdXXy7eb9Wvu9u1sSyvR2A=
 github.com/carabiner-dev/vcslocator v0.4.6 h1:cwoJze9lQC4FDpxNryx4qmBE6pFQiv5JLDjLjIPFZX8=
@@ -374,8 +376,8 @@ github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINE
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRIccs7FGNTlIRMkT8wgtp5eCXdBlqhYGL6U=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
-github.com/protobom/protobom v0.5.8 h1:RNvNF0Wltj29izbx4HPtdRabRQcBPhLfZzYrzdNjFFU=
-github.com/protobom/protobom v0.5.8/go.mod h1:0qUbAUOKKg/m1RLibtom+IFXkiBz/x1MqxpWbDL3lQw=
+github.com/protobom/protobom v0.5.9-0.20260808221622-938f35bcd0da h1:Ss61wo8otclSDwKfL4OhW31AdgBN7WBlabSZdyskIoM=
+github.com/protobom/protobom v0.5.9-0.20260808221622-938f35bcd0da/go.mod h1:WjMp+9dR4qjGqJBqUdTAWsIT5MSyO6Y4XuoEEip7Fqo=
 github.com/remyoudompheng/bigfft v0.0.0-20230126093431-47fa9a501578 h1:VstopitMQi3hZP0fzvnsLmzXZdQGc4bEcgu24cp+d4M=
 github.com/remyoudompheng/bigfft v0.0.0-20230126093431-47fa9a501578/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/rivo/uniseg v0.4.7 h1:WUdvkW8uEhrYfLC4ZzdpI2ztxP1I582+49Oc5Mq64VQ=
