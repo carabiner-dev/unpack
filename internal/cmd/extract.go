@@ -366,11 +366,16 @@ func handleCodeBase(ctx context.Context, opts *extractOptions, s *signer.Signer,
 // The ID (e.g. "golang:source/api") is sanitized by replacing colons and
 // slashes with dashes and the appropriate extension is appended.
 func codebaseOutputFilename(opts *extractOptions, id string) string {
-	// Determine extension from format
+	// Determine extension from format. SPDX 3 gets an extension of its own
+	// for the same reason it gets a format name of its own: it is a different
+	// model, and a consumer picking files off disk has to be able to tell the
+	// two apart without opening them.
 	var ext string
 	switch opts.Format {
 	case formatSPDX:
 		ext = ".spdx.json"
+	case formatSPDX3:
+		ext = ".spdx3.json"
 	case formatCDXS, formatCDX:
 		ext = ".cdx.json"
 	default:
