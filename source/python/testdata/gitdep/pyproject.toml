@@ -1,0 +1,8 @@
+[project]
+name = "uvgit"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["python-dotenv"]
+
+[tool.uv.sources]
+python-dotenv = { git = "https://github.com/theskumar/python-dotenv", tag = "v1.2.1" }

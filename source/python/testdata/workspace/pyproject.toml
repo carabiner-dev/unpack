@@ -1,0 +1,15 @@
+[project]
+name = "uvws"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["liba", "click"]
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+liba = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

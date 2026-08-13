@@ -32,9 +32,11 @@ type treeBuilder struct {
 	nodes map[packageKey]*sbom.Node
 	// walked guards the recursion: extras may point back at their package.
 	walked map[packageKey]bool
-	// rootKeys marks the project's own packages, which enrichment skips:
-	// they are not on PyPI, and the lock is authoritative about them.
-	rootKeys map[packageKey]bool
+	// enrichable marks the packages that came from the registry, which are
+	// the only ones the index can be asked about: not the project's own,
+	// and not the git, path and url dependencies, whose installed content
+	// the index does not describe.
+	enrichable map[packageKey]bool
 }
 
 type packageKey struct {
@@ -43,13 +45,13 @@ type packageKey struct {
 
 func newTreeBuilder(lock *Lockfile, env *Environment, opts *api.DecomposerOptions) *treeBuilder {
 	return &treeBuilder{
-		lock:     lock,
-		env:      env,
-		opts:     opts,
-		nl:       sbom.NewNodeList(),
-		nodes:    map[packageKey]*sbom.Node{},
-		walked:   map[packageKey]bool{},
-		rootKeys: map[packageKey]bool{},
+		lock:       lock,
+		env:        env,
+		opts:       opts,
+		nl:         sbom.NewNodeList(),
+		nodes:      map[packageKey]*sbom.Node{},
+		walked:     map[packageKey]bool{},
+		enrichable: map[packageKey]bool{},
 	}
 }
 
@@ -95,7 +97,6 @@ func (tb *treeBuilder) addRoot(root *Package) error {
 	tb.nl.AddRootNode(node)
 	tb.nodes[keyOf(root)] = node
 	tb.walked[keyOf(root)] = true
-	tb.rootKeys[keyOf(root)] = true
 
 	if err := tb.walkDependencies(root, node, sbom.Edge_dependsOn); err != nil {
 		return err
@@ -231,12 +232,29 @@ func (tb *treeBuilder) createNode(pkg *Package) *sbom.Node {
 		PrimaryPurpose: []sbom.Purpose{sbom.Purpose_LIBRARY},
 	}
 
-	if artifact := selectArtifact(pkg, tb.env); artifact != nil {
-		node.UrlDownload = artifact.URL
-		if algorithm, value := artifact.HashValue(); algorithm == "sha256" {
-			node.Hashes = map[int32]string{int32(sbom.HashAlgorithm_SHA256): value}
+	switch {
+	case pkg.Source.Registry != "":
+		tb.enrichable[keyOf(pkg)] = true
+		if artifact := selectArtifact(pkg, tb.env); artifact != nil {
+			node.UrlDownload = artifact.URL
+			if algorithm, value := artifact.HashValue(); algorithm == "sha256" {
+				node.Hashes = map[int32]string{int32(sbom.HashAlgorithm_SHA256): value}
+			}
 		}
+	case pkg.Source.Git != "":
+		// A git dependency has no artifacts to hash, but it knows exactly
+		// where it comes from: uv records the resolved commit in the
+		// source's fragment.
+		node.UrlDownload = pkg.Source.Git
+		node.ExternalReferences = append(node.ExternalReferences, &sbom.ExternalReference{
+			Url:  pkg.Source.Git,
+			Type: sbom.ExternalReference_VCS,
+		})
+	case pkg.Source.URL != "":
+		node.UrlDownload = pkg.Source.URL
 	}
+	// Path, directory and the project's own packages point at local
+	// content, which has no address worth writing.
 	return node
 }
 

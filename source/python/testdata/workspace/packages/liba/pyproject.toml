@@ -1,0 +1,9 @@
+[project]
+name = "liba"
+version = "0.2.0"
+requires-python = ">=3.12"
+dependencies = ["idna"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

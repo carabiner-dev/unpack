@@ -258,7 +258,7 @@ func TestFindCodeBases(t *testing.T) {
 	require.NoError(t, err)
 	locations, err := New().FindCodeBases(index)
 	require.NoError(t, err)
-	require.Len(t, locations, 3)
+	require.Len(t, locations, 5)
 }
 
 // TestExtractGenericPlatform covers the generic Platform of the decomposer
@@ -281,4 +281,71 @@ func TestExtractGenericPlatform(t *testing.T) {
 	for _, n := range nl.GetNodes() {
 		require.NotEqual(t, "colorama", n.GetName())
 	}
+}
+
+// TestExtractWorkspace reads a uv workspace: two members, both the
+// project's own, one depending on the other.
+func TestExtractWorkspace(t *testing.T) {
+	t.Parallel()
+
+	nl := extract(t, "workspace", linuxOpts(t, "3.12"))
+
+	// Both members root the graph.
+	require.Len(t, nl.GetRootElements(), 2)
+	uvws := nodeNamed(t, nl, "uvws")
+	liba := nodeNamed(t, nl, "liba")
+	require.Contains(t, nl.GetRootElements(), uvws.GetId())
+	require.Contains(t, nl.GetRootElements(), liba.GetId())
+
+	// The member edge resolves to the member, exactly once, and the
+	// member keeps its own subtree.
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, uvws, liba))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, uvws, nodeNamed(t, nl, "click")))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, liba, nodeNamed(t, nl, "idna")))
+
+	// Each member has its own version and purl.
+	require.Equal(t, "0.1.0", uvws.GetVersion())
+	require.Equal(t, "0.2.0", liba.GetVersion())
+	require.Equal(t, "pkg:pypi/liba@0.2.0",
+		liba.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)])
+}
+
+// TestExtractGitDependency reads a lock whose dependency comes from a git
+// repository rather than the index.
+func TestExtractGitDependency(t *testing.T) {
+	t.Parallel()
+
+	nl := extract(t, "gitdep", linuxOpts(t, "3.12"))
+
+	dotenv := nodeNamed(t, nl, "python-dotenv")
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, nodeNamed(t, nl, "uvgit"), dotenv))
+
+	// The source records where it comes from, down to the resolved commit
+	// in the URL's fragment.
+	require.Contains(t, dotenv.GetUrlDownload(), "github.com/theskumar/python-dotenv")
+	require.Len(t, dotenv.GetExternalReferences(), 1)
+	ref := dotenv.GetExternalReferences()[0]
+	require.Equal(t, sbom.ExternalReference_VCS, ref.GetType())
+	require.Contains(t, ref.GetUrl(), "#eaf2a9129ccec6febda0f741eb3bb852c3f947bd")
+
+	// There is no artifact, so there is nothing to hash: an empty hash is
+	// honest, an invented one is not.
+	require.Empty(t, dotenv.GetHashes())
+}
+
+// TestEnrichSkipsNonRegistry pins which packages the index may be asked
+// about: a git dependency's installed content is not PyPI's artifact, even
+// when a package of the same name exists there.
+func TestEnrichSkipsNonRegistry(t *testing.T) {
+	t.Parallel()
+
+	lock, err := ReadLockfile("testdata/gitdep/uv.lock")
+	require.NoError(t, err)
+	env, err := NewEnvironment("linux", "amd64", "3.12")
+	require.NoError(t, err)
+
+	tb := newTreeBuilder(lock, env, &api.DecomposerOptions{})
+	_, err = tb.build()
+	require.NoError(t, err)
+	require.Empty(t, tb.enrichable, "nothing in this lock came from the registry")
 }

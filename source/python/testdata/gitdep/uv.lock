@@ -1,0 +1,19 @@
+version = 1
+revision = 3
+requires-python = ">=3.12"
+
+[[package]]
+name = "python-dotenv"
+version = "1.2.1"
+source = { git = "https://github.com/theskumar/python-dotenv?tag=v1.2.1#eaf2a9129ccec6febda0f741eb3bb852c3f947bd" }
+
+[[package]]
+name = "uvgit"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "python-dotenv" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "python-dotenv", git = "https://github.com/theskumar/python-dotenv?tag=v1.2.1" }]
