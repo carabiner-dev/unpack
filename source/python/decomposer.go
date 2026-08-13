@@ -64,7 +64,7 @@ func (d *Decomposer) Requirements(_ *api.DecomposerOptions) []api.Requirement {
 // FindCodeBases locates Python codebases by their lockfiles.
 func (d *Decomposer) FindCodeBases(index *code.PathIndex) ([]string, error) {
 	locations := map[string]bool{}
-	for _, lockfile := range []string{"uv.lock", "poetry.lock"} {
+	for _, lockfile := range []string{"uv.lock", "poetry.lock", "requirements.txt"} {
 		found, err := index.FindFileLocations(lockfile)
 		if err != nil {
 			return nil, err
@@ -95,6 +95,8 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 		return d.extractUv(workDir, opts)
 	case fileExists(filepath.Join(workDir, "poetry.lock")):
 		return d.extractPoetry(workDir, opts)
+	case fileExists(filepath.Join(workDir, "requirements.txt")):
+		return d.extractRequirements(workDir, opts)
 	default:
 		return nil, fmt.Errorf("no supported Python lockfile in %s", workDir)
 	}

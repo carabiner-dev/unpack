@@ -1,0 +1,11 @@
+# Hand-maintained requirements, the kind that predates lockfiles.
+--index-url https://pypi.org/simple
+
+click>=8
+requests[socks]==2.34.2 ; python_version >= "3.10"
+colorama==0.4.6 ; sys_platform == "win32"
+python-dotenv @ git+https://github.com/theskumar/python-dotenv@eaf2a9129ccec6febda0f741eb3bb852c3f947bd
+singlehash==1.0.0 --hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+-r common.txt
+-e ./local-package

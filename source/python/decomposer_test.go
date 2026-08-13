@@ -6,6 +6,7 @@ package python
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/protobom/protobom/pkg/sbom"
@@ -260,7 +261,7 @@ func TestFindCodeBases(t *testing.T) {
 	require.NoError(t, err)
 	locations, err := New().FindCodeBases(index)
 	require.NoError(t, err)
-	require.Len(t, locations, 7)
+	require.Len(t, locations, 9)
 }
 
 // TestExtractGenericPlatform covers the generic Platform of the decomposer
@@ -474,4 +475,109 @@ func TestExtractDispatch(t *testing.T) {
 	opts.WorkDir = t.TempDir()
 	_, err = New().Extract(opts)
 	require.ErrorContains(t, err, "no supported Python lockfile")
+}
+
+// TestExtractRequirementsCompiled reads a file written by uv pip compile:
+// exact pins, hashes, and via annotations recording the tree.
+func TestExtractRequirementsCompiled(t *testing.T) {
+	t.Parallel()
+
+	nl := extract(t, "requirements", linuxOpts(t, "3.12"))
+
+	// The root borrows the directory's name: the format names no project.
+	root := nodeNamed(t, nl, "requirements")
+	require.Equal(t, []string{root.GetId()}, nl.GetRootElements())
+
+	// The via annotations rebuild the tree: the direct requirements hang
+	// off the root, the transitives under what pulled them in.
+	requests := nodeNamed(t, nl, "requests")
+	click := nodeNamed(t, nl, "click")
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, root, requests))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, root, click))
+	for _, dep := range []string{"certifi", "charset-normalizer", "idna", "urllib3"} {
+		require.True(t, hasEdge(nl, sbom.Edge_dependsOn, requests, nodeNamed(t, nl, dep)),
+			"%s should hang under requests", dep)
+		require.False(t, hasEdge(nl, sbom.Edge_dependsOn, root, nodeNamed(t, nl, dep)),
+			"%s should not hang off the root", dep)
+	}
+
+	// Pins become versions and purls.
+	require.NotEmpty(t, requests.GetVersion())
+	require.Equal(t, "pkg:pypi/requests@"+requests.GetVersion(),
+		requests.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)])
+
+	// A compiled file lists every artifact's hash and does not say which
+	// belongs to what, so picking one would be guessing: no hashes.
+	require.Empty(t, requests.GetHashes())
+
+	// The universal resolution's windows-only colorama is not here.
+	for _, n := range nl.GetNodes() {
+		require.NotEqual(t, "colorama", n.GetName())
+	}
+}
+
+// TestExtractRequirementsLoose reads a hand-written file: partial pins, a
+// git reference, an include, and no via annotations.
+func TestExtractRequirementsLoose(t *testing.T) {
+	t.Parallel()
+
+	nl := extract(t, "requirementsloose", linuxOpts(t, "3.12"))
+	root := nodeNamed(t, nl, "requirementsloose")
+
+	// No annotations: everything hangs off the root.
+	requests := nodeNamed(t, nl, "requests")
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, root, requests))
+
+	// An unpinned range is a constraint, not a version: the node says so.
+	click := nodeNamed(t, nl, "click")
+	require.Empty(t, click.GetVersion())
+	require.Equal(t, "pkg:pypi/click",
+		click.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)])
+
+	// The windows-only entry is marker-pruned,
+	for _, n := range nl.GetNodes() {
+		require.NotEqual(t, "colorama", n.GetName())
+	}
+
+	// the include was followed,
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, root, nodeNamed(t, nl, "idna")))
+
+	// the git reference keeps its URL,
+	dotenv := nodeNamed(t, nl, "python-dotenv")
+	require.Contains(t, dotenv.GetUrlDownload(), "git+https://github.com/theskumar/python-dotenv")
+	require.Len(t, dotenv.GetExternalReferences(), 1)
+
+	// and a lone hash identifies its entry's content.
+	require.Equal(t, strings.Repeat("a", 64),
+		nodeNamed(t, nl, "singlehash").GetHashes()[int32(sbom.HashAlgorithm_SHA256)])
+
+	// The editable local package declared nothing.
+	for _, n := range nl.GetNodes() {
+		require.NotEqual(t, "local-package", n.GetName())
+	}
+}
+
+// TestExtractRequirementsPrecedence pins the dispatch order: a lockfile
+// always outranks a requirements file, which is usually exported from it.
+func TestExtractRequirementsPrecedence(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	for src, dst := range map[string]string{
+		"testdata/poetry/poetry.lock":                 "poetry.lock",
+		"testdata/poetry/pyproject.toml":              "pyproject.toml",
+		"testdata/requirementsloose/requirements.txt": "requirements.txt",
+		"testdata/requirementsloose/common.txt":       "common.txt",
+	} {
+		data, err := os.ReadFile(src)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, dst), data, 0o600)) //nolint:gosec // a temp dir
+	}
+
+	opts := linuxOpts(t, "3.12")
+	opts.WorkDir = dir
+	opts.Networking = api.NetworkDisabled
+	nl, err := New().Extract(opts)
+	require.NoError(t, err)
+	nodeNamed(t, nl, "poetrydemo")
 }

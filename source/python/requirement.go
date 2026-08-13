@@ -21,12 +21,27 @@ import (
 var requirementPattern = regexp.MustCompile(
 	`^([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[([^\]]*)\])?`)
 
-// requirement is a declared dependency, reduced to what an edge needs.
+// requirement is a declared dependency, reduced to what an edge needs,
+// plus the two things a requirement can state about where its content
+// comes from: an exact pin, or a direct URL.
 type requirement struct {
 	Name   string
 	Extras []string
 	Marker string
+
+	// Version is set when the requirement pins exactly one version:
+	// "name==1.2.3". A range constrains a resolver, it does not name a
+	// version, so ranges leave this empty.
+	Version string
+
+	// URL is set for a direct reference: "name @ https://..." or a git+
+	// URL.
+	URL string
 }
+
+// exactPin matches a specifier that names exactly one version: == or ===
+// with no wildcard and no further clauses.
+var exactPin = regexp.MustCompile(`^===?\s*([^\s,*]+)$`)
 
 // parseRequirement reads one PEP 508 requirement string.
 func parseRequirement(line string) (*requirement, error) {
@@ -45,6 +60,16 @@ func parseRequirement(line string) (*requirement, error) {
 	for _, extra := range strings.Split(m[2], ",") {
 		if extra = strings.TrimSpace(extra); extra != "" {
 			req.Extras = append(req.Extras, NormalizeName(extra))
+		}
+	}
+
+	rest := strings.TrimSpace(spec[len(m[0]):])
+	switch {
+	case strings.HasPrefix(rest, "@"):
+		req.URL = strings.TrimSpace(strings.TrimPrefix(rest, "@"))
+	default:
+		if pin := exactPin.FindStringSubmatch(rest); pin != nil {
+			req.Version = pin[1]
 		}
 	}
 	return req, nil
