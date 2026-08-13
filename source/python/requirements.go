@@ -76,6 +76,12 @@ func readRequirementsFile(path string, visited map[string]bool) ([]*requirementE
 			// the rest are installer options: index URLs, constraints
 			// files, binary policies. None of them declare a package.
 			continue
+		case bareReference(line):
+			// TODO(degradation): pip also accepts bare paths and URLs —
+			// ./vendor/pkg, https://host/pkg.whl — which name no package.
+			// They are skipped rather than guessed at, and rather than
+			// failing the file they are legal lines of.
+			continue
 		default:
 			entry, err := parseRequirementLine(line)
 			if err != nil {
@@ -85,6 +91,15 @@ func readRequirementsFile(path string, visited map[string]bool) ([]*requirementE
 		}
 	}
 	return entries, nil
+}
+
+// bareReference says whether a line is a path or URL rather than a named
+// requirement. A requirement's name cannot contain a slash, so a first
+// field holding one is a reference to content, not a declaration of a
+// package.
+func bareReference(line string) bool {
+	first := strings.Fields(line)[0]
+	return strings.Contains(first, "/") || first == "." || strings.HasPrefix(first, "~")
 }
 
 // logicalLines joins the physical lines the file continues with a trailing

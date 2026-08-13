@@ -9,3 +9,7 @@ singlehash==1.0.0 --hash=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 -r common.txt
 -e ./local-package
+
+# pip also accepts bare references, which name no package
+https://example.com/wheels/somepkg-1.0-py3-none-any.whl
+./vendor/localpkg

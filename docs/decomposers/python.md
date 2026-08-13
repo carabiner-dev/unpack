@@ -53,8 +53,8 @@ record which requirement pulled in which, so the tree is rebuilt from
 them. A hand-written file declares constraints: the root borrows the
 directory's name, since the format names no project, an entry without an
 exact pin becomes a node without a version, and nothing is invented.
-Includes (`-r`) are followed; editables and installer options are
-skipped. A lone `--hash` is recorded; a compiled file's hash list names
+Includes (`-r`) are followed; editables, installer options and bare
+path or URL lines — legal in pip, but naming no package — are skipped. A lone `--hash` is recorded; a compiled file's hash list names
 every artifact of a package without saying which is which, so none is.
 
 ### Installed environments

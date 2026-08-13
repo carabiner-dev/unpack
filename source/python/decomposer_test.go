@@ -551,9 +551,15 @@ func TestExtractRequirementsLoose(t *testing.T) {
 	require.Equal(t, strings.Repeat("a", 64),
 		nodeNamed(t, nl, "singlehash").GetHashes()[int32(sbom.HashAlgorithm_SHA256)])
 
-	// The editable local package declared nothing.
+	// The editable local package declared nothing, and neither did the
+	// bare references: a path or URL names content, not a package. In
+	// particular no node called "https" appears, which a naive parse of a
+	// bare URL yields.
 	for _, n := range nl.GetNodes() {
 		require.NotEqual(t, "local-package", n.GetName())
+		require.NotEqual(t, "https", n.GetName())
+		require.NotEqual(t, "somepkg", n.GetName())
+		require.NotContains(t, n.GetName(), "/")
 	}
 }
 
