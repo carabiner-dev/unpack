@@ -1,6 +1,6 @@
 # Decomposers
 
-Unpack ships with decomposers for four package ecosystems. Each decomposer
+Unpack ships with decomposers for five package ecosystems. Each decomposer
 parses lock files and manifest files, resolves the dependency graph, and
 produces a [protobom](https://github.com/protobom/protobom) NodeList that
 can be serialized as SPDX or CycloneDX.
@@ -10,6 +10,7 @@ can be serialized as SPDX or CycloneDX.
 | [Go](golang.md) | `source/golang/` | `go.sum` | `go.mod` | deps.dev API + Go module proxy |
 | [Maven](maven.md) | `source/maven/` | _(none)_ | `pom.xml` | Maven Central |
 | [npm](npm.md) | `source/npm/` | `package-lock.json` | `package.json` | _(none)_ |
+| [Python](python.md) | `source/python/` | `uv.lock` | _(not read)_ | PyPI JSON API |
 | [Rust](rust.md) | `source/rust/` | `Cargo.lock` | `Cargo.toml` | crates.io API |
 
 ## Common capabilities
@@ -50,6 +51,8 @@ decomposers uniformly.
 | **Maven:** checksum files (.sha1, .sha256) | skip | yes | yes |
 | **Maven:** artifact download (SHA-256/SHA-512) | skip | skip | yes |
 | **npm:** _(none -- fully offline)_ | works | works | works |
+| **Python:** local parsing (uv.lock) | works | works | works |
+| **Python:** PyPI JSON API (licenses, metadata) | skip | yes | yes |
 | **Rust:** local parsing (Cargo.toml/lock) | works | works | works |
 | **Rust:** crates.io API (enrichment) | skip | yes | yes |
 
@@ -66,11 +69,11 @@ output. Three flags control the inclusion of additional dependency types:
 
 ### Per-decomposer mapping
 
-| Flag | Go | Maven | npm | Rust |
-|------|-------|-------|-----|------|
-| `--include-dev` | _(no-op)_ | test-scoped deps | `devDependencies` | `[dev-dependencies]` |
-| `--include-build` | _(no-op)_ | `<build><plugins>` | _(no-op)_ | `[build-dependencies]` |
-| `--include-optional` | _(no-op)_ | `<optional>true</optional>` | `optionalDependencies` | _(no-op)_ |
+| Flag | Go | Maven | npm | Python | Rust |
+|------|-------|-------|-----|--------|------|
+| `--include-dev` | _(no-op)_ | test-scoped deps | `devDependencies` | dependency groups (PEP 735) | `[dev-dependencies]` |
+| `--include-build` | _(no-op)_ | `<build><plugins>` | _(no-op)_ | _(no-op)_ | `[build-dependencies]` |
+| `--include-optional` | _(no-op)_ | `<optional>true</optional>` | `optionalDependencies` | extras | _(no-op)_ |
 
 **Notes:**
 
@@ -85,6 +88,9 @@ output. Three flags control the inclusion of additional dependency types:
   a decomposer-specific option (`IncludePeerDependencies`).
 - Maven's `provided` scope is not covered by these flags and remains
   a decomposer-specific option (`IncludeProvided`).
+- Python resolves for one target environment (platform and interpreter
+  version); see the [Python page](python.md) for the `--platform` and
+  `--python-version` flags that pick it.
 
 ## Per-decomposer docs
 

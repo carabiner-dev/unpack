@@ -1,0 +1,15 @@
+[project]
+name = "poetrydemo"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = ["requests>=2", "click"]
+
+[project.optional-dependencies]
+color = ["colorama"]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "*"
+
+[build-system]
+requires = ["poetry-core>=2.0"]
+build-backend = "poetry.core.masonry.api"
