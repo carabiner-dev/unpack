@@ -57,7 +57,7 @@ func NewEnvironment(goos, goarch, pythonVersion string) (*Environment, error) {
 	case platformDarwin, "macos":
 		env.OSName, env.SysPlatform, env.PlatformSystem = "posix", platformDarwin, "Darwin"
 	case "windows":
-		env.OSName, env.SysPlatform, env.PlatformSystem = "nt", "win32", "Windows"
+		env.OSName, env.SysPlatform, env.PlatformSystem = "nt", platformWin32, "Windows"
 	default:
 		return nil, fmt.Errorf("unknown operating system %q", goos)
 	}
@@ -81,6 +81,7 @@ func NewEnvironment(goos, goarch, pythonVersion string) (*Environment, error) {
 const (
 	platformLinux  = "linux"
 	platformDarwin = "darwin"
+	platformWin32  = "win32"
 	archAmd64      = "amd64"
 	archArm64      = "arm64"
 )
@@ -91,7 +92,7 @@ var machines = map[string]map[string]string{
 		"ppc64le": "ppc64le", "s390x": "s390x", "riscv64": "riscv64",
 	},
 	platformDarwin: {archAmd64: "x86_64", archArm64: "arm64"},
-	"win32":        {archAmd64: "AMD64", archArm64: "ARM64", "386": "x86"},
+	platformWin32:  {archAmd64: "AMD64", archArm64: "ARM64", "386": "x86"},
 }
 
 // machineName translates a GOARCH name to the target's platform_machine.
