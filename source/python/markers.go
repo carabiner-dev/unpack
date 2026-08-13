@@ -123,10 +123,10 @@ func (c *comparison) eval(env *Environment) (bool, error) {
 // extra == 'color' holds and extra != 'cli' holds.
 func (c *comparison) evalExtra(env *Environment) (handled, holds bool, err error) {
 	variable, literal := c.left, c.right
-	if literal.text == "extra" && !literal.literal {
+	if literal.text == extraVariable && !literal.literal {
 		variable, literal = c.right, c.left
 	}
-	if variable.literal || variable.text != "extra" || !literal.literal {
+	if variable.literal || variable.text != extraVariable || !literal.literal {
 		return false, false, nil
 	}
 
@@ -217,6 +217,37 @@ func stringCompare(left, right, op string) bool {
 	case ">=":
 		return left >= right
 	default: // ~= between non-versions holds for nothing
+		return false
+	}
+}
+
+// extraVariable is the marker variable holding the enabled extras.
+const extraVariable = "extra"
+
+// markerUsesExtra says whether a marker tests extra membership anywhere in
+// its expression. Installed metadata gates a package's optional
+// dependencies this way, and the answer decides an edge's type.
+func markerUsesExtra(marker string) bool {
+	m, err := ParseMarker(marker)
+	if err != nil {
+		return strings.Contains(marker, extraVariable)
+	}
+	return nodeUsesExtra(m.root)
+}
+
+func nodeUsesExtra(node markerNode) bool {
+	switch n := node.(type) {
+	case *junction:
+		for _, term := range n.terms {
+			if nodeUsesExtra(term) {
+				return true
+			}
+		}
+		return false
+	case *comparison:
+		return (!n.left.literal && n.left.text == extraVariable) ||
+			(!n.right.literal && n.right.text == extraVariable)
+	default:
 		return false
 	}
 }

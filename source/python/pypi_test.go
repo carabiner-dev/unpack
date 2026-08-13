@@ -86,10 +86,10 @@ func TestPyPIProjectURLs(t *testing.T) {
 		"Changelog":     "https://example.com/changes",
 	}}
 	require.Equal(t, "https://github.com/example/project",
-		projectURL(info, "repository", "source", "source code"))
+		projectURL(info.ProjectURLs, "repository", "source", "source code"))
 	require.Equal(t, "https://example.readthedocs.io",
-		projectURL(info, "documentation", "docs"))
-	require.Empty(t, projectURL(info, "homepage"))
+		projectURL(info.ProjectURLs, "documentation", "docs"))
+	require.Empty(t, projectURL(info.ProjectURLs, "homepage"))
 }
 
 // TestEnrich runs an extraction against a fake PyPI and checks the metadata

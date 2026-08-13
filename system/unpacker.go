@@ -13,6 +13,7 @@ import (
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/system/apk"
 	"github.com/carabiner-dev/unpack/system/deb"
+	"github.com/carabiner-dev/unpack/system/python"
 	"github.com/carabiner-dev/unpack/system/rpm"
 )
 
@@ -43,9 +44,10 @@ func NewUnpacker() *Unpacker {
 	return &Unpacker{
 		Options: DefaultOptions,
 		decomposers: map[string]SystemDecomposer{
-			"rpm": rpm.New(),
-			"deb": deb.New(),
-			"apk": apk.New(),
+			"rpm":    rpm.New(),
+			"deb":    deb.New(),
+			"apk":    apk.New(),
+			"python": python.New(),
 		},
 	}
 }

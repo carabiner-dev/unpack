@@ -119,13 +119,13 @@ func (c *PyPIClient) enrichNodes(nodes map[packageKey]*sbom.Node, enrichable map
 		if home := pypiHomepage(info); home != "" {
 			node.UrlHome = home
 		}
-		if repo := projectURL(info, "repository", "source", "source code", "github"); repo != "" {
+		if repo := projectURL(info.ProjectURLs, "repository", "source", "source code", "github"); repo != "" {
 			node.ExternalReferences = append(node.ExternalReferences, &sbom.ExternalReference{
 				Url:  repo,
 				Type: sbom.ExternalReference_VCS,
 			})
 		}
-		if docs := projectURL(info, "documentation", "docs"); docs != "" {
+		if docs := projectURL(info.ProjectURLs, "documentation", "docs"); docs != "" {
 			node.ExternalReferences = append(node.ExternalReferences, &sbom.ExternalReference{
 				Url:  docs,
 				Type: sbom.ExternalReference_DOCUMENTATION,
@@ -147,15 +147,15 @@ func pypiHomepage(info *pypiInfo) string {
 	if info.HomePage != "" {
 		return info.HomePage
 	}
-	return projectURL(info, "homepage")
+	return projectURL(info.ProjectURLs, "homepage")
 }
 
 // projectURL finds the first project URL labeled with one of the names,
 // compared case-insensitively: the labels are free-form and vary in case
-// across packages.
-func projectURL(info *pypiInfo, names ...string) string {
+// across packages. The PyPI API and installed metadata state the same map.
+func projectURL(urls map[string]string, names ...string) string {
 	for _, name := range names {
-		for label, url := range info.ProjectURLs {
+		for label, url := range urls {
 			if strings.EqualFold(label, name) && url != "" {
 				return url
 			}
