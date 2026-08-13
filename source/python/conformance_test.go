@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -249,8 +248,9 @@ func uvExport(t *testing.T, project string, args ...string) string {
 }
 
 // requireUv skips the test when neither uv nor Docker is available to run
-// the oracle with. UNPACK_FORCE_TESTS turns the skip into a failure, on
-// Linux, where CI is expected to have Docker.
+// the oracle with. UNPACK_FORCE_TESTS turns the skip into a failure: CI
+// installs uv on every OS, so a skip there means the setup broke, not that
+// the oracle cannot run.
 func requireUv(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("uv"); err == nil {
@@ -259,7 +259,7 @@ func requireUv(t *testing.T) {
 	if err := command.New("docker", "version").RunSilentSuccess(); err == nil {
 		return
 	}
-	if os.Getenv("UNPACK_FORCE_TESTS") != "" && runtime.GOOS == "linux" {
+	if os.Getenv("UNPACK_FORCE_TESTS") != "" {
 		t.Fatal("neither uv nor docker is available and UNPACK_FORCE_TESTS is set")
 	}
 	t.Skip("skipping: neither uv nor docker is available to run the oracle")
