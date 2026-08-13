@@ -15,6 +15,7 @@ import (
 	"github.com/carabiner-dev/unpack/source/golang"
 	"github.com/carabiner-dev/unpack/source/maven"
 	"github.com/carabiner-dev/unpack/source/npm"
+	"github.com/carabiner-dev/unpack/source/python"
 	"github.com/carabiner-dev/unpack/source/rust"
 )
 
@@ -37,6 +38,7 @@ func NewUnpacker() *Unpacker {
 			"rust":   rust.New(),
 			"golang": golang.New(),
 			"npm":    npm.New(),
+			"python": python.New(),
 			"maven":  maven.New(),
 		},
 	}
@@ -88,7 +90,25 @@ type Options struct {
 	// IncludeOptional includes optional dependencies.
 	IncludeOptional bool
 
+	// Platform is the platform dependency data is resolved for, as
+	// os[/arch] in Go's vocabulary. Empty means the platform unpack runs
+	// on. See api.DecomposerOptions.Platform.
+	Platform string
+
+	// Drivers carries decomposer-specific options to the decomposers that
+	// take them. Every extraction receives all of them; a decomposer only
+	// ever reads its own.
+	Drivers []DriverConfig
+
 	logger *slog.Logger
+}
+
+// DriverConfig pairs a decomposer with the options to hand it. The
+// decomposer is only a key: any instance of the right type addresses the
+// one the unpacker runs.
+type DriverConfig struct {
+	Decomposer api.Decomposer
+	Options    any
 }
 
 var DefaultOptions = Options{

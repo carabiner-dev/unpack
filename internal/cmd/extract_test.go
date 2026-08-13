@@ -69,3 +69,37 @@ func TestCodebaseOutputFilename(t *testing.T) {
 			"SPDX 2.3 and SPDX 3 must be distinguishable on disk")
 	})
 }
+
+// TestExtractOptionsPlatform pins the shape the --platform flag accepts:
+// os or os/arch. Which values mean anything is the business of the
+// ecosystems that read the platform, so the CLI checks only the shape.
+func TestExtractOptionsPlatform(t *testing.T) {
+	t.Parallel()
+
+	for platform, valid := range map[string]bool{
+		"":              true,
+		"linux":         true,
+		"linux/arm64":   true,
+		"windows/amd64": true,
+		"/":             false,
+		"linux/":        false,
+		"/arm64":        false,
+		"linux/a/b":     false,
+	} {
+		t.Run("platform "+platform, func(t *testing.T) {
+			t.Parallel()
+			opts := &extractOptions{
+				formatOptions: formatOptions{Format: formatTree},
+				Path:          ".",
+				Networking:    "essential",
+				Platform:      platform,
+			}
+			err := opts.Validate()
+			if valid {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, "invalid platform")
+		})
+	}
+}

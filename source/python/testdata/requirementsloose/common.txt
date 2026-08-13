@@ -1,0 +1,2 @@
+# Shared pins, included from requirements.txt
+idna==3.18

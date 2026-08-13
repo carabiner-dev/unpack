@@ -40,6 +40,13 @@ type DecomposerOptions struct {
 	// Defaults to NetworkEssential.
 	Networking NetworkLevel
 
+	// Platform is the platform dependency data is resolved for, stated as
+	// os or os/arch in Go's vocabulary ("linux/arm64"). Empty means the
+	// platform unpack runs on. Ecosystems whose dependency graphs are
+	// platform-conditional (Python markers, Go build constraints) read it;
+	// the rest resolve the same graph everywhere and ignore it.
+	Platform string
+
 	// IncludeDev includes development/test dependencies in the output.
 	// Maps to: Maven test scope, npm devDependencies, Rust dev-dependencies.
 	IncludeDev bool

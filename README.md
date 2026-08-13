@@ -18,7 +18,7 @@ Whether you're a developer, security researcher, or compliance officer, Unpack h
 
 ---
 
-:warning: `unpack` is an experimental project. We are actively developing it and welcome feedback. Initial support focuses on Go, Rust, and NPM codebases, with more on the way. Dependency extraction from SBOMs is powered by the native [protobom unserializers](http://github.com/protobom/protobom/).
+:warning: `unpack` is an experimental project. We are actively developing it and welcome feedback. Support currently covers Go, Rust, npm, Maven and Python (uv) codebases, with more on the way. Dependency extraction from SBOMs is powered by the native [protobom unserializers](http://github.com/protobom/protobom/).
 
 ---
 
@@ -74,6 +74,20 @@ The output formats are:
 | `spdx` | SPDX 2.3, JSON |
 | `spdx3` | SPDX 3.0.1, JSON-LD |
 | `cyclonedx`, `cdx` | CycloneDX 1.7, JSON |
+
+**Example: Target a Platform**
+
+Some ecosystems resolve different dependencies for different platforms.
+Python is one: a `uv.lock` holds the resolution for every environment the
+project supports, and the extraction reads it for one.
+
+```bash
+# What does this project install on an ARM Linux box running Python 3.10?
+unpack extract --platform linux/arm64 --python-version 3.10 /path/to/your/code
+```
+
+By default unpack resolves for the platform it runs on, and for Python,
+the newest interpreter version the lockfile supports.
 
 **Example: Create a Signed Attestation**
 ```bash
@@ -132,14 +146,17 @@ unpack ls --ignore "*/testdata/*" --ignore "temp/" .
 
 ## Supported Ecosystems
 
-Unpack includes decomposers for four package ecosystems. See the
+Unpack includes decomposers for five package ecosystems. See the
 [decomposer documentation](docs/decomposers/README.md) for details.
+Container image scans additionally report installed Python environments
+(site-packages) next to the OS package inventory.
 
 | Ecosystem | Lock file | Manifest | Remote enrichment |
 | --- | --- | --- | --- |
 | [Go](docs/decomposers/golang.md) | `go.sum` | `go.mod` | Go module proxy |
 | [Maven](docs/decomposers/maven.md) | _(none)_ | `pom.xml` | Maven Central |
 | [npm](docs/decomposers/npm.md) | `package-lock.json` | `package.json` | _(none)_ |
+| [Python](docs/decomposers/python.md) | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry) | PyPI JSON API |
 | [Rust](docs/decomposers/rust.md) | `Cargo.lock` | `Cargo.toml` | crates.io API |
 
 Support for more ecosystems is planned.

@@ -20,6 +20,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/dependencies"
+	"github.com/carabiner-dev/unpack/source/python"
 )
 
 const (
@@ -48,6 +49,8 @@ type extractOptions struct {
 	Codebase             string
 	OutputPath           string
 	OutputPrefix         string
+	Platform             string
+	PythonVersion        string
 }
 
 var validFormats = []string{formatSPDX, formatSPDX3, formatCDX, formatCDXS, formatTree}
@@ -68,6 +71,15 @@ func (ro *extractOptions) Validate() error {
 
 	if !slices.Contains([]string{"essential", "full", "disabled"}, ro.Networking) {
 		errs = append(errs, fmt.Errorf("invalid networking level %q (must be essential, full, or disabled)", ro.Networking))
+	}
+
+	// The platform is os or os/arch: what each value may be is the
+	// business of the ecosystems that read it, but the shape is not.
+	if ro.Platform != "" {
+		goos, goarch, hasArch := strings.Cut(ro.Platform, "/")
+		if goos == "" || (hasArch && goarch == "") || strings.Contains(goarch, "/") {
+			errs = append(errs, fmt.Errorf("invalid platform %q (want os or os/arch, as in linux/arm64)", ro.Platform))
+		}
 	}
 
 	// Tree view can handle only one codebase
@@ -94,6 +106,16 @@ func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(
 		&ro.Networking, "networking", "essential",
 		"network access level: essential (default), full, or disabled",
+	)
+
+	cmd.PersistentFlags().StringVar(
+		&ro.Platform, "platform", "",
+		"platform to resolve platform-conditional dependencies for, as os[/arch] (e.g. linux/arm64; default: the current platform)",
+	)
+
+	cmd.PersistentFlags().StringVar(
+		&ro.PythonVersion, "python-version", "",
+		"Python version to resolve dependencies for (default: the newest the lockfile supports)",
 	)
 
 	cmd.PersistentFlags().BoolVar(
@@ -208,6 +230,15 @@ to the current directory.
 			unpacker.Options.IncludeDev = opts.IncludeDev
 			unpacker.Options.IncludeBuild = opts.IncludeBuild
 			unpacker.Options.IncludeOptional = opts.IncludeOptional
+
+			// Set the resolution target
+			unpacker.Options.Platform = opts.Platform
+			if opts.PythonVersion != "" {
+				unpacker.Options.Drivers = append(unpacker.Options.Drivers, dependencies.DriverConfig{
+					Decomposer: python.New(),
+					Options:    &python.Options{PythonVersion: opts.PythonVersion},
+				})
+			}
 
 			// Set networking level
 			switch opts.Networking {
