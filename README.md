@@ -148,13 +148,15 @@ unpack ls --ignore "*/testdata/*" --ignore "temp/" .
 
 Unpack includes decomposers for five package ecosystems. See the
 [decomposer documentation](docs/decomposers/README.md) for details.
+Container image scans additionally report installed Python environments
+(site-packages) next to the OS package inventory.
 
 | Ecosystem | Lock file | Manifest | Remote enrichment |
 | --- | --- | --- | --- |
 | [Go](docs/decomposers/golang.md) | `go.sum` | `go.mod` | Go module proxy |
 | [Maven](docs/decomposers/maven.md) | _(none)_ | `pom.xml` | Maven Central |
 | [npm](docs/decomposers/npm.md) | `package-lock.json` | `package.json` | _(none)_ |
-| [Python](docs/decomposers/python.md) | `uv.lock` | _(not read)_ | PyPI JSON API |
+| [Python](docs/decomposers/python.md) | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry) | PyPI JSON API |
 | [Rust](docs/decomposers/rust.md) | `Cargo.lock` | `Cargo.toml` | crates.io API |
 
 Support for more ecosystems is planned.
