@@ -123,7 +123,7 @@ func TestEnrich(t *testing.T) {
 
 	client := NewPyPIClient(2)
 	client.BaseURL = server.URL
-	tb.enrich(client)
+	client.enrichNodes(tb.nodes, tb.enrichable)
 
 	requests := nodeNamed(t, nl, "requests")
 	require.Equal(t, []string{"Apache-2.0"}, requests.GetLicenses())

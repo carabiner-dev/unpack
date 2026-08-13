@@ -264,3 +264,116 @@ func requireUv(t *testing.T) {
 	}
 	t.Skip("skipping: neither uv nor docker is available to run the oracle")
 }
+
+// TestCompareWithPoetryExport holds the Poetry graph to what Poetry itself
+// says the lock resolves to, through poetry export, which writes the same
+// requirements format the uv oracle does. Both Poetry generations are
+// compared: the export plugin reads 2.0 and 2.1 locks alike.
+func TestCompareWithPoetryExport(t *testing.T) {
+	t.Parallel()
+
+	linux312 := [3]string{"linux", "amd64", "3.12"}
+	linux310 := [3]string{"linux", "amd64", "3.10"}
+	windows312 := [3]string{"windows", "amd64", "3.12"}
+
+	for name, tc := range map[string]struct {
+		project    string
+		exportArgs []string
+		configure  func(*api.DecomposerOptions)
+		envs       [][3]string
+	}{
+		"runtime dependencies": {
+			project: "poetry",
+			envs:    [][3]string{linux312, linux310, windows312},
+		},
+		"with the dev group": {
+			project:    "poetry",
+			exportArgs: []string{"--with", "dev"},
+			configure:  func(o *api.DecomposerOptions) { o.IncludeDev = true },
+			envs:       [][3]string{linux312, linux310},
+		},
+		// Windows only, deliberately. poetry export rewrites the lock's
+		// markers and loses the extra == arm: for the color extra it emits
+		// colorama gated on Windows alone, while poetry install (and pip,
+		// and uv's export of the same manifest shape) installs it on linux
+		// too once the extra is enabled. Our graph follows what installs;
+		// the comparison runs where exporter and installer agree.
+		"with the extras": {
+			project:    "poetry",
+			exportArgs: []string{"--all-extras"},
+			configure:  func(o *api.DecomposerOptions) { o.IncludeOptional = true },
+			envs:       [][3]string{windows312},
+		},
+		"a legacy lock": {
+			project: "poetrylegacy",
+			envs:    [][3]string{linux312, windows312},
+		},
+		"a legacy lock with its dev group": {
+			project:    "poetrylegacy",
+			exportArgs: []string{"--with", "dev"},
+			configure:  func(o *api.DecomposerOptions) { o.IncludeDev = true },
+			envs:       [][3]string{linux312},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			oracle := parseExport(t, poetryExport(t, tc.project, tc.exportArgs...))
+
+			for _, env := range tc.envs {
+				opts := &api.DecomposerOptions{Networking: api.NetworkDisabled}
+				opts.SetDriverOptions(New(), &Options{
+					Platform:      env[0] + "/" + env[1],
+					PythonVersion: env[2],
+				})
+				if tc.configure != nil {
+					tc.configure(opts)
+				}
+				nl := extract(t, tc.project, opts)
+				compareWithOracle(t, nl, oracle, env)
+			}
+		})
+	}
+}
+
+// poetryExport runs poetry export over a testdata project through uvx,
+// which fetches Poetry and its export plugin on first use. Without uvx it
+// runs the one in the uv Docker image, and a failed run skips rather than
+// fails — fetching Poetry needs the network — except under
+// UNPACK_FORCE_TESTS, where CI is expected to have both.
+func poetryExport(t *testing.T, project string, args ...string) string {
+	t.Helper()
+
+	exportArgs := append([]string{
+		"--from", "poetry", "--with", "poetry-plugin-export",
+		"poetry", "export", "--without-hashes",
+	}, args...)
+
+	var out string
+	var err error
+	if _, lookErr := exec.LookPath("uvx"); lookErr == nil {
+		var result *command.Stream
+		result, err = command.NewWithWorkDir("testdata/"+project, "uvx", exportArgs...).RunSuccessOutput()
+		if err == nil {
+			out = result.Output()
+		}
+	} else {
+		dir, absErr := filepath.Abs("testdata/" + project)
+		require.NoError(t, absErr)
+		var result *command.Stream
+		result, err = command.New("docker", append([]string{
+			"run", "--rm", "-v", dir + ":/work:ro", "-w", "/work",
+			"--entrypoint", "/uvx", uvDockerImage,
+		}, exportArgs...)...).RunSuccessOutput()
+		if err == nil {
+			out = result.Output()
+		}
+	}
+
+	if err != nil {
+		if os.Getenv("UNPACK_FORCE_TESTS") != "" {
+			t.Fatalf("running poetry export: %v", err)
+		}
+		t.Skipf("skipping: poetry export unavailable (%v)", err)
+	}
+	return out
+}

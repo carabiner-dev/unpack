@@ -4,6 +4,8 @@
 package python
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/protobom/protobom/pkg/sbom"
@@ -258,7 +260,7 @@ func TestFindCodeBases(t *testing.T) {
 	require.NoError(t, err)
 	locations, err := New().FindCodeBases(index)
 	require.NoError(t, err)
-	require.Len(t, locations, 5)
+	require.Len(t, locations, 7)
 }
 
 // TestExtractGenericPlatform covers the generic Platform of the decomposer
@@ -348,4 +350,128 @@ func TestEnrichSkipsNonRegistry(t *testing.T) {
 	_, err = tb.build()
 	require.NoError(t, err)
 	require.Empty(t, tb.enrichable, "nothing in this lock came from the registry")
+}
+
+// TestExtractPoetry reads the codebase locked by Poetry 2.x (lock 2.1).
+// The graph's roots and first edges come from the manifest: the lock has
+// no entry for the project's own package.
+func TestExtractPoetry(t *testing.T) {
+	t.Parallel()
+
+	nl := extract(t, "poetry", linuxOpts(t, "3.12"))
+
+	root := nodeNamed(t, nl, "poetrydemo")
+	require.Equal(t, []string{root.GetId()}, nl.GetRootElements())
+	require.Equal(t, "0.1.0", root.GetVersion())
+	require.Equal(t, "pkg:pypi/poetrydemo@0.1.0",
+		root.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)])
+
+	// The manifest's directs, and the lock's transitives under them.
+	requests := nodeNamed(t, nl, "requests")
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, root, requests))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, root, nodeNamed(t, nl, "click")))
+	for _, dep := range []string{"certifi", "charset-normalizer", "idna", "urllib3"} {
+		require.True(t, hasEdge(nl, sbom.Edge_dependsOn, requests, nodeNamed(t, nl, dep)))
+	}
+
+	// The windows-only edge and the color extra are both out: this is
+	// linux and extras were not asked for.
+	for _, n := range nl.GetNodes() {
+		require.NotEqual(t, "colorama", n.GetName())
+		require.NotEqual(t, "pytest", n.GetName())
+	}
+
+	// Hashes come from the lock's file lists, wheel-selected: requests
+	// ships a universal wheel.
+	require.NotEmpty(t, requests.GetHashes()[int32(sbom.HashAlgorithm_SHA256)])
+}
+
+func TestExtractPoetryWindows(t *testing.T) {
+	t.Parallel()
+
+	opts := &api.DecomposerOptions{}
+	opts.SetDriverOptions(New(), &Options{Platform: "windows/amd64", PythonVersion: "3.12"})
+	nl := extract(t, "poetry", opts)
+
+	// click needs colorama on Windows: the edge's marker held, and the
+	// package's own group marker (platform_system == "Windows" or the
+	// color extra) holds too.
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn,
+		nodeNamed(t, nl, "click"), nodeNamed(t, nl, "colorama")))
+}
+
+func TestExtractPoetryDevAndOptional(t *testing.T) {
+	t.Parallel()
+
+	opts := linuxOpts(t, "3.12")
+	opts.IncludeDev = true
+	opts.IncludeOptional = true
+	nl := extract(t, "poetry", opts)
+
+	root := nodeNamed(t, nl, "poetrydemo")
+
+	// The dev group walks from the manifest's group table.
+	pytest := nodeNamed(t, nl, "pytest")
+	require.True(t, hasEdge(nl, sbom.Edge_devDependency, root, pytest))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, pytest, nodeNamed(t, nl, "pluggy")))
+
+	// The color extra names colorama, whose lock marker tests extra
+	// membership: with the extras enabled it applies even on linux.
+	require.True(t, hasEdge(nl, sbom.Edge_optionalDependency, root, nodeNamed(t, nl, "colorama")))
+
+	// Python 3.12 still prunes the old-python backports.
+	for _, n := range nl.GetNodes() {
+		require.NotEqual(t, "exceptiongroup", n.GetName())
+	}
+}
+
+// TestExtractPoetryLegacy reads the codebase locked by Poetry 1.8 (lock
+// 2.0), which records no group membership: walking each group from the
+// manifest's declarations is what derives it.
+func TestExtractPoetryLegacy(t *testing.T) {
+	t.Parallel()
+
+	nl := extract(t, "poetrylegacy", linuxOpts(t, "3.12"))
+	root := nodeNamed(t, nl, "poetrylegacy")
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, root, nodeNamed(t, nl, "click")))
+	for _, n := range nl.GetNodes() {
+		require.NotEqual(t, "iniconfig", n.GetName(), "the dev group was not asked for")
+	}
+
+	opts := linuxOpts(t, "3.12")
+	opts.IncludeDev = true
+	nl = extract(t, "poetrylegacy", opts)
+	require.True(t, hasEdge(nl, sbom.Edge_devDependency,
+		nodeNamed(t, nl, "poetrylegacy"), nodeNamed(t, nl, "iniconfig")))
+}
+
+// TestExtractDispatch pins which lockfile wins when a codebase has
+// several: uv.lock is the one uv keeps current.
+func TestExtractDispatch(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	for _, name := range []string{"uv.lock", "pyproject.toml"} {
+		data, err := os.ReadFile(filepath.Join("testdata/simple", name))
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), data, 0o600)) //nolint:gosec // a temp dir and fixed fixture names
+	}
+	poetry, err := os.ReadFile("testdata/poetry/poetry.lock")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "poetry.lock"), poetry, 0o600)) //nolint:gosec // a temp dir
+
+	opts := linuxOpts(t, "3.12")
+	opts.WorkDir = dir
+	opts.Networking = api.NetworkDisabled
+	nl, err := New().Extract(opts)
+	require.NoError(t, err)
+
+	// The uv lock's project is uvdemo; the poetry manifest's would have
+	// been poetrydemo.
+	nodeNamed(t, nl, "uvdemo")
+
+	// And a directory with no lockfile at all is not a codebase.
+	opts.WorkDir = t.TempDir()
+	_, err = New().Extract(opts)
+	require.ErrorContains(t, err, "no supported Python lockfile")
 }

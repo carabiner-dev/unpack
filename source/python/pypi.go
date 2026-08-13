@@ -93,20 +93,21 @@ func (c *PyPIClient) FetchAll(packages []packageKey) map[packageKey]*pypiInfo {
 	return result
 }
 
-// enrich fills the graph's nodes with what PyPI knows about them. Only
-// packages that came from the registry are looked up: the index has nothing
-// to say about the project's own packages, nor about git, path and url
-// dependencies, whose installed content is not the index's artifact.
-func (tb *treeBuilder) enrich(client *PyPIClient) {
-	keys := make([]packageKey, 0, len(tb.nodes))
-	for key := range tb.nodes {
-		if tb.enrichable[key] {
+// enrichNodes fills the graph's nodes with what PyPI knows about them.
+// Only packages that came from the registry are looked up: the index has
+// nothing to say about the project's own packages, nor about git, path and
+// url dependencies, whose installed content is not the index's artifact.
+// Both lockfile builders end with this.
+func (c *PyPIClient) enrichNodes(nodes map[packageKey]*sbom.Node, enrichable map[packageKey]bool) {
+	keys := make([]packageKey, 0, len(nodes))
+	for key := range nodes {
+		if enrichable[key] {
 			keys = append(keys, key)
 		}
 	}
 
-	for key, info := range client.FetchAll(keys) {
-		node, ok := tb.nodes[key]
+	for key, info := range c.FetchAll(keys) {
+		node, ok := nodes[key]
 		if !ok {
 			continue
 		}

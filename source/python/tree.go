@@ -237,7 +237,7 @@ func (tb *treeBuilder) createNode(pkg *Package) *sbom.Node {
 		tb.enrichable[keyOf(pkg)] = true
 		if artifact := selectArtifact(pkg, tb.env); artifact != nil {
 			node.UrlDownload = artifact.URL
-			if algorithm, value := artifact.HashValue(); algorithm == "sha256" {
+			if algorithm, value := artifact.HashValue(); algorithm == hashSHA256 {
 				node.Hashes = map[int32]string{int32(sbom.HashAlgorithm_SHA256): value}
 			}
 		}

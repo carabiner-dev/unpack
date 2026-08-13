@@ -123,6 +123,9 @@ type Artifact struct {
 	Size int64  `toml:"size"`
 }
 
+// hashSHA256 is the algorithm both lockfile formats state hashes in.
+const hashSHA256 = "sha256"
+
 // HashValue splits the artifact's hash into its algorithm and hex value.
 // uv writes them as "sha256:abc...".
 func (a *Artifact) HashValue() (algorithm, value string) {

@@ -5,8 +5,10 @@ package python
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/protobom/protobom/pkg/sbom"
@@ -59,26 +61,54 @@ func (d *Decomposer) Requirements(_ *api.DecomposerOptions) []api.Requirement {
 	return nil
 }
 
-// FindCodeBases locates Python codebases by their uv.lock files.
+// FindCodeBases locates Python codebases by their lockfiles.
 func (d *Decomposer) FindCodeBases(index *code.PathIndex) ([]string, error) {
-	return index.FindFileLocations("uv.lock")
+	locations := map[string]bool{}
+	for _, lockfile := range []string{"uv.lock", "poetry.lock"} {
+		found, err := index.FindFileLocations(lockfile)
+		if err != nil {
+			return nil, err
+		}
+		for _, dir := range found {
+			locations[dir] = true
+		}
+	}
+	dirs := make([]string, 0, len(locations))
+	for dir := range locations {
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+	return dirs, nil
 }
 
-// Extract reads uv.lock and builds the dependency graph the target
-// environment sees.
+// Extract builds the dependency graph the target environment sees, from
+// whichever lockfile the codebase has. A project migrating between tools
+// may carry both; uv.lock wins, being the one uv keeps current.
 func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	workDir := opts.WorkDir
 	if workDir == "" {
 		workDir = "."
 	}
 
+	switch {
+	case fileExists(filepath.Join(workDir, "uv.lock")):
+		return d.extractUv(workDir, opts)
+	case fileExists(filepath.Join(workDir, "poetry.lock")):
+		return d.extractPoetry(workDir, opts)
+	default:
+		return nil, fmt.Errorf("no supported Python lockfile in %s", workDir)
+	}
+}
+
+// extractUv builds the graph from a uv.lock, which is self-contained.
+func (d *Decomposer) extractUv(workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	lock, err := ReadLockfile(filepath.Join(workDir, "uv.lock"))
 	if err != nil {
 		return nil, err
 	}
 
 	dOpts := d.getOptions(opts)
-	env, err := d.environment(dOpts, opts, lock)
+	env, err := d.environment(dOpts, opts, defaultPythonVersion(lock))
 	if err != nil {
 		return nil, err
 	}
@@ -92,10 +122,56 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	// Locks carry no licence data at all, so without the index every
 	// Python SBOM is licence-empty. Enrichment fills what PyPI knows.
 	if opts.Networking >= api.NetworkEssential {
-		tb.enrich(NewPyPIClient(dOpts.Concurrency))
+		NewPyPIClient(dOpts.Concurrency).enrichNodes(tb.nodes, tb.enrichable)
+	}
+	return nl, nil
+}
+
+// extractPoetry builds the graph from a poetry.lock and the manifest next
+// to it, which carries what the lock does not: the project's identity and
+// its direct dependencies.
+func (d *Decomposer) extractPoetry(workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	lock, err := ReadPoetryLockfile(filepath.Join(workDir, "poetry.lock"))
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := ReadPyProject(filepath.Join(workDir, "pyproject.toml"))
+	if err != nil {
+		return nil, err
 	}
 
+	dOpts := d.getOptions(opts)
+	env, err := d.environment(dOpts, opts, poetryDefaultPythonVersion(lock))
+	if err != nil {
+		return nil, err
+	}
+
+	// Poetry states membership in a root extra as an extra == marker on
+	// the extra's packages, so enabling the extras is an environment
+	// matter, settled before any walk.
+	if opts.IncludeOptional {
+		extras, err := manifest.ExtraDependencies()
+		if err != nil {
+			return nil, err
+		}
+		env.Extras = sortedGroupNames(extras)
+	}
+
+	pb := newPoetryBuilder(lock, manifest, env, opts)
+	nl, err := pb.build()
+	if err != nil {
+		return nil, err
+	}
+
+	if opts.Networking >= api.NetworkEssential {
+		NewPyPIClient(dOpts.Concurrency).enrichNodes(pb.nodes, pb.enrichable)
+	}
 	return nl, nil
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 // getOptions extracts Python-specific options from DecomposerOptions.
@@ -111,7 +187,7 @@ func (d *Decomposer) getOptions(opts *api.DecomposerOptions) *Options {
 // environment builds the target environment the extraction resolves for.
 // The driver's own platform outranks the generic one, so a programmatic
 // caller can pin Python somewhere else than the rest of an extraction.
-func (d *Decomposer) environment(dOpts *Options, opts *api.DecomposerOptions, lock *Lockfile) (*Environment, error) {
+func (d *Decomposer) environment(dOpts *Options, opts *api.DecomposerOptions, defaultVersion string) (*Environment, error) {
 	platform := dOpts.Platform
 	if platform == "" && opts != nil {
 		platform = opts.Platform
@@ -120,7 +196,7 @@ func (d *Decomposer) environment(dOpts *Options, opts *api.DecomposerOptions, lo
 
 	pythonVersion := dOpts.PythonVersion
 	if pythonVersion == "" {
-		pythonVersion = defaultPythonVersion(lock)
+		pythonVersion = defaultVersion
 	}
 
 	env, err := NewEnvironment(goos, goarch, pythonVersion)
@@ -168,10 +244,32 @@ func defaultPythonVersion(lock *Lockfile) string {
 		return newest
 	}
 
-	if m := requiresPythonFloor.FindStringSubmatch(lock.RequiresPython); m != nil {
-		if parsed, err := ParseVersion(m[1]); err == nil && len(parsed.Release) >= 2 {
-			return m[1]
-		}
+	if version := pythonFloor(lock.RequiresPython); version != "" {
+		return version
 	}
 	return fallbackPythonVersion
+}
+
+// poetryDefaultPythonVersion picks the version a Poetry extraction targets
+// when the caller states none. A poetry.lock resolves one version per
+// package rather than forking, so every supported Python sees the same
+// graph and the floor of the lock's python constraint serves.
+func poetryDefaultPythonVersion(lock *PoetryLockfile) string {
+	if version := pythonFloor(lock.Metadata.PythonVersions); version != "" {
+		return version
+	}
+	return fallbackPythonVersion
+}
+
+// pythonFloor reads the lower bound out of a python version constraint such
+// as ">=3.10, <4".
+func pythonFloor(constraint string) string {
+	m := requiresPythonFloor.FindStringSubmatch(constraint)
+	if m == nil {
+		return ""
+	}
+	if parsed, err := ParseVersion(m[1]); err == nil && len(parsed.Release) >= 2 {
+		return m[1]
+	}
+	return ""
 }

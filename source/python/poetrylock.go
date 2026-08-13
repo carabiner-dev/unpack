@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -86,6 +87,16 @@ type PoetryDependency struct {
 type PoetryFile struct {
 	File string `toml:"file"`
 	Hash string `toml:"hash"`
+}
+
+// HashValue splits the file's hash into its algorithm and hex value,
+// written as "sha256:abc...".
+func (f *PoetryFile) HashValue() (algorithm, value string) {
+	algorithm, value, found := strings.Cut(f.Hash, ":")
+	if !found {
+		return "", f.Hash
+	}
+	return algorithm, value
 }
 
 // PoetrySource says where a non-index package comes from.
