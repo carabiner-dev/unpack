@@ -256,3 +256,25 @@ func TestFindCodeBases(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, locations, 3)
 }
+
+// TestExtractGenericPlatform covers the generic Platform of the decomposer
+// options: the driver's own setting outranks it, and either reaches the
+// marker evaluation.
+func TestExtractGenericPlatform(t *testing.T) {
+	t.Parallel()
+
+	// The generic platform alone steers the extraction: windows keeps the
+	// win32-only edge.
+	opts := &api.DecomposerOptions{Platform: "windows/amd64"}
+	opts.SetDriverOptions(New(), &Options{PythonVersion: "3.12"})
+	nl := extract(t, "simple", opts)
+	nodeNamed(t, nl, "colorama")
+
+	// The driver's own platform wins over the generic one.
+	opts = &api.DecomposerOptions{Platform: "windows/amd64"}
+	opts.SetDriverOptions(New(), &Options{Platform: "linux/amd64", PythonVersion: "3.12"})
+	nl = extract(t, "simple", opts)
+	for _, n := range nl.GetNodes() {
+		require.NotEqual(t, "colorama", n.GetName())
+	}
+}

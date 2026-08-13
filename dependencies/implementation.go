@@ -99,15 +99,21 @@ func (di *defaultImplementation) ExtractCodeBases(
 				}
 			}
 
-			nl, err := d.Extract(&api.DecomposerOptions{
+			dOpts := &api.DecomposerOptions{
 				WorkDir:         cbPath,
 				Version:         ver,
 				CommitHash:      hashHex,
 				Networking:      opts.Networking,
+				Platform:        opts.Platform,
 				IncludeDev:      opts.IncludeDev,
 				IncludeBuild:    opts.IncludeBuild,
 				IncludeOptional: opts.IncludeOptional,
-			})
+			}
+			for _, driver := range opts.Drivers {
+				dOpts.SetDriverOptions(driver.Decomposer, driver.Options)
+			}
+
+			nl, err := d.Extract(dOpts)
 			if err != nil {
 				return nil, fmt.Errorf("from %q with %T: %w", cbPath, d, err)
 			}

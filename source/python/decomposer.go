@@ -73,7 +73,7 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 		return nil, err
 	}
 
-	env, err := d.environment(d.getOptions(opts), lock)
+	env, err := d.environment(d.getOptions(opts), opts, lock)
 	if err != nil {
 		return nil, err
 	}
@@ -92,8 +92,14 @@ func (d *Decomposer) getOptions(opts *api.DecomposerOptions) *Options {
 }
 
 // environment builds the target environment the extraction resolves for.
-func (d *Decomposer) environment(dOpts *Options, lock *Lockfile) (*Environment, error) {
-	goos, goarch, _ := strings.Cut(dOpts.Platform, "/")
+// The driver's own platform outranks the generic one, so a programmatic
+// caller can pin Python somewhere else than the rest of an extraction.
+func (d *Decomposer) environment(dOpts *Options, opts *api.DecomposerOptions, lock *Lockfile) (*Environment, error) {
+	platform := dOpts.Platform
+	if platform == "" && opts != nil {
+		platform = opts.Platform
+	}
+	goos, goarch, _ := strings.Cut(platform, "/")
 
 	pythonVersion := dOpts.PythonVersion
 	if pythonVersion == "" {
