@@ -20,6 +20,10 @@ func extract(t *testing.T, testdata string, opts *api.DecomposerOptions) *sbom.N
 		opts = &api.DecomposerOptions{}
 	}
 	opts.WorkDir = "testdata/" + testdata
+	// The graph tests are about the lock, not the index: no network. The
+	// zero networking value is NetworkEssential, which would quietly turn
+	// every test into a PyPI client.
+	opts.Networking = api.NetworkDisabled
 	nl, err := New().Extract(opts)
 	require.NoError(t, err)
 	return nl

@@ -32,25 +32,32 @@ type treeBuilder struct {
 	nodes map[packageKey]*sbom.Node
 	// walked guards the recursion: extras may point back at their package.
 	walked map[packageKey]bool
+	// rootKeys marks the project's own packages, which enrichment skips:
+	// they are not on PyPI, and the lock is authoritative about them.
+	rootKeys map[packageKey]bool
 }
 
 type packageKey struct {
 	name, version string
 }
 
-func buildTree(lock *Lockfile, env *Environment, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
-	tb := &treeBuilder{
-		lock:   lock,
-		env:    env,
-		opts:   opts,
-		nl:     sbom.NewNodeList(),
-		nodes:  map[packageKey]*sbom.Node{},
-		walked: map[packageKey]bool{},
+func newTreeBuilder(lock *Lockfile, env *Environment, opts *api.DecomposerOptions) *treeBuilder {
+	return &treeBuilder{
+		lock:     lock,
+		env:      env,
+		opts:     opts,
+		nl:       sbom.NewNodeList(),
+		nodes:    map[packageKey]*sbom.Node{},
+		walked:   map[packageKey]bool{},
+		rootKeys: map[packageKey]bool{},
 	}
+}
 
+// build walks the lock and returns the graph.
+func (tb *treeBuilder) build() (*sbom.NodeList, error) {
 	roots := []*Package{}
-	for i := range lock.Packages {
-		pkg := &lock.Packages[i]
+	for i := range tb.lock.Packages {
+		pkg := &tb.lock.Packages[i]
 		if pkg.Source.IsProject() && tb.applies(pkg) {
 			roots = append(roots, pkg)
 		}
@@ -88,6 +95,7 @@ func (tb *treeBuilder) addRoot(root *Package) error {
 	tb.nl.AddRootNode(node)
 	tb.nodes[keyOf(root)] = node
 	tb.walked[keyOf(root)] = true
+	tb.rootKeys[keyOf(root)] = true
 
 	if err := tb.walkDependencies(root, node, sbom.Edge_dependsOn); err != nil {
 		return err

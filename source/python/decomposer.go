@@ -43,6 +43,10 @@ type Options struct {
 	// mention, so the default describes a current install with no Python
 	// on the machine unpack runs on.
 	PythonVersion string
+
+	// Concurrency controls the parallel requests to PyPI when enriching
+	// (default: 10).
+	Concurrency int
 }
 
 // DefaultOptions returns the default options for the Python decomposer.
@@ -73,12 +77,25 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 		return nil, err
 	}
 
-	env, err := d.environment(d.getOptions(opts), opts, lock)
+	dOpts := d.getOptions(opts)
+	env, err := d.environment(dOpts, opts, lock)
 	if err != nil {
 		return nil, err
 	}
 
-	return buildTree(lock, env, opts)
+	tb := newTreeBuilder(lock, env, opts)
+	nl, err := tb.build()
+	if err != nil {
+		return nil, err
+	}
+
+	// Locks carry no licence data at all, so without the index every
+	// Python SBOM is licence-empty. Enrichment fills what PyPI knows.
+	if opts.Networking >= api.NetworkEssential {
+		tb.enrich(NewPyPIClient(dOpts.Concurrency))
+	}
+
+	return nl, nil
 }
 
 // getOptions extracts Python-specific options from DecomposerOptions.
