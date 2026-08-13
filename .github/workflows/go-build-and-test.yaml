@@ -55,6 +55,13 @@ jobs:
         npm ci --prefix source/npm/testdata/demorepo/
         npm ci --prefix source/npm/testdata/k8s.io/
 
+    # The Python conformance tests compare extractions against uv's own
+    # reading of the same lockfiles. With uv on the PATH they run natively
+    # on every OS; without it they would fall back to Docker on Linux and
+    # skip elsewhere.
+    - name: Install uv
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
     - name: Test
       env:
           UNPACK_FORCE_TESTS: 1
