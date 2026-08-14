@@ -1,6 +1,6 @@
 # Decomposers
 
-Unpack ships with decomposers for six package ecosystems. Each decomposer
+Unpack ships with decomposers for seven package ecosystems. Each decomposer
 parses lock files and manifest files, resolves the dependency graph, and
 produces a [protobom](https://github.com/protobom/protobom) NodeList that
 can be serialized as SPDX or CycloneDX.
@@ -12,6 +12,7 @@ can be serialized as SPDX or CycloneDX.
 | [PHP (Composer)](composer.md) | `source/composer/` | `composer.lock` | `composer.json` | _(none — licenses are in the lock)_ |
 | [JavaScript](npm.md) | `source/npm/` | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` | `package.json` | _(none)_ |
 | [Python](python.md) | `source/python/` | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry only) | PyPI JSON API |
+| [Ruby (Bundler)](ruby.md) | `source/ruby/` | `Gemfile.lock` | _(not read — executable Ruby)_ | rubygems.org API |
 | [Rust](rust.md) | `source/rust/` | `Cargo.lock` | `Cargo.toml` | crates.io API |
 
 ## Common capabilities
@@ -54,6 +55,8 @@ decomposers uniformly.
 | **JavaScript:** _(none -- fully offline)_ | works | works | works |
 | **PHP:** _(none -- fully offline, licenses included)_ | works | works | works |
 | **Python:** local parsing (lockfiles, requirements) | works | works | works |
+| **Ruby:** local parsing (Gemfile.lock) | works | works | works |
+| **Ruby:** rubygems.org API (licenses, metadata) | skip | yes | yes |
 | **Python:** PyPI JSON API (licenses, metadata) | skip | yes | yes |
 | **Rust:** local parsing (Cargo.toml/lock) | works | works | works |
 | **Rust:** crates.io API (enrichment) | skip | yes | yes |
@@ -71,11 +74,11 @@ output. Three flags control the inclusion of additional dependency types:
 
 ### Per-decomposer mapping
 
-| Flag | Go | Maven | npm | PHP | Python | Rust |
-|------|-------|-------|-----|-----|--------|------|
-| `--include-dev` | _(no-op)_ | test-scoped deps | `devDependencies` (all lockfiles) | `require-dev` | dependency groups (PEP 735) | `[dev-dependencies]` |
-| `--include-build` | _(no-op)_ | `<build><plugins>` | _(no-op)_ | _(no-op)_ | _(no-op)_ | `[build-dependencies]` |
-| `--include-optional` | _(no-op)_ | `<optional>true</optional>` | `optionalDependencies` | _(no-op)_ | extras | _(no-op)_ |
+| Flag | Go | Maven | npm | PHP | Python | Ruby | Rust |
+|------|-------|-------|-----|-----|--------|------|------|
+| `--include-dev` | _(no-op)_ | test-scoped deps | `devDependencies` (all lockfiles) | `require-dev` | dependency groups (PEP 735) | _(no-op)_ | `[dev-dependencies]` |
+| `--include-build` | _(no-op)_ | `<build><plugins>` | _(no-op)_ | _(no-op)_ | _(no-op)_ | _(no-op)_ | `[build-dependencies]` |
+| `--include-optional` | _(no-op)_ | `<optional>true</optional>` | `optionalDependencies` | _(no-op)_ | extras | _(no-op)_ | _(no-op)_ |
 
 **Notes:**
 
@@ -90,6 +93,9 @@ output. Three flags control the inclusion of additional dependency types:
   a decomposer-specific option (`IncludePeerDependencies`).
 - Maven's `provided` scope is not covered by these flags and remains
   a decomposer-specific option (`IncludeProvided`).
+- Ruby's Gemfile is executable code, so group membership cannot be read
+  statically: all three flags are no-ops and every declared gem is
+  included. See the [Ruby page](ruby.md).
 - Python resolves for one target environment (platform and interpreter
   version); see the [Python page](python.md) for the `--platform` and
   `--python-version` flags that pick it.

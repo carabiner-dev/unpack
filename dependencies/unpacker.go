@@ -17,6 +17,7 @@ import (
 	"github.com/carabiner-dev/unpack/source/maven"
 	"github.com/carabiner-dev/unpack/source/npm"
 	"github.com/carabiner-dev/unpack/source/python"
+	"github.com/carabiner-dev/unpack/source/ruby"
 	"github.com/carabiner-dev/unpack/source/rust"
 )
 
@@ -41,6 +42,7 @@ func NewUnpacker() *Unpacker {
 			"npm":    npm.New(),
 			"python": python.New(),
 			"php":    composer.New(),
+			"ruby":   ruby.New(),
 			"maven":  maven.New(),
 		},
 	}
