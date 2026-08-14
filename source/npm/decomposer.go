@@ -5,7 +5,9 @@ package npm
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/protobom/protobom/pkg/sbom"
@@ -62,6 +64,20 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 		workDir = "."
 	}
 
+	// A codebase holding several lockfiles is read from npm's own first:
+	// package-lock.json is the format this decomposer grew up on.
+	switch {
+	case fileExists(filepath.Join(workDir, "package-lock.json")):
+		return d.extractNpm(workDir, opts)
+	case fileExists(filepath.Join(workDir, "pnpm-lock.yaml")):
+		return d.extractPnpm(workDir, opts)
+	default:
+		return nil, fmt.Errorf("no supported JavaScript lockfile in %s", workDir)
+	}
+}
+
+// extractNpm builds the graph from package-lock.json.
+func (d *Decomposer) extractNpm(workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	// Parse package.json
 	packageJSON, err := ParsePackageJSON(workDir)
 	if err != nil {
@@ -86,19 +102,51 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	return nl, nil
 }
 
-// FindCodeBases locates npm codebases by looking for package-lock.json files.
-func (d *Decomposer) FindCodeBases(index *code.PathIndex) ([]string, error) {
-	// FInd the node codebases from the indexer
-	allCodebases, err := index.FindFileLocations("package-lock.json")
+// extractPnpm builds the graph from pnpm-lock.yaml.
+func (d *Decomposer) extractPnpm(workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	lock, err := ReadPnpmLock(workDir)
 	if err != nil {
 		return nil, err
 	}
-	filteredCodebases := []string{}
-	for _, c := range allCodebases {
-		if strings.Contains(c, string(filepath.Separator)+"%snode_modules%s"+string(filepath.Separator)) {
-			continue
+	return buildPnpmTree(lock, workDir, opts)
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+// FindCodeBases locates JavaScript codebases by their lockfiles. Lockfiles
+// vendored under node_modules belong to installed dependencies, not to the
+// codebase, and are skipped.
+func (d *Decomposer) FindCodeBases(index *code.PathIndex) ([]string, error) {
+	locations := map[string]bool{}
+	for _, lockfile := range []string{"package-lock.json", "pnpm-lock.yaml"} {
+		found, err := index.FindFileLocations(lockfile)
+		if err != nil {
+			return nil, err
 		}
-		filteredCodebases = append(filteredCodebases, c)
+		for _, dir := range found {
+			if insideNodeModules(dir) {
+				continue
+			}
+			locations[dir] = true
+		}
 	}
-	return filteredCodebases, nil
+	dirs := make([]string, 0, len(locations))
+	for dir := range locations {
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+	return dirs, nil
+}
+
+// insideNodeModules says whether a path has a node_modules segment.
+func insideNodeModules(dir string) bool {
+	for _, segment := range strings.Split(filepath.ToSlash(dir), "/") {
+		if segment == "node_modules" {
+			return true
+		}
+	}
+	return false
 }
