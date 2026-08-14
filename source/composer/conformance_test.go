@@ -37,7 +37,17 @@ func TestCompareWithComposerShow(t *testing.T) {
 		"run", "--rm", "-v", dir+":/app:ro", "-w", "/app", composerOracleImage,
 		"show", "--locked", "--format=json", "--ignore-platform-reqs",
 	).RunSuccessOutput()
-	require.NoError(t, err)
+	if err != nil {
+		// Docker being present does not mean it can run this image: the
+		// Windows runners' Docker speaks Windows containers only, and
+		// composer:2 has no Windows build. Only Linux is held to the
+		// oracle; elsewhere a run failure is a skip, as the Maven
+		// conformance test treats it.
+		if os.Getenv("UNPACK_FORCE_TESTS") != "" && runtime.GOOS == "linux" {
+			t.Fatalf("running the oracle: %v", err)
+		}
+		t.Skipf("skipping: the oracle did not run (%v)", err)
+	}
 
 	oracle := parseComposerShow(t, out.Output())
 
