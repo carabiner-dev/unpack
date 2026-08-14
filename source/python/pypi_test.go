@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/protobom/protobom/pkg/sbom"
@@ -97,9 +98,14 @@ func TestPyPIProjectURLs(t *testing.T) {
 func TestEnrich(t *testing.T) {
 	t.Parallel()
 
+	// The client fetches in parallel, so the handler runs concurrently:
+	// everything it touches must be guarded.
+	var mu sync.Mutex
 	requested := map[string]bool{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		requested[r.URL.Path] = true
+		mu.Unlock()
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/requests/"):
 			fmt.Fprint(w, `{"info": {"license": "Apache-2.0", "summary": "Python HTTP for Humans.", "project_urls": {"Homepage": "https://requests.readthedocs.io", "Source": "https://github.com/psf/requests"}}}`) //nolint:errcheck // a fake server's writes have nowhere to fail
