@@ -15,7 +15,14 @@ import (
 
 func extractRuby(t *testing.T, testdata, platform string) *sbom.NodeList {
 	t.Helper()
-	opts := &api.DecomposerOptions{WorkDir: "testdata/" + testdata, Platform: platform}
+	opts := &api.DecomposerOptions{
+		WorkDir:  "testdata/" + testdata,
+		Platform: platform,
+		// The graph tests are about the lock, not the registry: the zero
+		// networking value is NetworkEssential, which would quietly turn
+		// every test into a rubygems.org client.
+		Networking: api.NetworkDisabled,
+	}
 	nl, err := New().Extract(opts)
 	require.NoError(t, err)
 	return nl

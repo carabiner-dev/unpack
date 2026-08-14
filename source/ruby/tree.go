@@ -36,9 +36,13 @@ type rubyBuilder struct {
 	nl     *sbom.NodeList
 	byName map[string][]*GemSpec
 	nodes  map[string]*sbom.Node
+
+	// selected records which variant each node was built from, which is
+	// what enrichment needs to know a node's registry identity.
+	selected map[string]*GemSpec
 }
 
-func buildRubyTree(lock *GemLockfile, workDir string, opts *api.DecomposerOptions, platform string) (*sbom.NodeList, error) {
+func newRubyBuilder(lock *GemLockfile, workDir string, opts *api.DecomposerOptions, platform string) (*rubyBuilder, error) {
 	candidates, err := gemPlatforms(platform)
 	if err != nil {
 		return nil, err
@@ -52,17 +56,22 @@ func buildRubyTree(lock *GemLockfile, workDir string, opts *api.DecomposerOption
 		nl:        sbom.NewNodeList(),
 		byName:    map[string][]*GemSpec{},
 		nodes:     map[string]*sbom.Node{},
+		selected:  map[string]*GemSpec{},
 	}
 	for _, source := range lock.Sources {
 		for _, spec := range source.Specs {
 			rb.byName[spec.Name] = append(rb.byName[spec.Name], spec)
 		}
 	}
+	return rb, nil
+}
 
+// build walks the lock from the direct dependencies.
+func (rb *rubyBuilder) build() (*sbom.NodeList, error) {
 	root := rb.rootNode()
 	rb.nl.AddRootNode(root)
 
-	for _, name := range lock.Dependencies {
+	for _, name := range rb.lock.Dependencies {
 		if err := rb.addEdge(name, root); err != nil {
 			return nil, err
 		}
@@ -114,6 +123,7 @@ func (rb *rubyBuilder) addEdge(name string, parent *sbom.Node) error {
 	if !known {
 		node = rb.specNode(spec)
 		rb.nodes[name] = node
+		rb.selected[name] = spec
 		rb.nl.AddNode(node)
 	}
 	if err := rb.nl.RelateNodeAtID(node, parent.GetId(), sbom.Edge_dependsOn); err != nil {

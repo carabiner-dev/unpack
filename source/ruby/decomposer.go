@@ -28,6 +28,10 @@ type Options struct {
 	// outranks the generic --platform. Empty means the platform unpack
 	// runs on.
 	Platform string
+
+	// Concurrency controls the parallel requests to rubygems.org when
+	// enriching (default: 10).
+	Concurrency int
 }
 
 // DefaultOptions returns the default options for the Ruby decomposer.
@@ -54,12 +58,29 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 		return nil, err
 	}
 
-	platform := ""
-	if dOpts, ok := opts.GetDriverOptions(d).(*Options); ok && dOpts.Platform != "" {
-		platform = dOpts.Platform
-	} else if opts.Platform != "" {
+	dOpts := &Options{}
+	if driver, ok := opts.GetDriverOptions(d).(*Options); ok {
+		dOpts = driver
+	}
+	platform := dOpts.Platform
+	if platform == "" {
 		platform = opts.Platform
 	}
 
-	return buildRubyTree(lock, workDir, opts, platform)
+	rb, err := newRubyBuilder(lock, workDir, opts, platform)
+	if err != nil {
+		return nil, err
+	}
+	nl, err := rb.build()
+	if err != nil {
+		return nil, err
+	}
+
+	// The lock carries no licence data at all, so without the registry
+	// every Ruby SBOM is licence-empty. Enrichment fills what
+	// rubygems.org knows.
+	if opts.Networking >= api.NetworkEssential {
+		NewRubyGemsClient(dOpts.Concurrency).enrichNodes(rb)
+	}
+	return nl, nil
 }
