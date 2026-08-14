@@ -1,0 +1,14 @@
+{
+  "name": "jsdemo",
+  "version": "0.1.0",
+  "dependencies": {
+    "debug": "^4.3.4",
+    "ms": "^2.1.3"
+  },
+  "devDependencies": {
+    "once": "^1.4.0"
+  },
+  "optionalDependencies": {
+    "wrappy": "^1.0.2"
+  }
+}
