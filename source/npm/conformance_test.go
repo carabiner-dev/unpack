@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -38,6 +39,30 @@ const (
 	berryOracleName   = "yarn@4.12.0"
 )
 
+// oracleWarmups serializes the first npx invocation of each tool. The
+// parallel subtests otherwise race npx's shared cache on a cold machine —
+// concurrent installs of the same tool can tear each other's files, and a
+// truncated pnpm.mjs fails every subtest that loads it — so the tool is
+// fetched once, alone, and the real runs hit a complete cache.
+var oracleWarmups sync.Map
+
+// warmOracle fetches a tool through npx once per test binary. Failures are
+// ignored here: the real invocation reports them with full context.
+func warmOracle(args ...string) {
+	key := strings.Join(args, " ")
+	stored, _ := oracleWarmups.LoadOrStore(key, &sync.Once{})
+	once, ok := stored.(*sync.Once)
+	if !ok {
+		return
+	}
+	once.Do(func() {
+		warmup := append([]string{"--yes"}, args...)
+		warmup = append(warmup, "--version")
+		//nolint:errcheck,gosec // best-effort cache warm-up; the real run reports failures
+		command.New("npx", warmup...).RunSilentSuccess()
+	})
+}
+
 // runOracle runs a tool through npx in a testdata directory.
 func runOracle(t *testing.T, testdata string, args ...string) string {
 	t.Helper()
@@ -46,6 +71,13 @@ func runOracle(t *testing.T, testdata string, args ...string) string {
 			t.Fatal("npx is not available and UNPACK_FORCE_TESTS is set")
 		}
 		t.Skip("skipping: npx is not available to run the oracle")
+	}
+
+	// The berry oracle rides in on corepack, so its warm-up names both.
+	if args[0] == "corepack@latest" {
+		warmOracle(args[0], args[1])
+	} else {
+		warmOracle(args[0])
 	}
 
 	out, err := command.NewWithWorkDir(
