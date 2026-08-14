@@ -24,17 +24,22 @@ type ComposerJSON struct {
 	RawLicense json.RawMessage `json:"license"`
 }
 
+// ParseComposerJSON reads a composer.json document.
+func ParseComposerJSON(data []byte) (*ComposerJSON, error) {
+	manifest := &ComposerJSON{}
+	if err := json.Unmarshal(data, manifest); err != nil {
+		return nil, fmt.Errorf("parsing composer.json: %w", err)
+	}
+	return manifest, nil
+}
+
 // ReadComposerJSON reads a composer.json from a directory.
 func ReadComposerJSON(workDir string) (*ComposerJSON, error) {
 	data, err := os.ReadFile(filepath.Join(workDir, "composer.json"))
 	if err != nil {
 		return nil, fmt.Errorf("reading manifest: %w", err)
 	}
-	manifest := &ComposerJSON{}
-	if err := json.Unmarshal(data, manifest); err != nil {
-		return nil, fmt.Errorf("parsing composer.json: %w", err)
-	}
-	return manifest, nil
+	return ParseComposerJSON(data)
 }
 
 // Licenses returns the manifest's license declaration, which the schema

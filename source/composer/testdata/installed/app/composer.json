@@ -1,0 +1,11 @@
+{
+    "name": "carabiner/phpdemo",
+    "description": "composer fixture",
+    "license": "Apache-2.0",
+    "require": {
+        "monolog/monolog": "^3.0"
+    },
+    "require-dev": {
+        "psr/container": "^2.0"
+    }
+}
