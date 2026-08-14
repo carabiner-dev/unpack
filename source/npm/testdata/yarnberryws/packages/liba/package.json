@@ -1,0 +1,7 @@
+{
+  "name": "liba",
+  "version": "0.2.0",
+  "dependencies": {
+    "wrappy": "^1.0.2"
+  }
+}

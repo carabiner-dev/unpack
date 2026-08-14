@@ -113,11 +113,25 @@ func (d *Decomposer) extractPnpm(workDir string, opts *api.DecomposerOptions) (*
 	return buildPnpmTree(lock, workDir, opts)
 }
 
-// extractYarn builds the graph from a classic yarn.lock and the manifest,
-// which carries what the lock does not: the project's identity and the
-// kind of each direct dependency.
+// extractYarn builds the graph from a yarn.lock, whichever generation
+// wrote it: both spell the file the same, so the content decides. The
+// manifests carry what neither generation's lock does: the project's
+// identity and the kind of each direct dependency.
 func (d *Decomposer) extractYarn(workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
-	lock, err := ReadYarnLock(workDir)
+	data, err := os.ReadFile(filepath.Join(workDir, "yarn.lock"))
+	if err != nil {
+		return nil, fmt.Errorf("reading lockfile: %w", err)
+	}
+
+	if IsYarnBerry(data) {
+		lock, err := ParseYarnBerryLock(data)
+		if err != nil {
+			return nil, err
+		}
+		return buildYarnBerryTree(lock, workDir, opts)
+	}
+
+	lock, err := ParseYarnLock(data)
 	if err != nil {
 		return nil, err
 	}

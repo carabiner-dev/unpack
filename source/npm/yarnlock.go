@@ -85,7 +85,7 @@ func ParseYarnLock(data []byte) (*YarnLock, error) {
 			current = &YarnPackage{}
 			inDeps = nil
 			for _, selector := range selectors {
-				name, _, err := yarnSelectorParts(selector)
+				name, err := yarnSelectorName(selector)
 				if err != nil {
 					return nil, err
 				}
@@ -167,14 +167,14 @@ func yarnSelectors(line string) ([]string, error) {
 	return selectors, nil
 }
 
-// yarnSelectorParts splits a selector into name and range. A scoped name
-// holds an @ of its own, so the range starts at the last one.
-func yarnSelectorParts(selector string) (name, rang string, err error) {
+// yarnSelectorName reads the package name out of a selector. A scoped name
+// holds an @ of its own, so the name ends at the last one.
+func yarnSelectorName(selector string) (string, error) {
 	at := strings.LastIndex(selector, "@")
 	if at <= 0 {
-		return "", "", fmt.Errorf("unparseable yarn.lock selector %q", selector)
+		return "", fmt.Errorf("unparseable yarn.lock selector %q", selector)
 	}
-	return selector[:at], selector[at+1:], nil
+	return selector[:at], nil
 }
 
 // yarnKeyValue splits a field or dependency line: a key, a space, and a

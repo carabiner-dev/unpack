@@ -1,0 +1,14 @@
+{
+  "name": "jsws",
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "dependencies": {
+    "liba": "workspace:*",
+    "ms": "^2.1.3"
+  },
+  "devDependencies": {
+    "once": "^1.4.0"
+  }
+}
