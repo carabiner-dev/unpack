@@ -71,6 +71,8 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 		return d.extractNpm(workDir, opts)
 	case fileExists(filepath.Join(workDir, "pnpm-lock.yaml")):
 		return d.extractPnpm(workDir, opts)
+	case fileExists(filepath.Join(workDir, "yarn.lock")):
+		return d.extractYarn(workDir, opts)
 	default:
 		return nil, fmt.Errorf("no supported JavaScript lockfile in %s", workDir)
 	}
@@ -111,6 +113,35 @@ func (d *Decomposer) extractPnpm(workDir string, opts *api.DecomposerOptions) (*
 	return buildPnpmTree(lock, workDir, opts)
 }
 
+// extractYarn builds the graph from a yarn.lock, whichever generation
+// wrote it: both spell the file the same, so the content decides. The
+// manifests carry what neither generation's lock does: the project's
+// identity and the kind of each direct dependency.
+func (d *Decomposer) extractYarn(workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	data, err := os.ReadFile(filepath.Join(workDir, "yarn.lock"))
+	if err != nil {
+		return nil, fmt.Errorf("reading lockfile: %w", err)
+	}
+
+	if IsYarnBerry(data) {
+		lock, err := ParseYarnBerryLock(data)
+		if err != nil {
+			return nil, err
+		}
+		return buildYarnBerryTree(lock, workDir, opts)
+	}
+
+	lock, err := ParseYarnLock(data)
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := ParsePackageJSON(workDir)
+	if err != nil {
+		return nil, fmt.Errorf("parsing package.json: %w", err)
+	}
+	return buildYarnTree(lock, manifest, opts)
+}
+
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
@@ -121,7 +152,7 @@ func fileExists(path string) bool {
 // codebase, and are skipped.
 func (d *Decomposer) FindCodeBases(index *code.PathIndex) ([]string, error) {
 	locations := map[string]bool{}
-	for _, lockfile := range []string{"package-lock.json", "pnpm-lock.yaml"} {
+	for _, lockfile := range []string{"package-lock.json", "pnpm-lock.yaml", "yarn.lock"} {
 		found, err := index.FindFileLocations(lockfile)
 		if err != nil {
 			return nil, err

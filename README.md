@@ -18,7 +18,7 @@ Whether you're a developer, security researcher, or compliance officer, Unpack h
 
 ---
 
-:warning: `unpack` is an experimental project. We are actively developing it and welcome feedback. Support currently covers Go, Rust, npm, Maven and Python (uv) codebases, with more on the way. Dependency extraction from SBOMs is powered by the native [protobom unserializers](http://github.com/protobom/protobom/).
+:warning: `unpack` is an experimental project. We are actively developing it and welcome feedback. Support currently covers Go, Rust, JavaScript (npm, pnpm and yarn), Maven and Python codebases, with more on the way. Dependency extraction from SBOMs is powered by the native [protobom unserializers](http://github.com/protobom/protobom/).
 
 ---
 
@@ -155,7 +155,7 @@ Container image scans additionally report installed Python environments
 | --- | --- | --- | --- |
 | [Go](docs/decomposers/golang.md) | `go.sum` | `go.mod` | Go module proxy |
 | [Maven](docs/decomposers/maven.md) | _(none)_ | `pom.xml` | Maven Central |
-| [npm](docs/decomposers/npm.md) | `package-lock.json` | `package.json` | _(none)_ |
+| [JavaScript](docs/decomposers/npm.md) | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` | `package.json` | _(none)_ |
 | [Python](docs/decomposers/python.md) | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry) | PyPI JSON API |
 | [Rust](docs/decomposers/rust.md) | `Cargo.lock` | `Cargo.toml` | crates.io API |
 
