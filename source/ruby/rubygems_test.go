@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/protobom/protobom/pkg/sbom"
@@ -21,9 +23,14 @@ import (
 func TestEnrich(t *testing.T) {
 	t.Parallel()
 
+	// The client fetches in parallel, so the handler runs concurrently:
+	// everything it touches must be guarded.
+	var mu sync.Mutex
 	requested := map[string]bool{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		requested[r.URL.Path] = true
+		mu.Unlock()
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/sinatra/versions/"):
 			//nolint:errcheck // a fake server's writes have nowhere to fail
@@ -120,9 +127,9 @@ BUNDLED WITH
 func TestEnrichSkipsNonRegistry(t *testing.T) {
 	t.Parallel()
 
-	requested := 0
+	var requested atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requested++
+		requested.Add(1)
 		http.NotFound(w, r)
 	}))
 	defer server.Close()
@@ -137,5 +144,5 @@ func TestEnrichSkipsNonRegistry(t *testing.T) {
 	client := NewRubyGemsClient(1)
 	client.BaseURL = server.URL
 	client.enrichNodes(rb)
-	require.Zero(t, requested, "nothing in this lock came from the registry")
+	require.Zero(t, requested.Load(), "nothing in this lock came from the registry")
 }
