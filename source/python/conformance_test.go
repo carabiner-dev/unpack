@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/protobom/protobom/pkg/sbom"
@@ -335,6 +336,13 @@ func TestCompareWithPoetryExport(t *testing.T) {
 	}
 }
 
+// poetryWarmup serializes the first uvx fetch of Poetry: the parallel
+// subtests otherwise race uvx's cache on a cold machine, and concurrent
+// installs can tear each other's files. One fetch runs alone; the real
+// invocations hit a complete cache. Failures are ignored here — the real
+// run reports them with full context.
+var poetryWarmup sync.Once
+
 // poetryExport runs poetry export over a testdata project through uvx,
 // which fetches Poetry and its export plugin on first use. Without uvx it
 // runs the one in the uv Docker image, and a failed run skips rather than
@@ -342,6 +350,15 @@ func TestCompareWithPoetryExport(t *testing.T) {
 // UNPACK_FORCE_TESTS, where CI is expected to have both.
 func poetryExport(t *testing.T, project string, args ...string) string {
 	t.Helper()
+
+	if _, err := exec.LookPath("uvx"); err == nil {
+		poetryWarmup.Do(func() {
+			//nolint:errcheck,gosec // best-effort cache warm-up; the real run reports failures
+			command.New("uvx",
+				"--from", "poetry", "--with", "poetry-plugin-export", "poetry", "--version",
+			).RunSilentSuccess()
+		})
+	}
 
 	exportArgs := append([]string{
 		"--from", "poetry", "--with", "poetry-plugin-export",

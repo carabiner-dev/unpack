@@ -12,6 +12,7 @@ import (
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/source/composer"
 	"github.com/carabiner-dev/unpack/source/golang"
 	"github.com/carabiner-dev/unpack/source/maven"
 	"github.com/carabiner-dev/unpack/source/npm"
@@ -39,6 +40,7 @@ func NewUnpacker() *Unpacker {
 			"golang": golang.New(),
 			"npm":    npm.New(),
 			"python": python.New(),
+			"php":    composer.New(),
 			"maven":  maven.New(),
 		},
 	}
