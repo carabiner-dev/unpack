@@ -71,6 +71,8 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 		return d.extractNpm(workDir, opts)
 	case fileExists(filepath.Join(workDir, "pnpm-lock.yaml")):
 		return d.extractPnpm(workDir, opts)
+	case fileExists(filepath.Join(workDir, "yarn.lock")):
+		return d.extractYarn(workDir, opts)
 	default:
 		return nil, fmt.Errorf("no supported JavaScript lockfile in %s", workDir)
 	}
@@ -111,6 +113,21 @@ func (d *Decomposer) extractPnpm(workDir string, opts *api.DecomposerOptions) (*
 	return buildPnpmTree(lock, workDir, opts)
 }
 
+// extractYarn builds the graph from a classic yarn.lock and the manifest,
+// which carries what the lock does not: the project's identity and the
+// kind of each direct dependency.
+func (d *Decomposer) extractYarn(workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	lock, err := ReadYarnLock(workDir)
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := ParsePackageJSON(workDir)
+	if err != nil {
+		return nil, fmt.Errorf("parsing package.json: %w", err)
+	}
+	return buildYarnTree(lock, manifest, opts)
+}
+
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
@@ -121,7 +138,7 @@ func fileExists(path string) bool {
 // codebase, and are skipped.
 func (d *Decomposer) FindCodeBases(index *code.PathIndex) ([]string, error) {
 	locations := map[string]bool{}
-	for _, lockfile := range []string{"package-lock.json", "pnpm-lock.yaml"} {
+	for _, lockfile := range []string{"package-lock.json", "pnpm-lock.yaml", "yarn.lock"} {
 		found, err := index.FindFileLocations(lockfile)
 		if err != nil {
 			return nil, err
