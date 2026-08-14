@@ -18,7 +18,7 @@ Whether you're a developer, security researcher, or compliance officer, Unpack h
 
 ---
 
-:warning: `unpack` is an experimental project. We are actively developing it and welcome feedback. Support currently covers Go, Rust, JavaScript (npm, pnpm and yarn), Maven and Python codebases, with more on the way. Dependency extraction from SBOMs is powered by the native [protobom unserializers](http://github.com/protobom/protobom/).
+:warning: `unpack` is an experimental project. We are actively developing it and welcome feedback. Support currently covers Go, Rust, JavaScript (npm, pnpm and yarn), Maven, Python and PHP (Composer) codebases, with more on the way. Dependency extraction from SBOMs is powered by the native [protobom unserializers](http://github.com/protobom/protobom/).
 
 ---
 
@@ -146,15 +146,17 @@ unpack ls --ignore "*/testdata/*" --ignore "temp/" .
 
 ## Supported Ecosystems
 
-Unpack includes decomposers for five package ecosystems. See the
+Unpack includes decomposers for six package ecosystems. See the
 [decomposer documentation](docs/decomposers/README.md) for details.
 Container image scans additionally report installed Python environments
-(site-packages) next to the OS package inventory.
+(site-packages) and Composer vendor directories next to the OS package
+inventory.
 
 | Ecosystem | Lock file | Manifest | Remote enrichment |
 | --- | --- | --- | --- |
 | [Go](docs/decomposers/golang.md) | `go.sum` | `go.mod` | Go module proxy |
 | [Maven](docs/decomposers/maven.md) | _(none)_ | `pom.xml` | Maven Central |
+| [PHP (Composer)](docs/decomposers/composer.md) | `composer.lock` | `composer.json` | _(none — licenses are in the lock)_ |
 | [JavaScript](docs/decomposers/npm.md) | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` | `package.json` | _(none)_ |
 | [Python](docs/decomposers/python.md) | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry) | PyPI JSON API |
 | [Rust](docs/decomposers/rust.md) | `Cargo.lock` | `Cargo.toml` | crates.io API |
