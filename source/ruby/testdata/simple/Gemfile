@@ -1,0 +1,8 @@
+source "https://rubygems.org"
+
+gem "sinatra", "~> 4.0"
+gem "ffi", "~> 1.17"
+
+group :development do
+  gem "minitest"
+end
