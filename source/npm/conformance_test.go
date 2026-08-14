@@ -274,7 +274,7 @@ func TestCompareWithYarnBerryInfo(t *testing.T) {
 			t.Parallel()
 			// yarn drops install state into .yarn even for a read-only
 			// query; the fixture stays a fixture.
-			t.Cleanup(func() { os.RemoveAll("testdata/" + testdata + "/.yarn") })
+			t.Cleanup(func() { os.RemoveAll("testdata/" + testdata + "/.yarn") }) //nolint:errcheck,gosec // best-effort fixture cleanup
 			out := runOracle(t, testdata,
 				"corepack@latest", berryOracleName, "info", "--all", "--json")
 			opts := &api.DecomposerOptions{IncludeDev: true, IncludeOptional: true}

@@ -9,7 +9,7 @@ can be serialized as SPDX or CycloneDX.
 |-----------|------------|-----------|----------|-------------------|
 | [Go](golang.md) | `source/golang/` | `go.sum` | `go.mod` | deps.dev API + Go module proxy |
 | [Maven](maven.md) | `source/maven/` | _(none)_ | `pom.xml` | Maven Central |
-| [npm](npm.md) | `source/npm/` | `package-lock.json` | `package.json` | _(none)_ |
+| [JavaScript](npm.md) | `source/npm/` | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` | `package.json` | _(none)_ |
 | [Python](python.md) | `source/python/` | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry only) | PyPI JSON API |
 | [Rust](rust.md) | `source/rust/` | `Cargo.lock` | `Cargo.toml` | crates.io API |
 
@@ -50,7 +50,7 @@ decomposers uniformly.
 | **Maven:** metadata fetch (snapshots, ranges) | skip | yes | yes |
 | **Maven:** checksum files (.sha1, .sha256) | skip | yes | yes |
 | **Maven:** artifact download (SHA-256/SHA-512) | skip | skip | yes |
-| **npm:** _(none -- fully offline)_ | works | works | works |
+| **JavaScript:** _(none -- fully offline)_ | works | works | works |
 | **Python:** local parsing (lockfiles, requirements) | works | works | works |
 | **Python:** PyPI JSON API (licenses, metadata) | skip | yes | yes |
 | **Rust:** local parsing (Cargo.toml/lock) | works | works | works |
@@ -71,7 +71,7 @@ output. Three flags control the inclusion of additional dependency types:
 
 | Flag | Go | Maven | npm | Python | Rust |
 |------|-------|-------|-----|--------|------|
-| `--include-dev` | _(no-op)_ | test-scoped deps | `devDependencies` | dependency groups (PEP 735) | `[dev-dependencies]` |
+| `--include-dev` | _(no-op)_ | test-scoped deps | `devDependencies` (all lockfiles) | dependency groups (PEP 735) | `[dev-dependencies]` |
 | `--include-build` | _(no-op)_ | `<build><plugins>` | _(no-op)_ | _(no-op)_ | `[build-dependencies]` |
 | `--include-optional` | _(no-op)_ | `<optional>true</optional>` | `optionalDependencies` | extras | _(no-op)_ |
 
