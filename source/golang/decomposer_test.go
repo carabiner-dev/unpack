@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/mod/module"
 	"golang.org/x/mod/sumdb/dirhash"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
@@ -486,4 +488,103 @@ func TestGoSumHashMatchesProxy(t *testing.T) {
 
 	require.Equal(t, expectedHex, goSumHash,
 		"hash on node should match dirhash computed from proxy zip")
+}
+
+func TestReadCachedModFile(t *testing.T) {
+	cache := t.TempDir()
+	// The go command escapes capitals in module paths, so a module
+	// stored as github.com/!burnt!sushi must be found from the
+	// unescaped github.com/BurntSushi.
+	modDir := filepath.Join(cache, "cache", "download", "github.com", "!burnt!sushi", "toml", "@v")
+	require.NoError(t, os.MkdirAll(modDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(modDir, "v1.2.3.mod"),
+		[]byte("module github.com/BurntSushi/toml\n\ngo 1.20\n"), 0o600,
+	))
+	t.Setenv("GOMODCACHE", cache)
+
+	escaped, err := module.EscapePath("github.com/BurntSushi/toml")
+	require.NoError(t, err)
+
+	body, err := readCachedModFile(escaped, "v1.2.3")
+	require.NoError(t, err)
+	require.Contains(t, string(body), "module github.com/BurntSushi/toml")
+
+	// A version that was never downloaded is simply absent.
+	_, err = readCachedModFile(escaped, "v9.9.9")
+	require.Error(t, err)
+}
+
+// TestFetchModFileWithoutClient pins that the graph can be built from
+// the module cache alone, which is what a scan with networking
+// disabled relies on.
+func TestFetchModFileWithoutClient(t *testing.T) {
+	cache := t.TempDir()
+	modDir := filepath.Join(cache, "cache", "download", "example.com", "mod", "@v")
+	require.NoError(t, os.MkdirAll(modDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(modDir, "v1.0.0.mod"),
+		[]byte("module example.com/mod\n\ngo 1.20\n\nrequire example.com/dep v1.1.0\n"), 0o600,
+	))
+	t.Setenv("GOMODCACHE", cache)
+
+	d := &Decomposer{}
+	modFile, err := d.fetchModFile("example.com/mod", "v1.0.0", "", nil, false)
+	require.NoError(t, err)
+	require.Len(t, modFile.Require, 1)
+	require.Equal(t, "example.com/dep", modFile.Require[0].Mod.Path)
+
+	// Nothing cached and no client: the caller learns why.
+	_, err = d.fetchModFile("example.com/absent", "v1.0.0", "", nil, false)
+	require.ErrorContains(t, err, "not in the local module cache")
+}
+
+// TestFetchModFileSourcePrecedence pins where a dependency's go.mod is
+// read from: the proxy is the source of record, and the module cache
+// stands in for it only when it cannot be reached, or when the caller
+// asks for it.
+func TestFetchModFileSourcePrecedence(t *testing.T) {
+	const (
+		modPath  = "example.com/mod"
+		version  = "v1.0.0"
+		fromCach = "module example.com/mod\n\ngo 1.20\n\nrequire example.com/cached v1.0.0\n"
+		fromProx = "module example.com/mod\n\ngo 1.20\n\nrequire example.com/proxied v1.0.0\n"
+	)
+
+	cache := t.TempDir()
+	modDir := filepath.Join(cache, "cache", "download", "example.com", "mod", "@v")
+	require.NoError(t, os.MkdirAll(modDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(modDir, version+".mod"), []byte(fromCach), 0o600))
+	t.Setenv("GOMODCACHE", cache)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, fromProx) //nolint:errcheck // test server
+	}))
+	defer srv.Close()
+
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer down.Close()
+
+	d := &Decomposer{}
+	for _, tc := range []struct {
+		name       string
+		proxy      string
+		client     *http.Client
+		prefer     bool
+		wantModule string
+	}{
+		{"proxy wins by default", srv.URL, srv.Client(), false, "example.com/proxied"},
+		{"cache wins when preferred", srv.URL, srv.Client(), true, "example.com/cached"},
+		{"cache stands in with no client", srv.URL, nil, false, "example.com/cached"},
+		{"cache stands in when the proxy fails", down.URL, down.Client(), false, "example.com/cached"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			modFile, err := d.fetchModFile(modPath, version, tc.proxy, tc.client, tc.prefer)
+			require.NoError(t, err)
+			require.Len(t, modFile.Require, 1)
+			require.Equal(t, tc.wantModule, modFile.Require[0].Mod.Path)
+		})
+	}
 }
