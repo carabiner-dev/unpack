@@ -46,6 +46,12 @@ type Options struct {
 	ProxyURL    string       // default: https://proxy.golang.org
 	HTTPClient  *http.Client // allow HTTP custom client for testing
 	Concurrency int          // number of parallel HTTP requests (default: 10)
+
+	// PreferModuleCache reads dependency go.mod files from the local Go
+	// module cache before asking the proxy. The cache holds a copy the
+	// go command has already verified against go.sum, so the data is the
+	// same, but the proxy stays authoritative unless this is set.
+	PreferModuleCache bool
 }
 
 var defaultOptions = Options{
@@ -77,7 +83,8 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 		return nil, fmt.Errorf("parsing go.mod: %w", err)
 	}
 
-	// 2. Build dependency tree (fetches go.mod files from proxy when networking allows)
+	// 2. Build dependency tree (reads each module go.mod from the local
+	// module cache, falling back to the proxy when networking allows)
 	trees, sumHashes, err := d.buildDependencyTree(modFile, goModPath, dOpts, opts.Networking)
 	if err != nil {
 		return nil, fmt.Errorf("building dependency tree: %w", err)
@@ -293,11 +300,11 @@ func (d *Decomposer) buildDependencyTree(root *modfile.File, goModPath string, o
 		}
 	}
 
-	// Fetch go.mod files for all modules in the resolved set to get their dependencies
-	// (requires networking >= essential)
-	if networking >= api.NetworkEssential {
-		d.fetchDependencyGraph(trees, resolvedSet, replaces, opts)
-	}
+	// Resolve each module's own dependencies from its go.mod. These come
+	// from the local module cache when it holds them, so the graph is
+	// built even with networking disabled; the proxy fills the gaps only
+	// when the network is allowed.
+	d.fetchDependencyGraph(trees, resolvedSet, replaces, opts, networking)
 
 	return &trees, allSumHashes, nil
 }
@@ -307,7 +314,7 @@ func (d *Decomposer) buildDependencyTree(root *modfile.File, goModPath string, o
 // the resolved set (avoiding the exponential explosion of fetching all transitive deps).
 func (d *Decomposer) fetchDependencyGraph(
 	trees map[string][]string, resolvedSet map[string]bool,
-	replaces map[string]replaceTarget, opts *Options,
+	replaces map[string]replaceTarget, opts *Options, networking api.NetworkLevel,
 ) {
 	// Get list of modules to fetch
 	toFetch := make([]string, 0, len(resolvedSet))
@@ -340,10 +347,14 @@ func (d *Decomposer) fetchDependencyGraph(
 	sem := make(chan struct{}, concurrency)
 	var mu sync.Mutex // protects trees map
 
-	// Create HTTP client with timeout
-	client := opts.HTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: defaultHTTPTimeout}
+	// Without the network there is no client, and the lookup falls back
+	// to the module cache alone.
+	var client *http.Client
+	if networking >= api.NetworkEssential {
+		client = opts.HTTPClient
+		if client == nil {
+			client = &http.Client{Timeout: defaultHTTPTimeout}
+		}
 	}
 
 	proxyURL := opts.ProxyURL
@@ -370,7 +381,7 @@ func (d *Decomposer) fetchDependencyGraph(
 			}
 
 			// Fetch the module's go.mod
-			modFile, err := d.fetchModFile(modPath, version, proxyURL, client)
+			modFile, err := d.fetchModFile(modPath, version, proxyURL, client, opts.PreferModuleCache)
 			if err != nil {
 				// Skip - some modules may not have go.mod or may be unreachable
 				return
@@ -398,12 +409,42 @@ func (d *Decomposer) fetchDependencyGraph(
 	wg.Wait()
 }
 
-// fetchModFile fetches a go.mod file from the Go module proxy
-func (d *Decomposer) fetchModFile(modPath, version, proxyURL string, client *http.Client) (*modfile.File, error) {
+// fetchModFile reads a module's go.mod from the module proxy, which is
+// the source of record.
+//
+// The local module cache holds a copy the go command already verified
+// against go.sum, so it stands in for the proxy when the module cannot
+// be fetched: a nil client, meaning networking is disabled, or a failed
+// request. Setting preferCache reads it first instead.
+func (d *Decomposer) fetchModFile(
+	modPath, version, proxyURL string, client *http.Client, preferCache bool,
+) (*modfile.File, error) {
 	// Escape module path for URL
 	escapedPath, err := module.EscapePath(modPath)
 	if err != nil {
 		return nil, fmt.Errorf("escaping module path %q: %w", modPath, err)
+	}
+
+	readCache := func() (*modfile.File, error) {
+		body, err := readCachedModFile(escapedPath, version)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"go.mod for %s@%s is not in the local module cache: %w", modPath, version, err,
+			)
+		}
+		return parseModFile(modPath, version, body)
+	}
+
+	// The proxy is the source of record. The cache is consulted first
+	// only when asked, and otherwise stands in for it when there is no
+	// network, or when the module could not be fetched.
+	if preferCache {
+		if modFile, err := readCache(); err == nil {
+			return modFile, nil
+		}
+	}
+	if client == nil {
+		return readCache()
 	}
 
 	url := fmt.Sprintf("%s/%s/@v/%s.mod", proxyURL, escapedPath, version)
@@ -415,11 +456,18 @@ func (d *Decomposer) fetchModFile(modPath, version, proxyURL string, client *htt
 
 	resp, err := client.Do(req)
 	if err != nil {
+		// The module may still be on disk from an earlier build.
+		if modFile, cacheErr := readCache(); cacheErr == nil {
+			return modFile, nil
+		}
 		return nil, fmt.Errorf("fetching %s: %w", url, err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
+		if modFile, cacheErr := readCache(); cacheErr == nil {
+			return modFile, nil
+		}
 		return nil, fmt.Errorf("fetching %s: status %d", url, resp.StatusCode)
 	}
 
@@ -428,14 +476,60 @@ func (d *Decomposer) fetchModFile(modPath, version, proxyURL string, client *htt
 		return nil, fmt.Errorf("reading response body: %w", err)
 	}
 
-	// Parse with ParseLax for older modules
-	cacheKey := fmt.Sprintf("%s@%s", modPath, version)
-	modFile, err := modfile.ParseLax(cacheKey+"/go.mod", body, nil)
+	return parseModFile(modPath, version, body)
+}
+
+// parseModFile parses a module's go.mod. ParseLax keeps older modules,
+// whose files may use directives this version of the parser does not
+// know, from failing the whole read.
+func parseModFile(modPath, version string, body []byte) (*modfile.File, error) {
+	name := fmt.Sprintf("%s@%s", modPath, version)
+	modFile, err := modfile.ParseLax(name+"/go.mod", body, nil)
 	if err != nil {
-		return nil, fmt.Errorf("parsing go.mod for %s: %w", cacheKey, err)
+		return nil, fmt.Errorf("parsing go.mod for %s: %w", name, err)
 	}
 
 	return modFile, nil
+}
+
+// goModCacheDir returns the directory the go command downloads modules
+// into, which holds a copy of every go.mod it has fetched.
+func goModCacheDir() string {
+	if dir := os.Getenv("GOMODCACHE"); dir != "" {
+		return filepath.Join(dir, "cache", "download")
+	}
+	// GOPATH may list several directories; the go command downloads
+	// into the first.
+	if gopath := os.Getenv("GOPATH"); gopath != "" {
+		if dir, _, _ := strings.Cut(gopath, string(os.PathListSeparator)); dir != "" {
+			return filepath.Join(dir, "pkg", "mod", "cache", "download")
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, "go", "pkg", "mod", "cache", "download")
+}
+
+// readCachedModFile reads a module's go.mod from the local module
+// cache. The path is escaped the same way the proxy URL is, so a module
+// with capitals in its path resolves to the same file the go command
+// wrote.
+func readCachedModFile(escapedPath, version string) ([]byte, error) {
+	dir := goModCacheDir()
+	if dir == "" {
+		return nil, fmt.Errorf("no module cache directory")
+	}
+
+	escapedVersion, err := module.EscapeVersion(version)
+	if err != nil {
+		return nil, fmt.Errorf("escaping version %q: %w", version, err)
+	}
+
+	return os.ReadFile(filepath.Join(
+		dir, filepath.FromSlash(escapedPath), "@v", escapedVersion+".mod",
+	))
 }
 
 // resolveModule resolves a module path and version considering replace directives
