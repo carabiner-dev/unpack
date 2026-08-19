@@ -7,10 +7,12 @@ package sbom
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/protobom/protobom/pkg/reader"
 	protosbom "github.com/protobom/protobom/pkg/sbom"
+	"github.com/sirupsen/logrus"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 )
@@ -53,7 +55,22 @@ func (u *Unpacker) Extract(_ context.Context, subject api.DecomposableSubject) (
 
 	doc, err := reader.New().ParseStream(r)
 	if err != nil {
-		return nil, fmt.Errorf("parsing SBOM data: %w", err)
+		// protobom only knows bare documents. The subject may still be a
+		// bill of materials, wrapped in a security envelope, so try to
+		// open it before reporting the format as unreadable.
+		envDoc, envErr := parseEnveloped(r)
+		switch {
+		case envErr == nil:
+			doc = envDoc
+		case errors.Is(envErr, errNoEnvelopedSBOM):
+			// We did open an envelope, it just is not carrying an SBOM.
+			// That diagnosis is worth more than protobom's, which only
+			// ever saw the envelope.
+			return nil, fmt.Errorf("parsing SBOM data: %w", envErr)
+		default:
+			logrus.Debugf("data was not read as an enveloped SBOM either: %v", envErr)
+			return nil, fmt.Errorf("parsing SBOM data: %w", err)
+		}
 	}
 
 	return []*protosbom.NodeList{doc.GetNodeList()}, nil
