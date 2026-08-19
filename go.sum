@@ -99,6 +99,8 @@ github.com/carabiner-dev/github v0.2.3 h1:sky7HXTrgbk9G9gEWBmIeCExprHdnZvKOsFW1b
 github.com/carabiner-dev/github v0.2.3/go.mod h1:8shcF+ie+DvTTQFP0GUR+Nm67w8AxI/kceqT/vWV39Y=
 github.com/carabiner-dev/hasher v0.2.4 h1:VaI04+FBHaNV/UEy0NmVoRg0pKLFeN76KPOHbTDvvhE=
 github.com/carabiner-dev/hasher v0.2.4/go.mod h1:W83zi1+E3he4Cpldss8yoXNj6GdDUpr3M45dOAzem/w=
+github.com/carabiner-dev/jsonl v0.2.1 h1:2cBv4mGoqWfVkeQO1krIGds9WUm9Jet89QdqWLodlfo=
+github.com/carabiner-dev/jsonl v0.2.1/go.mod h1:fTypVHMYsAnn6LlW0SqER6XUaI9Wlc/Kv6uyMF+NmKo=
 github.com/carabiner-dev/openeox v1.0.0 h1:iVfs9jgu2s2Jrb95bJK5FWMx55qF3aHBk9RhUOkZKco=
 github.com/carabiner-dev/openeox v1.0.0/go.mod h1:+6i8M7PhtWk2jRtUC1anZnhmOr5cXKMLGYjwFcqPDa0=
 github.com/carabiner-dev/osv v0.1.1 h1:koVLTk5BpeV2ARvLtz7YNy2QgNGC1REUOXOCcPvIaaY=

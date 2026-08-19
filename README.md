@@ -116,7 +116,21 @@ unpack sbom -p /path/to/sbom.spdx.json --format=cyclonedx
 
 # Convert an SPDX 2.3 SBOM to SPDX 3.0.1
 unpack sbom -p /path/to/sbom.spdx.json --format=spdx3
+
+# Read an SBOM out of the attestation carrying it
+unpack sbom -p /path/to/sbom.intoto.json
 ```
+
+SBOMs often travel wrapped in a security envelope rather than as bare
+documents. `sbom` reads them either way: when the file is not a bill of
+materials itself, it is opened as a sigstore bundle, a DSSE envelope or a
+plain in-toto statement, and the SBOM is read from the predicate inside.
+This makes `unpack sbom --attest` output readable straight back.
+
+Note that opening an envelope is not verifying it. Signatures travel along
+with the statement but `sbom` does not check them, so the data it returns is
+exactly as trustworthy as the file it came from. Verify attestations with a
+tool that does before trusting what they carry.
 
 ### `unpack ls`: List Discovered Codebases
 

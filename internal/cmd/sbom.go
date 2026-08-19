@@ -90,6 +90,11 @@ func addSBOM(parent *cobra.Command) {
 
 Unpack sbom takes an SBOM document and returns dependency data from its contents.
 
+The SBOM can be a bare document or one wrapped in a security envelope: sigstore
+bundles, DSSE envelopes and in-toto statements are opened and the bill of
+materials is read from the predicate they carry. Envelopes are opened, not
+verified: their signatures are not checked here.
+
 `, appname),
 		Use:               "sbom [flags] source",
 		SilenceUsage:      false,
