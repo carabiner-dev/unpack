@@ -18,18 +18,16 @@ Whether you're a developer, security researcher, or compliance officer, Unpack h
 
 ---
 
-:warning: `unpack` is an experimental project. We are actively developing it and welcome feedback. Support currently covers Go, Rust, JavaScript (npm, pnpm and yarn), Maven, Python, PHP (Composer) and Ruby (Bundler) codebases, with more on the way. Dependency extraction from SBOMs is powered by the native [protobom unserializers](http://github.com/protobom/protobom/).
-
----
-
 ## Installation
 
-### From Pre-releases
-Pre-release binaries are available for Linux, macOS, and Windows.
+### From Releases
+
+Built binaries are available for Linux, macOS, and Windows.
 
 [**Download the latest prerelease**](https://github.com/carabiner-dev/unpack/releases/latest)
 
 ### From Source
+
 To install the latest development version directly from the source, use the Go compiler:
 
 ```bash
@@ -49,7 +47,8 @@ Use `extract` to discover dependencies directly from a source code repository.
 # Analyze the codebase in the current directory and display a dependency tree
 unpack extract .
 ```
-```
+
+```text
 pkg:golang/github.com/carabiner-dev/unpack@v0.1.0-pre3.1+0400cac1
   ├ pkg:golang/github.com/titanous/rocacheck@v0.0.0-20171023193734-afe73141d399
   ├ pkg:golang/google.golang.org/protobuf@v1.36.5
