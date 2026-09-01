@@ -5,12 +5,12 @@ go 1.25.12
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/carabiner-dev/attestation v0.2.1
-	github.com/carabiner-dev/collector v0.3.12
+	github.com/carabiner-dev/collector v0.3.13
 	github.com/carabiner-dev/command v0.3.1
 	github.com/carabiner-dev/github v0.2.3
 	github.com/carabiner-dev/hasher v0.2.4
 	github.com/carabiner-dev/protograph v0.0.0-20260117204235-4dc9de9c0db5
-	github.com/carabiner-dev/signer v0.6.0
+	github.com/carabiner-dev/signer v0.6.1
 	github.com/carabiner-dev/termtable v1.1.0
 	github.com/fatih/color v1.19.0
 	github.com/go-git/go-git/v5 v5.19.2

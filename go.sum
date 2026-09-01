@@ -89,8 +89,8 @@ github.com/bradleyjkemp/cupaloy/v2 v2.8.0 h1:any4BmKE+jGIaMpnU8YgH/I2LPiLBufr6oM
 github.com/bradleyjkemp/cupaloy/v2 v2.8.0/go.mod h1:bm7JXdkRd4BHJk9HpwqAI8BoAY1lps46Enkdqw6aRX0=
 github.com/carabiner-dev/attestation v0.2.1 h1:VhjV5YlO9TsW50Sr/Zd54bdbZhhDAqgxC3kB9z1I+3Q=
 github.com/carabiner-dev/attestation v0.2.1/go.mod h1:O84vF84RZG3pJO/6BYrPs718bZviHF5DKajP1HsrDpw=
-github.com/carabiner-dev/collector v0.3.12 h1:hHnsVl2qkH+eClExvPMuOaVnN89CJLb+BMpUSGu3kIE=
-github.com/carabiner-dev/collector v0.3.12/go.mod h1:hqiDafkQz0Ng9qBomYrvbKse6GFz1PfzvJnQ/tBBKwo=
+github.com/carabiner-dev/collector v0.3.13 h1:yCNZ/AJ6WcLJmVIh9XpOgXq8f5LHY3V/WWuXh5xzafo=
+github.com/carabiner-dev/collector v0.3.13/go.mod h1:8q8Eu75YB6L7nQxiH5qP+yUrRX3bs8PPgyvUEq6/oJw=
 github.com/carabiner-dev/command v0.3.1 h1:iBkh+AjwziFZmyihv/izypCV74nkmaslZxb5AgP7GP4=
 github.com/carabiner-dev/command v0.3.1/go.mod h1:0mWfS5BU/krtaI1hgD5wjmLpjWVlf38KY8usA8zfF5c=
 github.com/carabiner-dev/github v0.2.3 h1:sky7HXTrgbk9G9gEWBmIeCExprHdnZvKOsFW1bUZXqc=
@@ -109,8 +109,8 @@ github.com/carabiner-dev/predicates v0.5.0 h1:CG2xO5xTXWXakjJkAFuS2xSA2olP9Ew25k
 github.com/carabiner-dev/predicates v0.5.0/go.mod h1:EUm2p0CwKoUuc+OLbGkoxLdRqBrg/r957b8iN/ACWSA=
 github.com/carabiner-dev/protograph v0.0.0-20260117204235-4dc9de9c0db5 h1:afkSTkskx13opXqaKMz16c4+5xYHOU/q0mBOndUL3Vk=
 github.com/carabiner-dev/protograph v0.0.0-20260117204235-4dc9de9c0db5/go.mod h1:oP90agfO9tjU30S5N9gDSIgmUg5x94C1uCjeugjJtn4=
-github.com/carabiner-dev/signer v0.6.0 h1:ke8aXVLTNl5nCYqr3ALvWF+/5bXyr0DduhiETPHTl9U=
-github.com/carabiner-dev/signer v0.6.0/go.mod h1:dg1OvK3lTePsPrbvoBZO5SBt0DHd2/NLdM2wfB2/4/8=
+github.com/carabiner-dev/signer v0.6.1 h1:3GnpNt16Qzw476lgCGMZRThtofTy7Ke1A60HqNboWnc=
+github.com/carabiner-dev/signer v0.6.1/go.mod h1:dg1OvK3lTePsPrbvoBZO5SBt0DHd2/NLdM2wfB2/4/8=
 github.com/carabiner-dev/spdx3 v0.1.0 h1:Q6nMLXV0BhtqDQuwRDOaJDZR670TK4jdOvZqvTW/ctY=
 github.com/carabiner-dev/spdx3 v0.1.0/go.mod h1:d/t010TrZvYZBeYGpvHeId6QpRvGLlqK7cy0E81npPA=
 github.com/carabiner-dev/termtable v1.1.0 h1:b/7IqM52Wqwi9njjnAEIDddUYyX23msFkQVihkwarDs=
