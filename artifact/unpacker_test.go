@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/artifact/gobinary"
 )
 
 // fakeDecomposer claims files whose contents start with its magic and
@@ -109,8 +110,14 @@ func testFS() fstest.MapFS {
 	}
 }
 
+// emptyUnpacker returns an unpacker with the default options and none of the
+// built-in decomposers, so tests control exactly what runs.
+func emptyUnpacker() *Unpacker {
+	return &Unpacker{Options: DefaultOptions, decomposers: map[string]Decomposer{}}
+}
+
 func newTestUnpacker(decomposers ...Decomposer) *Unpacker {
-	u := NewUnpacker()
+	u := emptyUnpacker()
 	for _, d := range decomposers {
 		u.RegisterDecomposer(d)
 	}
@@ -245,7 +252,7 @@ func TestExtractSwitches(t *testing.T) {
 
 	t.Run("no decomposers", func(t *testing.T) {
 		t.Parallel()
-		u := NewUnpacker()
+		u := emptyUnpacker()
 		lists, err := u.Extract(t.Context(), &Filesystem{FS: testFS()})
 		require.NoError(t, err)
 		assert.Empty(t, lists)
@@ -281,9 +288,59 @@ func (*untraited) ExtractArtifact(io.ReaderAt, string, *api.DecomposerOptions) (
 	return nil, nil
 }
 
-func TestRegisterDecomposer(t *testing.T) {
+func TestNewUnpacker(t *testing.T) {
 	t.Parallel()
 	u := NewUnpacker()
+	assert.Equal(t, DefaultOptions, u.Options)
+
+	// The built-in decomposers are registered under their names.
+	require.Contains(t, u.decomposers, gobinary.Name)
+	assert.Equal(t, gobinary.Name, u.decomposers[gobinary.Name].Name())
+
+	// And their defaults are read by DefaultsFor.
+	assert.True(t, u.DefaultsFor("image").Decomposers[gobinary.Name])
+	assert.False(t, u.DefaultsFor("codebase").Decomposers[gobinary.Name])
+}
+
+// TestExtractGoBinary runs the default unpacker end to end on a real Go
+// executable: the test binary itself.
+func TestExtractGoBinary(t *testing.T) {
+	t.Parallel()
+	exe, err := os.Executable()
+	require.NoError(t, err)
+
+	u := NewUnpacker()
+	u.Options.Networking = api.NetworkDisabled
+	lists, err := u.Extract(t.Context(), &File{Path: exe})
+	require.NoError(t, err)
+	require.Len(t, lists, 1)
+
+	nl := lists[0]
+	roots := nl.GetRootElements()
+	require.Len(t, roots, 1)
+	file := nl.GetNodeByID(roots[0])
+	assert.Equal(t, sbom.Node_FILE, file.GetType())
+	assert.Equal(t, filepath.Base(exe), file.GetName())
+	assert.Len(t, file.GetHashes()[int32(sbom.HashAlgorithm_SHA256)], 64)
+
+	// The file was generated from the unpack module, which depends on the
+	// modules linked into the test binary.
+	var pkgs []string
+	for _, e := range nl.GetEdges() {
+		if e.GetFrom() == file.GetId() {
+			assert.Equal(t, sbom.Edge_generatedFrom, e.GetType())
+			pkgs = append(pkgs, e.GetTo()...)
+		}
+	}
+	require.Len(t, pkgs, 1)
+	pkg := nl.GetNodeByID(pkgs[0])
+	assert.Equal(t, "github.com/carabiner-dev/unpack", pkg.GetName())
+	assert.NotEmpty(t, nl.GetNodesByIdentifier("purl", "pkg:golang/github.com/google/uuid@v1.6.0"))
+}
+
+func TestRegisterDecomposer(t *testing.T) {
+	t.Parallel()
+	u := emptyUnpacker()
 
 	// Non-artifact decomposers are ignored.
 	u.RegisterDecomposer(plainDecomposer{})

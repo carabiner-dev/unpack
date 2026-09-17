@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/artifact/gobinary"
 )
 
 // Ensure the artifact unpacker satisfies the unified Unpacker interface.
@@ -63,8 +64,10 @@ var DefaultOptions = Options{
 // built-in artifact decomposers.
 func NewUnpacker() *Unpacker {
 	return &Unpacker{
-		Options:     DefaultOptions,
-		decomposers: map[string]Decomposer{},
+		Options: DefaultOptions,
+		decomposers: map[string]Decomposer{
+			gobinary.Name: gobinary.New(),
+		},
 	}
 }
 
