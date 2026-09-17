@@ -535,9 +535,11 @@ type Decomposer interface {
 Register built-ins in `artifact.NewUnpacker`, keyed by `Name`. Then add
 a row to the tables in the decomposers README.
 
-Test with the test binary itself when your format is Go's, as the
-gobinary tests do: every `go test` binary is a Go executable with build
-information. Otherwise put a small real artifact under `testdata/`. Check
+Test on a real artifact. For Go executables use `internal/testbin`, which
+builds a tiny fixture program at test time so its build information is
+complete on every toolchain (test binaries themselves carried an empty
+module list before Go 1.27). For other formats put a small real artifact
+under `testdata/`. Check
 `Matches` on real headers and on noise, `ExtractArtifact` on a real file
 and on a file that passes the filter but is not yours, and the graph
 shape. A test through `artifact.NewUnpacker` with a `File` subject

@@ -13,14 +13,15 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/carabiner-dev/unpack/internal/testbin"
 )
 
-// artifactDir builds a directory holding a Go executable (a copy of the
-// test binary) next to a file that is no artifact, and returns its path.
+// artifactDir builds a directory holding a Go executable next to a file
+// that is no artifact, and returns its path.
 func artifactDir(t *testing.T) string {
 	t.Helper()
-	exe, err := os.Executable()
-	require.NoError(t, err)
+	exe, _ := testbin.Build(t)
 	bin, err := os.ReadFile(exe)
 	require.NoError(t, err)
 
@@ -61,7 +62,7 @@ func TestArtifactCommandSPDX(t *testing.T) {
 	out := string(data)
 	assert.Contains(t, out, `"tool"`, "the file node carries the artifact name")
 	assert.Contains(t, out, "pkg:golang/github.com/carabiner-dev/unpack")
-	assert.Contains(t, out, "pkg:golang/github.com/google/uuid@v1.6.0")
+	assert.Contains(t, out, "pkg:golang/github.com/google/uuid@")
 	assert.Contains(t, out, "pkg:golang/stdlib@")
 }
 

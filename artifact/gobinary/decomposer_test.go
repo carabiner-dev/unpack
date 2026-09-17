@@ -15,22 +15,22 @@ import (
 	"github.com/stretchr/testify/require"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/internal/testbin"
 	"github.com/carabiner-dev/unpack/source/golang"
 )
 
-// The module every test binary in this repository belongs to.
+// The module the fixture executable belongs to.
 const thisModule = "github.com/carabiner-dev/unpack"
 
-// openSelf opens the running test binary, which is a Go executable with
-// build information like any other.
-func openSelf(t *testing.T) *os.File {
+// openFixture builds the fixture executable and opens it, returning the
+// file and the build information it carries for the assertions to use.
+func openFixture(t *testing.T) (*os.File, *debug.BuildInfo) {
 	t.Helper()
-	exe, err := os.Executable()
-	require.NoError(t, err)
-	f, err := os.Open(exe)
+	path, bi := testbin.Build(t)
+	f, err := os.Open(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, f.Close()) })
-	return f
+	return f, bi
 }
 
 func TestTraits(t *testing.T) {
@@ -49,15 +49,15 @@ func TestMatches(t *testing.T) {
 		header []byte
 		want   bool
 	}{
-		"elf":              {[]byte("\x7fELF\x02\x01\x01"), true},
-		"pe":               {[]byte("MZ\x90\x00\x03"), true},
-		"macho64 le":       {[]byte("\xcf\xfa\xed\xfe\x07"), true},
-		"macho32 be":       {[]byte("\xfe\xed\xfa\xce\x00"), true},
-		"script":           {[]byte("#!/bin/sh\n"), false},
-		"text":             {[]byte("hello world"), false},
-		"short":            {[]byte("\x7fE"), false},
-		"empty":            {nil, false},
-		"self test binary": {selfHeader(t), true},
+		"elf":            {[]byte("\x7fELF\x02\x01\x01"), true},
+		"pe":             {[]byte("MZ\x90\x00\x03"), true},
+		"macho64 le":     {[]byte("\xcf\xfa\xed\xfe\x07"), true},
+		"macho32 be":     {[]byte("\xfe\xed\xfa\xce\x00"), true},
+		"script":         {[]byte("#!/bin/sh\n"), false},
+		"text":           {[]byte("hello world"), false},
+		"short":          {[]byte("\x7fE"), false},
+		"empty":          {nil, false},
+		"fixture binary": {fixtureHeader(t), true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -66,20 +66,20 @@ func TestMatches(t *testing.T) {
 	}
 }
 
-func selfHeader(t *testing.T) []byte {
+func fixtureHeader(t *testing.T) []byte {
 	t.Helper()
-	f := openSelf(t)
+	f, _ := openFixture(t)
 	header := make([]byte, 64)
 	n, err := f.ReadAt(header, 0)
 	require.NoError(t, err)
 	return header[:n]
 }
 
-func TestExtractArtifactSelf(t *testing.T) {
+func TestExtractArtifactFixture(t *testing.T) {
 	t.Parallel()
-	f := openSelf(t)
+	f, bi := openFixture(t)
 
-	nl, err := New().ExtractArtifact(f, "gobinary.test", &api.DecomposerOptions{
+	nl, err := New().ExtractArtifact(f, "fixture", &api.DecomposerOptions{
 		Networking: api.NetworkDisabled,
 	})
 	require.NoError(t, err)
@@ -91,7 +91,7 @@ func TestExtractArtifactSelf(t *testing.T) {
 	require.NotNil(t, root)
 	assert.Equal(t, thisModule, root.GetName())
 	assert.Equal(t, "pkg:golang/"+thisModule, root.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)],
-		"a test binary's main module is (devel), which leaves the purl unversioned")
+		"the fixture's main module is (devel), which leaves the purl unversioned")
 	assert.Equal(t, []sbom.Purpose{sbom.Purpose_APPLICATION}, root.GetPrimaryPurpose())
 
 	props := map[string]string{}
@@ -100,14 +100,14 @@ func TestExtractArtifactSelf(t *testing.T) {
 	}
 	assert.Equal(t, runtime.GOOS, props[PropertyGOOS])
 	assert.Equal(t, runtime.GOARCH, props[PropertyGOARCH])
-	assert.Equal(t, thisModule+"/artifact/gobinary.test", props[PropertyPackage])
+	assert.Equal(t, testbin.Package, props[PropertyPackage])
 
-	// Modules linked into this very binary are in the graph, with their
-	// checksums, hanging off the root.
-	protobom := nl.GetNodesByIdentifier("purl", "pkg:golang/github.com/protobom/protobom@"+versionOf(t, "github.com/protobom/protobom"))
-	require.Len(t, protobom, 1)
-	assert.NotEmpty(t, protobom[0].GetHashes()[int32(sbom.HashAlgorithm_SHA256)])
-	stdlib := nl.GetNodesByIdentifier("purl", "pkg:golang/stdlib@"+goRelease(runtime.Version()))
+	// The module linked into the fixture is in the graph, with its
+	// checksum, hanging off the root.
+	uuid := nl.GetNodesByIdentifier("purl", "pkg:golang/github.com/google/uuid@"+versionOf(t, bi, "github.com/google/uuid"))
+	require.Len(t, uuid, 1)
+	assert.NotEmpty(t, uuid[0].GetHashes()[int32(sbom.HashAlgorithm_SHA256)])
+	stdlib := nl.GetNodesByIdentifier("purl", "pkg:golang/stdlib@"+goRelease(bi.GoVersion))
 	require.Len(t, stdlib, 1)
 
 	// The root depends on every linked module. Edges among the modules
@@ -120,24 +120,20 @@ func TestExtractArtifactSelf(t *testing.T) {
 			rootDeps = append(rootDeps, e.GetTo()...)
 		}
 	}
-	assert.Contains(t, rootDeps, protobom[0].GetId())
+	assert.Contains(t, rootDeps, uuid[0].GetId())
 	assert.Contains(t, rootDeps, stdlib[0].GetId())
-	bi, ok := debug.ReadBuildInfo()
-	require.True(t, ok)
 	assert.Len(t, rootDeps, len(bi.Deps)+1, "every linked module plus the stdlib")
 }
 
-// versionOf reads a dependency's version from the test binary's own build info.
-func versionOf(t *testing.T, path string) string {
+// versionOf reads a dependency's version from build information.
+func versionOf(t *testing.T, bi *debug.BuildInfo, path string) string {
 	t.Helper()
-	bi, ok := debug.ReadBuildInfo()
-	require.True(t, ok)
 	for _, dep := range bi.Deps {
 		if dep.Path == path {
 			return dep.Version
 		}
 	}
-	t.Fatalf("%s is not linked into the test binary", path)
+	t.Fatalf("%s is not linked into the fixture", path)
 	return ""
 }
 
@@ -169,8 +165,7 @@ func TestExtract(t *testing.T) {
 	_, err = d.Extract(&api.DecomposerOptions{WorkDir: "/nonexistent/binary"})
 	require.Error(t, err)
 
-	exe, err := os.Executable()
-	require.NoError(t, err)
+	exe, _ := testbin.Build(t)
 	nl, err := d.Extract(&api.DecomposerOptions{WorkDir: exe, Networking: api.NetworkDisabled})
 	require.NoError(t, err)
 	require.NotNil(t, nl)
@@ -179,8 +174,8 @@ func TestExtract(t *testing.T) {
 
 func TestExtractArtifactVersionOverride(t *testing.T) {
 	t.Parallel()
-	f := openSelf(t)
-	nl, err := New().ExtractArtifact(f, "gobinary.test", &api.DecomposerOptions{
+	f, _ := openFixture(t)
+	nl, err := New().ExtractArtifact(f, "fixture", &api.DecomposerOptions{
 		Version:    "v9.9.9",
 		CommitHash: "abc123",
 		Networking: api.NetworkDisabled,

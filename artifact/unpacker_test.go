@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -23,6 +24,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/artifact/gobinary"
+	"github.com/carabiner-dev/unpack/internal/testbin"
 )
 
 // fakeDecomposer claims files whose contents start with its magic and
@@ -303,11 +305,10 @@ func TestNewUnpacker(t *testing.T) {
 }
 
 // TestExtractGoBinary runs the default unpacker end to end on a real Go
-// executable: the test binary itself.
+// executable built for the purpose.
 func TestExtractGoBinary(t *testing.T) {
 	t.Parallel()
-	exe, err := os.Executable()
-	require.NoError(t, err)
+	exe, _ := testbin.Build(t)
 
 	u := NewUnpacker()
 	u.Options.Networking = api.NetworkDisabled
@@ -324,7 +325,7 @@ func TestExtractGoBinary(t *testing.T) {
 	assert.Len(t, file.GetHashes()[int32(sbom.HashAlgorithm_SHA256)], 64)
 
 	// The file was generated from the unpack module, which depends on the
-	// modules linked into the test binary.
+	// module linked into the fixture.
 	var pkgs []string
 	for _, e := range nl.GetEdges() {
 		if e.GetFrom() == file.GetId() {
@@ -335,7 +336,18 @@ func TestExtractGoBinary(t *testing.T) {
 	require.Len(t, pkgs, 1)
 	pkg := nl.GetNodeByID(pkgs[0])
 	assert.Equal(t, "github.com/carabiner-dev/unpack", pkg.GetName())
-	assert.NotEmpty(t, nl.GetNodesByIdentifier("purl", "pkg:golang/github.com/google/uuid@v1.6.0"))
+	assert.NotEmpty(t, nodesWithPurlPrefix(nl, "pkg:golang/github.com/google/uuid@"))
+}
+
+// nodesWithPurlPrefix returns the nodes whose purl starts with prefix.
+func nodesWithPurlPrefix(nl *sbom.NodeList, prefix string) []*sbom.Node {
+	var nodes []*sbom.Node
+	for _, n := range nl.GetNodes() {
+		if strings.HasPrefix(n.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)], prefix) {
+			nodes = append(nodes, n)
+		}
+	}
+	return nodes
 }
 
 func TestRegisterDecomposer(t *testing.T) {

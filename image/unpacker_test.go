@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/internal/testbin"
 	"github.com/carabiner-dev/unpack/system"
 )
 
@@ -146,14 +147,13 @@ func TestExtractSingleArch(t *testing.T) {
 	)
 }
 
-// TestExtractSingleArchArtifacts puts a Go executable (the test binary) in
-// the image and checks that the artifact scan finds it, hangs it off the
-// image node and can be switched off, wholesale or by decomposer.
+// TestExtractSingleArchArtifacts puts a Go executable in the image and
+// checks that the artifact scan finds it, hangs it off the image node and
+// can be switched off, wholesale or by decomposer.
 func TestExtractSingleArchArtifacts(t *testing.T) {
 	t.Parallel()
 
-	exe, err := os.Executable()
-	require.NoError(t, err)
+	exe, _ := testbin.Build(t)
 	bin, err := os.ReadFile(exe)
 	require.NoError(t, err)
 
@@ -198,12 +198,18 @@ func TestExtractSingleArchArtifacts(t *testing.T) {
 		assert.Equal(t, hex.EncodeToString(sum[:]), tool.GetHashes()[int32(sbom.HashAlgorithm_SHA256)])
 
 		// The file was generated from the unpack module, which carries the
-		// modules linked into the binary.
+		// module linked into the binary.
 		gen := nl.GetEdgeByType(tool.GetId(), sbom.Edge_generatedFrom)
 		require.NotNil(t, gen)
 		require.Len(t, gen.GetTo(), 1)
 		assert.Equal(t, "github.com/carabiner-dev/unpack", nl.GetNodeByID(gen.GetTo()[0]).GetName())
-		assert.NotEmpty(t, nl.GetNodesByIdentifier("purl", "pkg:golang/github.com/google/uuid@v1.6.0"))
+		var uuidFound bool
+		for _, n := range nl.GetNodes() {
+			if strings.HasPrefix(n.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)], "pkg:golang/github.com/google/uuid@") {
+				uuidFound = true
+			}
+		}
+		assert.True(t, uuidFound, "the linked module is in the graph")
 
 		// The system packages are still there.
 		assert.ElementsMatch(t, []string{"musl", "busybox-binsh"}, pkgs)
