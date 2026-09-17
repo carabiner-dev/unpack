@@ -24,6 +24,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/artifact/gobinary"
+	"github.com/carabiner-dev/unpack/artifact/rustbinary"
 	"github.com/carabiner-dev/unpack/internal/testbin"
 )
 
@@ -378,12 +379,14 @@ func TestNewUnpacker(t *testing.T) {
 	assert.Equal(t, DefaultOptions, u.Options)
 
 	// The built-in decomposers are registered under their names.
-	require.Contains(t, u.decomposers, gobinary.Name)
-	assert.Equal(t, gobinary.Name, u.decomposers[gobinary.Name].Name())
+	for _, name := range []string{gobinary.Name, rustbinary.Name} {
+		require.Contains(t, u.decomposers, name)
+		assert.Equal(t, name, u.decomposers[name].Name())
 
-	// And their defaults are read by DefaultsFor.
-	assert.True(t, u.DefaultsFor("image").Decomposers[gobinary.Name])
-	assert.False(t, u.DefaultsFor("codebase").Decomposers[gobinary.Name])
+		// And their defaults are read by DefaultsFor.
+		assert.True(t, u.DefaultsFor("image").Decomposers[name])
+		assert.False(t, u.DefaultsFor("codebase").Decomposers[name])
+	}
 }
 
 // TestExtractGoBinary runs the default unpacker end to end on a real Go

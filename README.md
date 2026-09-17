@@ -161,7 +161,8 @@ unpack ls --ignore "*/testdata/*" --ignore "temp/" .
 ### `unpack artifact`: Inspect Built Artifacts
 
 Some artifacts carry their own dependency data. A Go executable records
-the exact modules linked into it, with versions and checksums, and `artifact`
+the exact modules linked into it, with versions and checksums, and a Rust
+executable built with cargo-auditable records its crate graph. `artifact`
 reads them straight out of the file: no source tree, no build.
 
 ```bash
@@ -206,6 +207,7 @@ inventory, and the modules built into any
 | Artifact | Reads | Remote enrichment |
 | --- | --- | --- |
 | [Go executables](docs/decomposers/gobinary.md) | Embedded build information | Go module proxy + deps.dev |
+| [Rust executables](docs/decomposers/rustbinary.md) | The cargo-auditable record | crates.io API |
 
 Support for more ecosystems is planned.
 

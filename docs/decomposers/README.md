@@ -25,6 +25,7 @@ container image `unpack image` scans.
 | Artifact | Entry point | Reads | Runs by default under | Remote enrichment |
 |----------|------------|-------|-----------------------|-------------------|
 | [Go executables](gobinary.md) | `artifact/gobinary/` | Embedded build information (`debug/buildinfo`) | images, system roots; not codebases | Go module proxy + deps.dev, through the Go decomposer |
+| [Rust executables](rustbinary.md) | `artifact/rustbinary/` | The cargo-auditable record (`.dep-v0` section) | images, system roots; not codebases | crates.io API, through the Rust decomposer |
 
 ## Common capabilities
 
@@ -62,6 +63,8 @@ decomposers uniformly.
 | **Go binary:** build info read | works | works | works |
 | **Go binary:** module-to-module edges from the local module cache | works | works | works |
 | **Go binary:** everything else | as Go | as Go | as Go |
+| **Rust binary:** record read, full graph | works | works | works |
+| **Rust binary:** crates.io API (enrichment) | skip | yes | yes |
 | **Maven:** POM fetch (dependency tree) | skip | yes | yes |
 | **Maven:** metadata fetch (snapshots, ranges) | skip | yes | yes |
 | **Maven:** checksum files (.sha1, .sha256) | skip | yes | yes |
@@ -119,6 +122,9 @@ output. Three flags control the inclusion of additional dependency types:
   readers. See the [Python](python.md) and [PHP](composer.md) pages.
 - Go executables record the modules linked, with no dependency kinds, so
   the flags are no-ops for the [Go binary](gobinary.md) decomposer too.
+- cargo-auditable records which crates were build dependencies, so
+  `--include-build` works for the [Rust binary](rustbinary.md) decomposer;
+  the other two flags are no-ops there.
 
 ## Per-decomposer docs
 

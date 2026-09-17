@@ -174,30 +174,34 @@ func (dt *DependencyTree) determineEdgeType(_, dep *LockPackage) sbom.Edge_Type 
 
 // createNode creates a protobom Node for a Cargo package.
 func (dt *DependencyTree) createNode(pkg *LockPackage) *sbom.Node {
-	purl := fmt.Sprintf("pkg:cargo/%s@%s", pkg.Name, pkg.Version)
+	return NewPackageNode(pkg.Name, pkg.Version, pkg.Checksum)
+}
 
+// NewPackageNode builds the node for a crate at a version, the way every
+// Rust reader renders one: a pkg:cargo purl, the crates.io download URL and
+// the library purpose, plus the crate's SHA-256 when known. Readers of
+// other Cargo data, such as the dependency list embedded in a binary, use
+// it so their packages look the same as the source decomposer's.
+func NewPackageNode(name, version, checksum string) *sbom.Node {
 	node := &sbom.Node{
 		Id:          uuid.NewString(),
 		Type:        sbom.Node_PACKAGE,
-		Name:        pkg.Name,
-		Version:     pkg.Version,
-		FileName:    pkg.Name,
-		UrlDownload: fmt.Sprintf("https://crates.io/api/v1/crates/%s/%s/download", pkg.Name, pkg.Version),
+		Name:        name,
+		Version:     version,
+		FileName:    name,
+		UrlDownload: fmt.Sprintf("https://crates.io/api/v1/crates/%s/%s/download", name, version),
 		Identifiers: map[int32]string{
-			int32(sbom.SoftwareIdentifierType_PURL): purl,
+			int32(sbom.SoftwareIdentifierType_PURL): fmt.Sprintf("pkg:cargo/%s@%s", name, version),
 		},
 		PrimaryPurpose: []sbom.Purpose{
 			sbom.Purpose_LIBRARY,
 		},
 	}
-
-	// Add checksum if available
-	if pkg.Checksum != "" {
+	if checksum != "" {
 		node.Hashes = map[int32]string{
-			int32(sbom.HashAlgorithm_SHA256): pkg.Checksum,
+			int32(sbom.HashAlgorithm_SHA256): checksum,
 		}
 	}
-
 	return node
 }
 
@@ -231,13 +235,24 @@ func (dt *DependencyTree) Enrich(client *CratesIOClient) {
 		roots[PackageKey{Name: pkg.Name, Version: pkg.Version}] = struct{}{}
 	}
 
-	keys := make([]PackageKey, 0, len(dt.nodeCache))
-	for key := range dt.nodeCache {
+	nodes := make(map[PackageKey]*sbom.Node, len(dt.nodeCache))
+	for key, node := range dt.nodeCache {
 		if _, isRoot := roots[key]; !isRoot {
-			keys = append(keys, key)
+			nodes[key] = node
 		}
 	}
+	EnrichNodes(client, nodes)
+}
 
+// EnrichNodes fetches metadata from crates.io for the given crate nodes in
+// parallel and populates license, description, homepage, repository,
+// documentation, crate size and MSRV on them. Nodes for crates that are
+// not on crates.io should be left out: the lookup would only fail.
+func EnrichNodes(client *CratesIOClient, nodes map[PackageKey]*sbom.Node) {
+	keys := make([]PackageKey, 0, len(nodes))
+	for key := range nodes {
+		keys = append(keys, key)
+	}
 	if len(keys) == 0 {
 		return
 	}
@@ -247,7 +262,7 @@ func (dt *DependencyTree) Enrich(client *CratesIOClient) {
 
 	// Apply metadata to nodes
 	for key, meta := range metadata {
-		node, ok := dt.nodeCache[key]
+		node, ok := nodes[key]
 		if !ok {
 			continue
 		}

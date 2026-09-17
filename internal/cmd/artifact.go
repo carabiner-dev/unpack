@@ -31,6 +31,9 @@ type artifactCmdOptions struct {
 
 	// Networking is the network access level for the artifact decomposers.
 	Networking string
+
+	// IncludeBuild includes the dependencies that built the artifact.
+	IncludeBuild bool
 }
 
 // Validate checks the options of all the embedded sets.
@@ -59,6 +62,10 @@ func (ao *artifactCmdOptions) AddFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(
 		&ao.Networking, "networking", networkEssential,
 		"network access level: essential (default), full, or disabled",
+	)
+	cmd.PersistentFlags().BoolVar(
+		&ao.IncludeBuild, "include-build", false,
+		"include the dependencies that built the artifact, when it records them",
 	)
 }
 
@@ -129,6 +136,7 @@ Usage patterns:
 			unpacker := artifact.NewUnpacker()
 			unpacker.Options.Decomposers = opts.Decomposers()
 			unpacker.Options.Skip = opts.SkipPaths
+			unpacker.Options.IncludeBuild = opts.IncludeBuild
 			unpacker.Options.Networking = networkLevel(opts.Networking)
 
 			lists, err := unpacker.Extract(cmd.Context(), subject)

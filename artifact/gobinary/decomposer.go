@@ -22,6 +22,7 @@ import (
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/artifact/internal/executable"
 	"github.com/carabiner-dev/unpack/source/golang"
 )
 
@@ -97,21 +98,7 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 // magic number alone; whether the executable is a Go program is settled by
 // ExtractArtifact.
 func (d *Decomposer) Matches(_ fs.FileInfo, header []byte) bool {
-	if len(header) < 4 {
-		return false
-	}
-	switch {
-	case string(header[:4]) == "\x7fELF":
-		return true
-	case header[0] == 'M' && header[1] == 'Z':
-		return true
-	}
-	switch string(header[:4]) {
-	case "\xfe\xed\xfa\xce", "\xfe\xed\xfa\xcf", // Mach-O 32/64, big endian
-		"\xce\xfa\xed\xfe", "\xcf\xfa\xed\xfe": // Mach-O 32/64, little endian
-		return true
-	}
-	return false
+	return executable.Magic(header)
 }
 
 // ExtractArtifact reads the build information embedded in the executable and
