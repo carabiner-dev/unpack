@@ -108,3 +108,9 @@ output. Three flags control the inclusion of additional dependency types:
 
 See the individual pages linked in the table above for implementation
 details, data sources, and known limitations.
+
+## Writing a new one
+
+[HOWTO.md](HOWTO.md) explains how subjects, unpackers and decomposers fit
+together and walks through implementing a source decomposer, a system
+decomposer, or a new unpacker.
