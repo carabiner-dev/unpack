@@ -74,6 +74,7 @@ func Execute() {
 
 	addExtract(rootCmd)
 	addImage(rootCmd)
+	addArtifact(rootCmd)
 	addSBOM(rootCmd)
 	addLs(rootCmd)
 	addRelease(rootCmd)

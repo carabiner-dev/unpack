@@ -198,6 +198,12 @@ func (ao *artifactOptions) AddFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().BoolVar(
 		&ao.NoArtifacts, ao.Config().LongFlag("no-artifacts"), false, ao.Config().HelpText("no-artifacts"),
 	)
+	ao.AddSkipFlag(cmd)
+}
+
+// AddSkipFlag adds the per-decomposer switch alone, for commands where the
+// scan itself is the point and a master switch would be meaningless.
+func (ao *artifactOptions) AddSkipFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringSliceVar(
 		&ao.SkipArtifacts, ao.Config().LongFlag("skip-artifact"), nil, ao.Config().HelpText("skip-artifact"),
 	)
