@@ -73,9 +73,6 @@ func (d *Decomposer) Requirements(_ *api.DecomposerOptions) []api.Requirement {
 // Extract parses the local go.mod file, fetches dependency information from
 // the Go module proxy, and builds the complete dependency graph as a protobom NodeList.
 func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
-	// Get decomposer-specific options
-	dOpts := d.getOptions(opts)
-
 	// 1. Parse local go.mod
 	goModPath := filepath.Join(opts.WorkDir, "go.mod")
 	modFile, err := d.parseLocalGoMod(goModPath)
@@ -83,29 +80,14 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 		return nil, fmt.Errorf("parsing go.mod: %w", err)
 	}
 
-	// 2. Build dependency tree (reads each module go.mod from the local
-	// module cache, falling back to the proxy when networking allows)
-	trees, sumHashes, err := d.buildDependencyTree(modFile, goModPath, dOpts, opts.Networking)
+	// 2. Reduce go.mod and go.sum to the program's module set
+	set := d.moduleSetFromGoMod(modFile, goModPath)
+
+	// 3. Resolve the graph and render it (see BuildNodeList)
+	nl, err := d.BuildNodeList(set, opts)
 	if err != nil {
-		return nil, fmt.Errorf("building dependency tree: %w", err)
+		return nil, fmt.Errorf("building module graph: %w", err)
 	}
-
-	// 3. Convert to NodeList
-	root := modFile.Module.Mod.Path
-	var goVersion string
-	if modFile.Go != nil {
-		goVersion = modFile.Go.Version
-	}
-	nl, err := d.convertTrees(opts, root, trees, goVersion, sumHashes)
-	if err != nil {
-		return nil, fmt.Errorf("converting graph trees: %w", err)
-	}
-
-	// 4. Enrich with license and VCS data (requires networking >= essential)
-	if opts.Networking >= api.NetworkEssential {
-		d.enrichLicenses(nl, root, dOpts, opts.Networking)
-	}
-
 	return nl, nil
 }
 
@@ -233,88 +215,12 @@ func (d *Decomposer) parseGoSum(path string) (map[string][]string, error) {
 	return hashes, scanner.Err()
 }
 
-// replaceTarget holds the replacement module path and version
-type replaceTarget struct {
-	Path    string
-	Version string
-}
-
-// buildDependencyTree builds the dependency tree by:
-// 1. First, reading all resolved dependencies from go.mod and go.sum (the "resolved set")
-// 2. Fetching go.mod files for each dependency from the proxy
-// 3. Building edges only between modules in the resolved set\
-//
-//nolint:gocritic,unparam
-func (d *Decomposer) buildDependencyTree(root *modfile.File, goModPath string, opts *Options, networking api.NetworkLevel) (*map[string][]string, map[string][]string, error) {
-	trees := make(map[string][]string)
-
-	// Build replace directive map
-	replaces := make(map[string]replaceTarget)
-	for _, r := range root.Replace {
-		if r.New.Path != "" && !isLocalReplace(r.New.Path) {
-			replaces[r.Old.Path] = replaceTarget{Path: r.New.Path, Version: r.New.Version}
-			if r.Old.Version != "" {
-				replaces[fmt.Sprintf("%s@%s", r.Old.Path, r.Old.Version)] = replaceTarget{Path: r.New.Path, Version: r.New.Version}
-			}
-		}
-	}
-
-	// Build exclude set
-	excludes := make(map[string]struct{})
-	for _, e := range root.Exclude {
-		excludes[fmt.Sprintf("%s@%s", e.Mod.Path, e.Mod.Version)] = struct{}{}
-	}
-
-	// Build the resolved set: all modules from go.mod with their resolved versions
-	// Key: module@version, Value: true if direct dependency
-	resolvedSet := make(map[string]bool)
-	rootKey := root.Module.Mod.Path
-
-	for _, req := range root.Require {
-		modPath, version := d.resolveModule(req.Mod.Path, req.Mod.Version, replaces)
-
-		// Check if excluded
-		if _, excluded := excludes[fmt.Sprintf("%s@%s", modPath, version)]; excluded {
-			continue
-		}
-
-		depKey := fmt.Sprintf("%s@%s", modPath, version)
-		resolvedSet[depKey] = !req.Indirect
-		trees[rootKey] = append(trees[rootKey], depKey)
-	}
-
-	// Also parse go.sum to get all transitive dependencies
-	// These are needed to build the complete dependency graph
-	goSumPath := strings.TrimSuffix(goModPath, ".mod") + ".sum"
-	var allSumHashes map[string][]string
-	if sumHashes, err := d.parseGoSum(goSumPath); err == nil {
-		allSumHashes = sumHashes
-		for modKey := range sumHashes {
-			// Don't overwrite direct dependencies already in the set
-			if _, exists := resolvedSet[modKey]; !exists {
-				// Check if excluded
-				if _, excluded := excludes[modKey]; !excluded {
-					resolvedSet[modKey] = false // mark as indirect
-				}
-			}
-		}
-	}
-
-	// Resolve each module's own dependencies from its go.mod. These come
-	// from the local module cache when it holds them, so the graph is
-	// built even with networking disabled; the proxy fills the gaps only
-	// when the network is allowed.
-	d.fetchDependencyGraph(trees, resolvedSet, replaces, opts, networking)
-
-	return &trees, allSumHashes, nil
-}
-
 // fetchDependencyGraph fetches go.mod files for all modules in the resolved set
 // and builds edges between them. Only creates edges to modules that are also in
 // the resolved set (avoiding the exponential explosion of fetching all transitive deps).
 func (d *Decomposer) fetchDependencyGraph(
 	trees map[string][]string, resolvedSet map[string]bool,
-	replaces map[string]replaceTarget, opts *Options, networking api.NetworkLevel,
+	replaces map[string]Replacement, opts *Options, networking api.NetworkLevel,
 ) {
 	// Get list of modules to fetch
 	toFetch := make([]string, 0, len(resolvedSet))
@@ -533,7 +439,7 @@ func readCachedModFile(escapedPath, version string) ([]byte, error) {
 }
 
 // resolveModule resolves a module path and version considering replace directives
-func (d *Decomposer) resolveModule(path, version string, replaces map[string]replaceTarget) (rpath, rversion string) {
+func (d *Decomposer) resolveModule(path, version string, replaces map[string]Replacement) (rpath, rversion string) {
 	// Check for version-specific replace first
 	key := fmt.Sprintf("%s@%s", path, version)
 	if repl, ok := replaces[key]; ok {
