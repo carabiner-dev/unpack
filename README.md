@@ -177,8 +177,12 @@ unpack artifact --sign -o tool.bundle.json ./bin/tool
 
 Container image scans run the same probe over the image filesystem, so a Go
 binary in a distroless image shows up with its modules next to the OS
-package inventory. Use `unpack image --no-artifacts` to skip that, or
-`--skip-artifact gobinary` to leave out one kind of artifact.
+package inventory. The scan skips the distribution's own directories, such
+as `/usr/bin` and `/usr/lib`, whose contents belong to the installed packages,
+and looks where applications land: `/app`, `/opt`, `/usr/local`, the root.
+Use `unpack image --no-artifacts` to skip the scan, `--skip-artifact gobinary`
+to leave out one kind of artifact, `--skip-path` to leave out more paths, and
+`--scan-system-dirs` to scan everything.
 
 ## Supported Ecosystems
 

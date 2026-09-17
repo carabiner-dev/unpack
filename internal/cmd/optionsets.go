@@ -170,6 +170,14 @@ type artifactOptions struct {
 
 	// SkipArtifacts names the artifact decomposers not to run, by name.
 	SkipArtifacts []string
+
+	// SkipPaths lists paths not to scan, as gitignore-style patterns
+	// relative to the root.
+	SkipPaths []string
+
+	// ScanSystemDirs also scans the system directories a whole-system
+	// scan skips by default.
+	ScanSystemDirs bool
 }
 
 var _ command.OptionsSet = (*artifactOptions)(nil)
@@ -187,25 +195,43 @@ func (ao *artifactOptions) Config() *command.OptionsSetConfig {
 					Long: "skip-artifact",
 					Help: "artifact decomposers not to run, by name (e.g. gobinary)",
 				},
+				"skip-path": {
+					Long: "skip-path",
+					Help: "paths not to scan for artifacts, as gitignore-style patterns relative to the root (e.g. /opt/vendor/, *.so)",
+				},
+				"scan-system-dirs": {
+					Long: "scan-system-dirs",
+					Help: "also scan the system directories skipped by default (/usr/bin, /usr/lib, /etc, ...)",
+				},
 			},
 		}
 	}
 	return ao.config
 }
 
-// AddFlags adds the artifact flags to a command.
+// AddFlags adds the artifact flags to a command that scans a whole system
+// as part of a bigger job: the master switch, the default-skip override
+// and the flags every scan has.
 func (ao *artifactOptions) AddFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().BoolVar(
 		&ao.NoArtifacts, ao.Config().LongFlag("no-artifacts"), false, ao.Config().HelpText("no-artifacts"),
 	)
-	ao.AddSkipFlag(cmd)
+	cmd.PersistentFlags().BoolVar(
+		&ao.ScanSystemDirs, ao.Config().LongFlag("scan-system-dirs"), false, ao.Config().HelpText("scan-system-dirs"),
+	)
+	ao.AddScanFlags(cmd)
 }
 
-// AddSkipFlag adds the per-decomposer switch alone, for commands where the
-// scan itself is the point and a master switch would be meaningless.
-func (ao *artifactOptions) AddSkipFlag(cmd *cobra.Command) {
+// AddScanFlags adds the flags every artifact scan has, the per-decomposer
+// and per-path skips, for commands where the scan itself is the point: a
+// master switch would be meaningless there, and no directory is skipped
+// by default.
+func (ao *artifactOptions) AddScanFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringSliceVar(
 		&ao.SkipArtifacts, ao.Config().LongFlag("skip-artifact"), nil, ao.Config().HelpText("skip-artifact"),
+	)
+	cmd.PersistentFlags().StringSliceVar(
+		&ao.SkipPaths, ao.Config().LongFlag("skip-path"), nil, ao.Config().HelpText("skip-path"),
 	)
 }
 

@@ -68,6 +68,17 @@ type Options struct {
 	// Decomposers without an entry keep their default.
 	ArtifactDecomposers map[string]bool
 
+	// ArtifactSkip adds paths the artifact scan leaves out, as
+	// gitignore-style patterns relative to the image root ("/opt/vendor/",
+	// "*.so"), on top of the system directories skipped by default (see
+	// artifact.DefaultSystemSkips).
+	ArtifactSkip []string
+
+	// ScanSystemDirs drops the default skip list, so the artifact scan
+	// also covers the distribution's own directories (/usr/bin, /usr/lib,
+	// ...). ArtifactSkip still applies.
+	ScanSystemDirs bool
+
 	// Networking is the network access level handed to the artifact
 	// decomposers, which may resolve and enrich what they read from an
 	// artifact through package registries. The system decomposers work
@@ -374,8 +385,8 @@ func (u *Unpacker) extractSystemPackages(ctx context.Context, fsys fs.FS) ([]*sb
 
 // extractArtifacts routes the squashed filesystem to the artifact unpacker
 // through the registry. The unpacker runs with its own defaults for images,
-// adjusted by the options: the master switch, the per-decomposer overrides
-// and the networking level.
+// adjusted by the options: the master switch, the per-decomposer overrides,
+// the skip list and the networking level.
 func (u *Unpacker) extractArtifacts(ctx context.Context, fsys fs.FS) ([]*sbom.NodeList, error) {
 	if u.Options.SkipArtifacts {
 		return nil, nil
@@ -388,6 +399,10 @@ func (u *Unpacker) extractArtifacts(ctx context.Context, fsys fs.FS) ([]*sbom.No
 	if au, ok := unpacker.(*artifact.Unpacker); ok {
 		opts := au.DefaultsFor(SubjectType)
 		maps.Copy(opts.Decomposers, u.Options.ArtifactDecomposers)
+		if u.Options.ScanSystemDirs {
+			opts.Skip = nil
+		}
+		opts.Skip = append(opts.Skip, u.Options.ArtifactSkip...)
 		opts.Networking = u.Options.Networking
 		au.Options = opts
 	}

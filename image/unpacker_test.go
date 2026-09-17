@@ -162,6 +162,8 @@ func TestExtractSingleArchArtifacts(t *testing.T) {
 		dir("usr"), dir("usr/local"), dir("usr/local/bin"),
 		file("usr/local/bin/tool", string(bin)),
 		file("usr/local/bin/script", "#!/bin/sh\necho hi\n"),
+		// A copy in a system directory, skipped by default.
+		dir("usr/bin"), file("usr/bin/systool", string(bin)),
 	)
 
 	// contained splits what the image node contains into file nodes and
@@ -191,7 +193,7 @@ func TestExtractSingleArchArtifacts(t *testing.T) {
 		nl := lists[0]
 
 		files, pkgs := contained(nl)
-		require.Len(t, files, 1, "the script is not an artifact")
+		require.Len(t, files, 1, "the script is not an artifact and /usr/bin is skipped by default")
 		tool := files[0]
 		assert.Equal(t, "usr/local/bin/tool", tool.GetName())
 		sum := sha256.Sum256(bin)
@@ -224,6 +226,32 @@ func TestExtractSingleArchArtifacts(t *testing.T) {
 		files, pkgs := contained(lists[0])
 		assert.Empty(t, files)
 		assert.ElementsMatch(t, []string{"musl", "busybox-binsh"}, pkgs)
+	})
+
+	t.Run("scan system dirs", func(t *testing.T) {
+		t.Parallel()
+		u := NewUnpacker()
+		u.Options.Networking = api.NetworkDisabled
+		u.Options.ScanSystemDirs = true
+		lists, err := u.Extract(t.Context(), &Reference{Ref: refStr})
+		require.NoError(t, err)
+		files, _ := contained(lists[0])
+		names := make([]string, 0, len(files))
+		for _, f := range files {
+			names = append(names, f.GetName())
+		}
+		assert.ElementsMatch(t, []string{"usr/bin/systool", "usr/local/bin/tool"}, names)
+	})
+
+	t.Run("extra skip", func(t *testing.T) {
+		t.Parallel()
+		u := NewUnpacker()
+		u.Options.Networking = api.NetworkDisabled
+		u.Options.ArtifactSkip = []string{"/usr/local/"}
+		lists, err := u.Extract(t.Context(), &Reference{Ref: refStr})
+		require.NoError(t, err)
+		files, _ := contained(lists[0])
+		assert.Empty(t, files, "the default skips still apply and the extra one removes the rest")
 	})
 
 	t.Run("skip gobinary", func(t *testing.T) {

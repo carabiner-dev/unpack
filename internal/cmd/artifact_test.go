@@ -82,6 +82,22 @@ func TestArtifactCommandDirectory(t *testing.T) {
 	assert.Contains(t, out, "pkg:golang/github.com/carabiner-dev/unpack")
 }
 
+func TestArtifactCommandSkipPath(t *testing.T) {
+	dir := artifactDir(t)
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "vendor"), 0o750))
+	bin, err := os.ReadFile(filepath.Join(dir, "tool"))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "vendor", "vendored"), bin, 0o600)) //nolint:gosec // a temp dir
+	outPath := filepath.Join(t.TempDir(), "artifact.spdx.json")
+
+	require.NoError(t, runArtifact(t, "-f", "spdx", "--networking", "disabled", "--skip-path", "vendor/", "-o", outPath, dir))
+
+	data, err := os.ReadFile(outPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"tool"`)
+	assert.NotContains(t, string(data), "vendored")
+}
+
 func TestArtifactCommandNotAnArtifact(t *testing.T) {
 	dir := artifactDir(t)
 	err := runArtifact(t, "-f", "spdx", "--networking", "disabled", filepath.Join(dir, "README"))
