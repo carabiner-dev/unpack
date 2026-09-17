@@ -98,12 +98,12 @@ func TestBuildDependencyTree(t *testing.T) {
 	modFile, err := d.parseLocalGoMod("testdata/simple/go.mod")
 	require.NoError(t, err)
 
-	trees, _, err := d.buildDependencyTree(modFile, "testdata/simple/go.mod", &defaultOptions, api.NetworkEssential)
-	require.NoError(t, err)
+	set := d.moduleSetFromGoMod(modFile, "testdata/simple/go.mod")
+	trees := d.resolveGraph(set, &defaultOptions, api.NetworkEssential)
 	require.NotNil(t, trees)
 
 	// Check root module has direct dependencies
-	rootDeps := (*trees)["example.com/simple"]
+	rootDeps := trees["example.com/simple"]
 	require.Len(t, rootDeps, 2)
 	require.Contains(t, rootDeps, "github.com/google/uuid@v1.3.0")
 	require.Contains(t, rootDeps, "golang.org/x/text@v0.3.0")
@@ -116,12 +116,12 @@ func TestBuildDependencyTreeWithReplace(t *testing.T) {
 	modFile, err := d.parseLocalGoMod("testdata/with-replace/go.mod")
 	require.NoError(t, err)
 
-	trees, _, err := d.buildDependencyTree(modFile, "testdata/with-replace/go.mod", &defaultOptions, api.NetworkEssential)
-	require.NoError(t, err)
+	set := d.moduleSetFromGoMod(modFile, "testdata/with-replace/go.mod")
+	trees := d.resolveGraph(set, &defaultOptions, api.NetworkEssential)
 	require.NotNil(t, trees)
 
 	// Check that replace directive was applied
-	rootDeps := (*trees)["example.com/with-replace"]
+	rootDeps := trees["example.com/with-replace"]
 	require.Len(t, rootDeps, 2)
 	// github.com/old/module should be replaced with github.com/new/module@v1.1.0
 	require.Contains(t, rootDeps, "github.com/new/module@v1.1.0")
@@ -132,7 +132,7 @@ func TestResolveModule(t *testing.T) {
 	t.Parallel()
 	d := Decomposer{}
 
-	replaces := map[string]replaceTarget{
+	replaces := map[string]Replacement{
 		"github.com/old/module":          {Path: "github.com/new/module", Version: "v2.0.0"},
 		"github.com/versioned@v1.0.0":    {Path: "github.com/versioned", Version: "v1.1.0"},
 		"github.com/version-only@v1.0.0": {Path: "", Version: "v1.2.0"},
@@ -211,7 +211,7 @@ func TestConvertTree(t *testing.T) {
 	t.Parallel()
 	d := Decomposer{}
 
-	// Manually create a tree structure similar to what buildDependencyTree produces
+	// Manually create a tree structure similar to what resolveGraph produces
 	trees := &map[string][]string{
 		"github.com/knqyf263/go-rpmdb@v0.1.1": {
 			"github.com/glebarez/go-sqlite@v1.20.3",

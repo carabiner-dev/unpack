@@ -17,6 +17,18 @@ type Decomposer interface {
 	DefaultOptions() any
 }
 
+// SubjectDefaults is implemented by decomposers that know which kinds of
+// parent subject they should run under when nothing says otherwise. An
+// unpacker that is handed a child subject by a parent (an image routing its
+// filesystem, say) reads the trait to build its default option set; the
+// options, not the trait, decide what actually runs.
+type SubjectDefaults interface {
+	// DefaultSubjects returns the subject types (see
+	// DecomposableSubject.DecomposableType) the decomposer runs on by
+	// default. Empty means it never runs unless enabled explicitly.
+	DefaultSubjects() []string
+}
+
 // SourceDecomposer is a decomposer that reads data from a codebase.
 type SourceDecomposer interface {
 	// FindCodeBases reads a path index and locates any directories that

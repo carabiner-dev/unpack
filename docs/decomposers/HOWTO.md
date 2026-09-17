@@ -16,9 +16,9 @@ more **decomposers**. The interfaces live in `api/v1`.
 
 | Role | Interface | Knows about | Examples |
 | --- | --- | --- | --- |
-| Subject | `api.DecomposableSubject` | Where the data is | `dependencies.Codebase` (a path), `system.Filesystem` (an `fs.FS`), `image.Reference` (an OCI ref), `release.Reference` (a forge release), `sbom.Subject` (a file) |
-| Unpacker | `api.Unpacker` | One *kind* of subject | `dependencies.Unpacker` (codebases), `system.Unpacker` (systems), `image.Unpacker`, `release.Unpacker`, `sbom.Unpacker` |
-| Decomposer | `api.Decomposer` | One *flavor* of that kind | `source/golang` (go.mod), `source/npm`, `system/apk`, `system/deb`, `release.Decomposer` |
+| Subject | `api.DecomposableSubject` | Where the data is | `dependencies.Codebase` (a path), `system.Filesystem` (an `fs.FS`), `artifact.File` (one built artifact), `image.Reference` (an OCI ref), `release.Reference` (a forge release), `sbom.Subject` (a file) |
+| Unpacker | `api.Unpacker` | One *kind* of subject | `dependencies.Unpacker` (codebases), `system.Unpacker` (systems), `artifact.Unpacker` (built artifacts), `image.Unpacker`, `release.Unpacker`, `sbom.Unpacker` |
+| Decomposer | `api.Decomposer` | One *flavor* of that kind | `source/golang` (go.mod), `source/npm`, `system/apk`, `system/deb`, `artifact/gobinary` (Go executables), `release.Decomposer` |
 
 ### Subjects
 
@@ -78,13 +78,29 @@ type Decomposer interface {
   decomposers return nil.
 
 Unpackers extend the base interface when their subject needs a different
-entry point. The two that matter:
+entry point. The three that matter:
 
 - `api.SourceDecomposer` adds `FindCodeBases(*code.PathIndex) ([]string, error)`.
   The codebase unpacker only runs decomposers that implement it.
 - `system.SystemDecomposer` adds `ExtractFromFS(fs.FS, *DecomposerOptions)`.
   The system unpacker calls this instead of `Extract` so it can hand in
   filesystems that are not on disk (a squashed image, a tarball).
+- `artifact.Decomposer` adds a stable `Name()`, a cheap
+  `Matches(fs.FileInfo, header []byte)` filter and
+  `ExtractArtifact(io.ReaderAt, path, *DecomposerOptions)`. The artifact
+  unpacker probes every file of its subject through the filter and reads
+  only the ones that pass.
+
+One more interface is optional and read by *parents*, not by the
+decomposer's own unpacker:
+
+- `api.SubjectDefaults` adds `DefaultSubjects() []string`: the parent
+  subject types (`"image"`, `"system"`, ...) under which the decomposer
+  runs by default. A parent routing a child subject asks the child
+  unpacker for its defaults (`artifact.Unpacker.DefaultsFor("image")`),
+  adjusts them to what its caller asked for, and sets them as the child's
+  options. The trait informs the defaults; the options decide what runs.
+  `artifact/gobinary` uses it to run inside images but not on codebases.
 
 ## How they assemble
 
@@ -118,6 +134,13 @@ there the pipeline is the same `Extract` call for everything.
   present returns `(nil, nil)` and is skipped. Errors from one decomposer do
   not stop the others; they are joined and returned alongside the lists
   that did succeed.
+- The artifact unpacker lists the regular files of its subject (one file,
+  a directory, an image filesystem), reads the first 64 bytes of each and
+  offers them to every enabled decomposer's `Matches`. The first
+  decomposer to claim a file in `ExtractArtifact` wins; `(nil, nil)`
+  disowns it. Each artifact found becomes a list rooted at a file node
+  with the path and SHA-256, related through `generatedFrom` to the graph
+  the decomposer read out of it.
 - The release unpacker hands each decomposer the reference through the
   driver options and collects what comes back.
 
@@ -149,9 +172,31 @@ The image unpacker then relates every returned list to its own image node
 with a `contains` edge. This is how the graph nests: image → packages, or,
 in the future, filesystem → codebases → dependencies.
 
+**One piece of data may be several subjects.** The registry maps a subject
+type to one unpacker, so a parent that wants more than one kind of child
+wraps the same data more than once. The image unpacker routes its squashed
+filesystem twice: as a `system.Filesystem` for the installed packages and
+as an `artifact.Filesystem` for the executables, and hangs both results
+under the image node. Fan-out is the parent's explicit job.
+
+**The parent picks the edge.** A child unpacker returns lists rooted at
+the things it found and never emits the edge upward: the artifact
+unpacker roots each list at the file, the system unpacker at each
+package. What that root *is* to the parent (`contains` for an image,
+something else for another parent) is the parent's call when it relates
+the list.
+
+**Options do not flow through the registry.** `api.UnpackerFor` returns a
+plain `api.Unpacker`, so a parent that needs to configure the child
+type-asserts to the concrete unpacker and sets its `Options` (the image
+unpacker does this to forward `IncludeFiles` to the system unpacker and
+the artifact switches and networking level to the artifact unpacker).
+This works for one hop. Image → artifact → Go proxy networking already
+shows the seams; a shared options carrier is a known follow-up.
+
 Note that a blank import of the child's package is what triggers its
 `init()`. An unpacker that routes to another must import it (the image
-unpacker imports `system` for the subject type anyway).
+unpacker imports `system` and `artifact` for the subject types anyway).
 
 ## Which one should you write?
 
@@ -159,6 +204,7 @@ unpacker imports `system` for the subject type anyway).
 |--------------------|-------|----------------|
 | A new language or package manager read from source (lock and manifest files) | A `SourceDecomposer` under `source/<eco>/` | `dependencies.NewUnpacker` |
 | A new installed-package database or installed environment found on a filesystem | A `SystemDecomposer` under `system/<eco>/` | `system.NewUnpacker` |
+| A new kind of built artifact that carries its own dependency data (an executable format, an archive with embedded metadata) | An `artifact.Decomposer` under `artifact/<kind>/` | `artifact.NewUnpacker` |
 | A new kind of thing to unpack (a binary, a VM image, a registry, ...) | A subject type plus an unpacker in a new package, and the decomposers it needs | The registry, from `init()` |
 
 Most contributions are the first row. The rest of this page walks through
@@ -439,6 +485,66 @@ Test with `testing/fstest.MapFS`: build the filesystem in the test, run
 it returns `(nil, nil)`. The apk and deb packages have examples of both unit
 fixtures and Docker-backed conformance tests.
 
+## Writing an artifact decomposer
+
+An artifact decomposer reads what a *build* recorded in the thing it
+produced: a Go executable carries its module list, and other formats
+carry their own. The artifact unpacker owns the walk, the filtering, the
+hashing and the file node; the decomposer owns recognizing and reading
+one format.
+
+```go
+type Decomposer interface {
+    api.Decomposer
+    Name() string
+    Matches(info fs.FileInfo, header []byte) bool
+    ExtractArtifact(ra io.ReaderAt, path string, opts *api.DecomposerOptions) (*sbom.NodeList, error)
+}
+```
+
+- `Name` is the short, stable name the decomposer is registered and
+  switched by (`"gobinary"`). Export it as a constant.
+- `Matches` gets the file metadata and its first `artifact.HeaderSize`
+  bytes (64, fewer for a shorter file). Decide from magic numbers, never
+  from the name or the exec bit. False positives are fine and cheap;
+  the point is to skip the files that cannot possibly be yours without
+  reading them.
+- `ExtractArtifact` gets random access to the whole file. **Return
+  `(nil, nil)` when the file turns out not to be one of yours**: the
+  filter is coarse and every enabled decomposer sees every file that
+  passes it, so disowning is the common case and must not be an error.
+  Return an error only for a file that is yours and is broken.
+- Root the list at the *package the artifact was built from*, not at the
+  file. The unpacker creates the file node, hashes the file and relates
+  your root to it with `generatedFrom`; the parent that found the file
+  relates the file node to itself.
+- Implement `Extract` as a thin wrapper that opens `opts.WorkDir` as the
+  file and calls `ExtractArtifact`, so the type also satisfies plain
+  `api.Decomposer`.
+- Implement `api.SubjectDefaults` to say where you run by default. Think
+  about each parent: a Go binary belongs in an image scan but has no
+  business in a source tree scan. Leave it out entirely if you should
+  run everywhere.
+- **Reuse other decomposers through exported helpers, never by
+  synthesizing their input.** `artifact/gobinary` builds a
+  `golang.ModuleSet` and hands it to `golang.BuildNodeList`; it does not
+  write a fake `go.mod` and call the source decomposer's `Extract`. If
+  the helper you need is not exported, export it; that is a smaller
+  change than faking a file, and the graph stays honest.
+
+Register built-ins in `artifact.NewUnpacker`, keyed by `Name`. Then add
+a row to the tables in the decomposers README.
+
+Test on a real artifact. For Go executables use `internal/testbin`, which
+builds a tiny fixture program at test time so its build information is
+complete on every toolchain (test binaries themselves carried an empty
+module list before Go 1.27). For other formats put a small real artifact
+under `testdata/`. Check
+`Matches` on real headers and on noise, `ExtractArtifact` on a real file
+and on a file that passes the filter but is not yours, and the graph
+shape. A test through `artifact.NewUnpacker` with a `File` subject
+covers the wrapping.
+
 ## Writing an unpacker and a subject
 
 Do this when the *kind* of thing is new: there is no existing subject type
@@ -472,6 +578,14 @@ subject do the extraction.
 If several concrete subjects share a type, define an interface the unpacker
 asserts to instead of a struct. `system.System` does this: `LocalSystem` and
 `Filesystem` both return `"system"` and both expose `FileSystem() (fs.FS, error)`.
+`artifact.Source` does the same for `File` and `Filesystem`.
+
+If your subject hands out an `fs.FS`, make its files implement
+`io.ReaderAt` where the backing store allows it. Some readers need random
+access (`debug/buildinfo` on an executable, archive indexes at the end of
+a file), and the artifact unpacker falls back to copying a file into
+memory when its `fs.File` cannot seek. The image tarfs implements
+`ReadAt` over its section reader for exactly this reason.
 
 ### The unpacker
 
@@ -535,7 +649,12 @@ Conventions the existing unpackers follow:
 - When the unpacker discovers something another unpacker handles, wrap it
   in that unpacker's subject type and call `api.UnpackerFor`. Type-assert
   the returned unpacker only to pass options down (the image unpacker does
-  this to forward `IncludeFiles`).
+  this to forward `IncludeFiles`). If the child's decomposers carry
+  `api.SubjectDefaults`, start from the child's `DefaultsFor(SubjectType)`
+  and layer your caller's switches on top, so decomposers get a say in
+  where they run and the caller gets the last word.
+- Route the same data as several subjects when several kinds of child
+  live in it, and decide the edge each child list gets from your node.
 - Give the result structure. If your subject is itself a thing (an image, a
   release), emit a node for it with a purl and hashes and relate child
   lists under it with `RelateNodeListAtID(list, parentID, Edge_contains)`.
@@ -558,7 +677,9 @@ should do nothing else: all logic belongs in the unpacker.
 - [ ] Pure Go; no shelling out to ecosystem tooling.
 - [ ] Network use gated on `opts.Networking`; local data alone produces a graph.
 - [ ] Root node carries `opts.Version` and `opts.CommitHash` (source decomposers).
-- [ ] `(nil, nil)` when the database is absent (system decomposers).
+- [ ] `(nil, nil)` when the database is absent (system decomposers) or the file is not yours (artifact decomposers).
+- [ ] `api.SubjectDefaults` answered honestly for every parent kind (artifact decomposers).
+- [ ] Files from a new `fs.FS` subject implement `io.ReaderAt` when they can.
 - [ ] Every package node has a spec-conformant purl.
 - [ ] Edge types match the inclusion flags.
 - [ ] Registered in the right `NewUnpacker`, or in the registry from `init()`.

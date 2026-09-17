@@ -236,15 +236,26 @@ func (t *tarFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	return entries, nil
 }
 
-// tarFile is an open regular file backed by a section of the tar.
+// tarFile is an open regular file backed by a section of the tar. Beyond
+// fs.File it supports random access (io.ReaderAt, io.Seeker) so readers that
+// need it, such as debug/buildinfo on an executable, can work on files
+// inside a squashed image without copying them out.
 type tarFile struct {
 	info fs.FileInfo
 	r    *io.SectionReader
 }
 
-func (f *tarFile) Stat() (fs.FileInfo, error) { return f.info, nil }
-func (f *tarFile) Read(p []byte) (int, error) { return f.r.Read(p) }
-func (f *tarFile) Close() error               { return nil }
+var (
+	_ fs.File     = (*tarFile)(nil)
+	_ io.ReaderAt = (*tarFile)(nil)
+	_ io.Seeker   = (*tarFile)(nil)
+)
+
+func (f *tarFile) Stat() (fs.FileInfo, error)                   { return f.info, nil }
+func (f *tarFile) Read(p []byte) (int, error)                   { return f.r.Read(p) }
+func (f *tarFile) ReadAt(p []byte, off int64) (int, error)      { return f.r.ReadAt(p, off) }
+func (f *tarFile) Seek(offset int64, whence int) (int64, error) { return f.r.Seek(offset, whence) }
+func (f *tarFile) Close() error                                 { return nil }
 
 // tarDir is an open directory handle supporting ReadDir.
 type tarDir struct {

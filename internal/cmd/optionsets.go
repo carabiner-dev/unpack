@@ -11,6 +11,8 @@ import (
 	"github.com/carabiner-dev/command"
 	"github.com/protobom/protobom/pkg/formats"
 	"github.com/spf13/cobra"
+
+	api "github.com/carabiner-dev/unpack/api/v1"
 )
 
 // formatOptions is the reusable options set controlling how extracted
@@ -155,3 +157,100 @@ func (fo *filesOptions) AddFlags(cmd *cobra.Command) {
 
 // Validate checks the files options.
 func (fo *filesOptions) Validate() error { return nil }
+
+// artifactOptions is the reusable options set controlling the scan for
+// artifacts that carry their own dependency data (Go executables, for
+// now) inside a subject such as a container image: the master switch and
+// the per-decomposer switches.
+type artifactOptions struct {
+	config *command.OptionsSetConfig
+
+	// NoArtifacts turns the artifact scan off entirely.
+	NoArtifacts bool
+
+	// SkipArtifacts names the artifact decomposers not to run, by name.
+	SkipArtifacts []string
+}
+
+var _ command.OptionsSet = (*artifactOptions)(nil)
+
+// Config returns the flag configuration of the artifact options.
+func (ao *artifactOptions) Config() *command.OptionsSetConfig {
+	if ao.config == nil {
+		ao.config = &command.OptionsSetConfig{
+			Flags: map[string]command.FlagConfig{
+				"no-artifacts": {
+					Long: "no-artifacts",
+					Help: "do not scan the subject for artifacts carrying dependency data (e.g. Go binaries)",
+				},
+				"skip-artifact": {
+					Long: "skip-artifact",
+					Help: "artifact decomposers not to run, by name (e.g. gobinary)",
+				},
+			},
+		}
+	}
+	return ao.config
+}
+
+// AddFlags adds the artifact flags to a command.
+func (ao *artifactOptions) AddFlags(cmd *cobra.Command) {
+	cmd.PersistentFlags().BoolVar(
+		&ao.NoArtifacts, ao.Config().LongFlag("no-artifacts"), false, ao.Config().HelpText("no-artifacts"),
+	)
+	ao.AddSkipFlag(cmd)
+}
+
+// AddSkipFlag adds the per-decomposer switch alone, for commands where the
+// scan itself is the point and a master switch would be meaningless.
+func (ao *artifactOptions) AddSkipFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringSliceVar(
+		&ao.SkipArtifacts, ao.Config().LongFlag("skip-artifact"), nil, ao.Config().HelpText("skip-artifact"),
+	)
+}
+
+// Validate checks the artifact options.
+func (ao *artifactOptions) Validate() error { return nil }
+
+// Decomposers returns the per-decomposer switches the flags amount to: an
+// off entry for each skipped decomposer, nothing for the rest.
+func (ao *artifactOptions) Decomposers() map[string]bool {
+	if len(ao.SkipArtifacts) == 0 {
+		return nil
+	}
+	switches := make(map[string]bool, len(ao.SkipArtifacts))
+	for _, name := range ao.SkipArtifacts {
+		switches[name] = false
+	}
+	return switches
+}
+
+// The values of the --networking flag.
+const (
+	networkEssential = "essential"
+	networkFull      = "full"
+	networkDisabled  = "disabled"
+)
+
+var networkLevels = []string{networkEssential, networkFull, networkDisabled}
+
+// validateNetworking checks the value of a --networking flag.
+func validateNetworking(name string) error {
+	if !slices.Contains(networkLevels, name) {
+		return fmt.Errorf("invalid networking level %q (must be essential, full, or disabled)", name)
+	}
+	return nil
+}
+
+// networkLevel maps the value of a --networking flag to the API level.
+// Anything but full or disabled is the essential default.
+func networkLevel(name string) api.NetworkLevel {
+	switch name {
+	case networkFull:
+		return api.NetworkFull
+	case networkDisabled:
+		return api.NetworkDisabled
+	default:
+		return api.NetworkEssential
+	}
+}

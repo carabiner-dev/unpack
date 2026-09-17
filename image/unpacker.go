@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net/url"
 	"path"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/artifact"
 	"github.com/carabiner-dev/unpack/system"
 )
 
@@ -55,6 +57,23 @@ type Options struct {
 	// package.
 	IncludeFiles bool
 
+	// SkipArtifacts turns off the scan of the image filesystem for
+	// artifacts carrying their own dependency data, such as Go executables.
+	// The scan is on by default and runs the artifact decomposers that opt
+	// into images (see api.SubjectDefaults).
+	SkipArtifacts bool
+
+	// ArtifactDecomposers switches individual artifact decomposers on or
+	// off by name ("gobinary"), overriding their own defaults for images.
+	// Decomposers without an entry keep their default.
+	ArtifactDecomposers map[string]bool
+
+	// Networking is the network access level handed to the artifact
+	// decomposers, which may resolve and enrich what they read from an
+	// artifact through package registries. The system decomposers work
+	// offline and ignore it.
+	Networking api.NetworkLevel
+
 	// RecordLayers adds one structural node per image layer, related to
 	// the image through a contains edge. Layers are identified by their
 	// diff id — the digest of the uncompressed layer — and carry no
@@ -77,15 +96,16 @@ func NewUnpacker() *Unpacker {
 
 // Unpacker extracts dependency data from container images. It downloads the
 // image, squashes its layers into the filesystem a running container would
-// see, and reads the installed system packages out of it.
+// see, and reads the installed system packages and the artifacts carrying
+// their own dependency data out of it.
 type Unpacker struct {
 	Options Options
 }
 
 // Extract pulls the image referenced by the subject — or reads it from
 // the subject's archive — and returns its dependency graph: a node
-// describing the image with the system packages found in its filesystem
-// as descendants.
+// describing the image with the system packages and the artifacts found in
+// its filesystem as descendants.
 func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject) ([]*sbom.NodeList, error) {
 	if subject == nil {
 		return nil, fmt.Errorf("image unpacker received a nil subject")
@@ -253,8 +273,9 @@ func (k fallbackKeychain) Resolve(r authn.Resource) (authn.Authenticator, error)
 }
 
 // extractImage squashes a single-arch image and returns a NodeList rooted
-// at a node describing the image, with the system packages found in the
-// filesystem related to it as descendants.
+// at a node describing the image. The system packages and the artifacts
+// found in the filesystem are related to it as what the image contains; an
+// artifact's own dependency graph hangs below its file node.
 func (u *Unpacker) extractImage(ctx context.Context, refStr string, nref name.Reference, img v1.Image) (*sbom.NodeList, error) {
 	digest, err := img.Digest()
 	if err != nil {
@@ -275,6 +296,10 @@ func (u *Unpacker) extractImage(ctx context.Context, refStr string, nref name.Re
 	if err != nil {
 		return nil, err
 	}
+	artifactLists, err := u.extractArtifacts(ctx, fsys)
+	if err != nil {
+		return nil, err
+	}
 
 	nl := sbom.NewNodeList()
 	node := imageNode(refStr, nref, digest, arch, osName)
@@ -282,6 +307,11 @@ func (u *Unpacker) extractImage(ctx context.Context, refStr string, nref name.Re
 	for _, pkgs := range pkgLists {
 		if err := nl.RelateNodeListAtID(pkgs, node.GetId(), sbom.Edge_contains); err != nil {
 			return nil, fmt.Errorf("relating packages to image node: %w", err)
+		}
+	}
+	for _, art := range artifactLists {
+		if err := nl.RelateNodeListAtID(art, node.GetId(), sbom.Edge_contains); err != nil {
+			return nil, fmt.Errorf("relating artifacts to image node: %w", err)
 		}
 	}
 	if u.Options.RecordLayers {
@@ -338,6 +368,33 @@ func (u *Unpacker) extractSystemPackages(ctx context.Context, fsys fs.FS) ([]*sb
 	lists, err := unpacker.Extract(ctx, subject)
 	if err != nil {
 		return nil, fmt.Errorf("extracting system packages: %w", err)
+	}
+	return lists, nil
+}
+
+// extractArtifacts routes the squashed filesystem to the artifact unpacker
+// through the registry. The unpacker runs with its own defaults for images,
+// adjusted by the options: the master switch, the per-decomposer overrides
+// and the networking level.
+func (u *Unpacker) extractArtifacts(ctx context.Context, fsys fs.FS) ([]*sbom.NodeList, error) {
+	if u.Options.SkipArtifacts {
+		return nil, nil
+	}
+	subject := &artifact.Filesystem{FS: fsys}
+	unpacker, err := api.UnpackerFor(subject)
+	if err != nil {
+		return nil, fmt.Errorf("locating artifact unpacker: %w", err)
+	}
+	if au, ok := unpacker.(*artifact.Unpacker); ok {
+		opts := au.DefaultsFor(SubjectType)
+		maps.Copy(opts.Decomposers, u.Options.ArtifactDecomposers)
+		opts.Networking = u.Options.Networking
+		au.Options = opts
+	}
+
+	lists, err := unpacker.Extract(ctx, subject)
+	if err != nil {
+		return nil, fmt.Errorf("extracting artifacts: %w", err)
 	}
 	return lists, nil
 }

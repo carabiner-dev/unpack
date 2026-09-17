@@ -22,11 +22,15 @@ import (
 type imageOptions struct {
 	formatOptions
 	filesOptions
+	artifactOptions
 	Output output.Options
 
 	// Reference is the OCI reference of the image to unpack, taken from
 	// the positional argument.
 	Reference string
+
+	// Networking is the network access level for the artifact decomposers.
+	Networking string
 }
 
 // Validate checks the options of all the embedded sets.
@@ -36,8 +40,10 @@ func (io_ *imageOptions) Validate() error {
 		errs = append(errs, errors.New("no image reference specified"))
 	}
 	errs = append(errs,
+		validateNetworking(io_.Networking),
 		io_.formatOptions.Validate(),
 		io_.filesOptions.Validate(),
+		io_.artifactOptions.Validate(),
 		io_.Output.Validate(),
 	)
 	return errors.Join(errs...)
@@ -47,7 +53,12 @@ func (io_ *imageOptions) Validate() error {
 func (io_ *imageOptions) AddFlags(cmd *cobra.Command) {
 	io_.formatOptions.AddFlags(cmd)
 	io_.filesOptions.AddFlags(cmd)
+	io_.artifactOptions.AddFlags(cmd)
 	io_.Output.AddFlags(cmd)
+	cmd.PersistentFlags().StringVar(
+		&io_.Networking, "networking", networkEssential,
+		"network access level for artifact decomposers: essential (default), full, or disabled",
+	)
 }
 
 func addImage(parent *cobra.Command) {
@@ -60,11 +71,14 @@ func addImage(parent *cobra.Command) {
 Unpack image takes the OCI reference of a container image, downloads it,
 squashes its layers into the filesystem a running container would see, and
 extracts the operating system packages installed in it (apk, dpkg and rpm
-databases, including distroless images).
+databases, including distroless images). It also scans the filesystem for
+artifacts that carry their own dependency data, such as Go executables, and
+adds each one with the packages built into it. Use --no-artifacts to skip
+that scan, or --skip-artifact to leave out one kind of artifact.
 
 For a single-arch image the result is the image at the top with its packages
-as descendants. For a multi-arch image, the index sits at the top with one
-node per platform image, each carrying its own packages.
+and artifacts as descendants. For a multi-arch image, the index sits at the
+top with one node per platform image, each carrying its own contents.
 
 By default, dependencies are displayed as an ASCII tree in the terminal but
 the data can be exported as an SPDX or CycloneDX SBOM, wrapped in an in-toto
@@ -74,6 +88,7 @@ Usage patterns:
   %[1]s image alpine:3.21                  Show the package tree of an image
   %[1]s image -f spdx alpine:3.21          Output an SPDX SBOM
   %[1]s image --files -f spdx alpine:3.21  Include the package file lists
+  %[1]s image --no-artifacts ko.local/app  Skip the scan for Go binaries
   %[1]s image --attest alpine:3.21         Wrap the SBOM in an attestation
   %[1]s image --sign -o a.json alpine:3.21 Sign it into a sigstore bundle
 
@@ -94,6 +109,9 @@ Usage patterns:
 
 			unpacker := image.NewUnpacker()
 			unpacker.Options.IncludeFiles = opts.Files
+			unpacker.Options.SkipArtifacts = opts.NoArtifacts
+			unpacker.Options.ArtifactDecomposers = opts.Decomposers()
+			unpacker.Options.Networking = networkLevel(opts.Networking)
 
 			lists, err := unpacker.Extract(cmd.Context(), &image.Reference{Ref: opts.Reference})
 			if err != nil {
