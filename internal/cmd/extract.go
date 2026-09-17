@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/carabiner-dev/protograph"
@@ -18,7 +17,6 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
-	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/dependencies"
 	"github.com/carabiner-dev/unpack/source/python"
 )
@@ -69,9 +67,7 @@ func (ro *extractOptions) Validate() error {
 		errs = append(errs, errors.New("path not defined"))
 	}
 
-	if !slices.Contains([]string{"essential", "full", "disabled"}, ro.Networking) {
-		errs = append(errs, fmt.Errorf("invalid networking level %q (must be essential, full, or disabled)", ro.Networking))
-	}
+	errs = append(errs, validateNetworking(ro.Networking))
 
 	// The platform is os or os/arch: what each value may be is the
 	// business of the ecosystems that read it, but the shape is not.
@@ -104,7 +100,7 @@ func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 	)
 
 	cmd.PersistentFlags().StringVar(
-		&ro.Networking, "networking", "essential",
+		&ro.Networking, "networking", networkEssential,
 		"network access level: essential (default), full, or disabled",
 	)
 
@@ -240,15 +236,7 @@ to the current directory.
 				})
 			}
 
-			// Set networking level
-			switch opts.Networking {
-			case "full":
-				unpacker.Options.Networking = api.NetworkFull
-			case "disabled":
-				unpacker.Options.Networking = api.NetworkDisabled
-			default:
-				unpacker.Options.Networking = api.NetworkEssential
-			}
+			unpacker.Options.Networking = networkLevel(opts.Networking)
 
 			// Ensure the output directory exists when writing to files
 			if opts.OutputPath != "" {

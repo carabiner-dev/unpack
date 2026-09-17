@@ -4,10 +4,13 @@
 package image
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"log"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 
@@ -21,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/system"
 )
 
@@ -51,16 +55,18 @@ o:busybox
 const alpineOSRelease = "ID=alpine\nVERSION_ID=3.24.0\n"
 
 // pushTestImage builds a single-arch image carrying an apk database and
-// pushes it to the test registry, returning its reference and digest.
-func pushTestImage(t *testing.T, registryHost string) (string, v1.Hash) {
+// whatever extra entries the test adds, and pushes it to the test registry,
+// returning its reference and digest.
+func pushTestImage(t *testing.T, registryHost string, extra ...tarEntrySpec) (string, v1.Hash) {
 	t.Helper()
 
-	layer := makeLayer(t,
+	entries := append([]tarEntrySpec{
 		dir("lib"), dir("lib/apk"), dir("lib/apk/db"),
 		file("lib/apk/db/installed", apkDB),
 		dir("etc"),
 		file("etc/os-release", alpineOSRelease),
-	)
+	}, extra...)
+	layer := makeLayer(t, entries...)
 	img := makeImage(t, layer)
 	img, err := mutate.ConfigFile(img, &v1.ConfigFile{Architecture: "amd64", OS: "linux"})
 	require.NoError(t, err)
@@ -138,6 +144,91 @@ func TestExtractSingleArch(t *testing.T) {
 		[]string{pkgsByName["musl"].GetId(), pkgsByName["busybox-binsh"].GetId()},
 		edge.GetTo(),
 	)
+}
+
+// TestExtractSingleArchArtifacts puts a Go executable (the test binary) in
+// the image and checks that the artifact scan finds it, hangs it off the
+// image node and can be switched off, wholesale or by decomposer.
+func TestExtractSingleArchArtifacts(t *testing.T) {
+	t.Parallel()
+
+	exe, err := os.Executable()
+	require.NoError(t, err)
+	bin, err := os.ReadFile(exe)
+	require.NoError(t, err)
+
+	host := startRegistry(t)
+	refStr, _ := pushTestImage(t, host,
+		dir("usr"), dir("usr/local"), dir("usr/local/bin"),
+		file("usr/local/bin/tool", string(bin)),
+		file("usr/local/bin/script", "#!/bin/sh\necho hi\n"),
+	)
+
+	// contained splits what the image node contains into file nodes and
+	// the names of the rest, the system packages.
+	contained := func(nl *sbom.NodeList) (files []*sbom.Node, pkgs []string) {
+		img := nl.GetRootNodes()[0]
+		edge := nl.GetEdgeByType(img.GetId(), sbom.Edge_contains)
+		require.NotNil(t, edge)
+		for _, id := range edge.GetTo() {
+			n := nl.GetNodeByID(id)
+			if n.GetType() == sbom.Node_FILE {
+				files = append(files, n)
+			} else {
+				pkgs = append(pkgs, n.GetName())
+			}
+		}
+		return files, pkgs
+	}
+
+	t.Run("default", func(t *testing.T) {
+		t.Parallel()
+		u := NewUnpacker()
+		u.Options.Networking = api.NetworkDisabled
+		lists, err := u.Extract(t.Context(), &Reference{Ref: refStr})
+		require.NoError(t, err)
+		require.Len(t, lists, 1)
+		nl := lists[0]
+
+		files, pkgs := contained(nl)
+		require.Len(t, files, 1, "the script is not an artifact")
+		tool := files[0]
+		assert.Equal(t, "usr/local/bin/tool", tool.GetName())
+		sum := sha256.Sum256(bin)
+		assert.Equal(t, hex.EncodeToString(sum[:]), tool.GetHashes()[int32(sbom.HashAlgorithm_SHA256)])
+
+		// The file was generated from the unpack module, which carries the
+		// modules linked into the binary.
+		gen := nl.GetEdgeByType(tool.GetId(), sbom.Edge_generatedFrom)
+		require.NotNil(t, gen)
+		require.Len(t, gen.GetTo(), 1)
+		assert.Equal(t, "github.com/carabiner-dev/unpack", nl.GetNodeByID(gen.GetTo()[0]).GetName())
+		assert.NotEmpty(t, nl.GetNodesByIdentifier("purl", "pkg:golang/github.com/google/uuid@v1.6.0"))
+
+		// The system packages are still there.
+		assert.ElementsMatch(t, []string{"musl", "busybox-binsh"}, pkgs)
+	})
+
+	t.Run("skip artifacts", func(t *testing.T) {
+		t.Parallel()
+		u := NewUnpacker()
+		u.Options.SkipArtifacts = true
+		lists, err := u.Extract(t.Context(), &Reference{Ref: refStr})
+		require.NoError(t, err)
+		files, pkgs := contained(lists[0])
+		assert.Empty(t, files)
+		assert.ElementsMatch(t, []string{"musl", "busybox-binsh"}, pkgs)
+	})
+
+	t.Run("skip gobinary", func(t *testing.T) {
+		t.Parallel()
+		u := NewUnpacker()
+		u.Options.ArtifactDecomposers = map[string]bool{"gobinary": false}
+		lists, err := u.Extract(t.Context(), &Reference{Ref: refStr})
+		require.NoError(t, err)
+		files, _ := contained(lists[0])
+		assert.Empty(t, files)
+	})
 }
 
 func TestExtractSingleArchIncludeFiles(t *testing.T) {
