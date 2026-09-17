@@ -15,6 +15,17 @@ can be serialized as SPDX or CycloneDX.
 | [Ruby (Bundler)](ruby.md) | `source/ruby/` | `Gemfile.lock` | _(not read — executable Ruby)_ | rubygems.org API |
 | [Rust](rust.md) | `source/rust/` | `Cargo.lock` | `Cargo.toml` | crates.io API |
 
+## Artifact decomposers
+
+Built artifacts can carry their own dependency data. The artifact
+unpacker (`artifact/`) probes files for the formats these decomposers
+understand, on their own through `unpack artifact` and inside every
+container image `unpack image` scans.
+
+| Artifact | Entry point | Reads | Runs by default under | Remote enrichment |
+|----------|------------|-------|-----------------------|-------------------|
+| [Go executables](gobinary.md) | `artifact/gobinary/` | Embedded build information (`debug/buildinfo`) | images, system roots; not codebases | Go module proxy + deps.dev, through the Go decomposer |
+
 ## Common capabilities
 
 All decomposers share these behaviors:
@@ -48,6 +59,9 @@ decomposers uniformly.
 | **Go:** proxy .mod fetch (dependency graph) | skip | yes | yes |
 | **Go:** deps.dev API (licenses, VCS) | skip | yes | yes |
 | **Go:** proxy .zip download (license fallback) | skip | skip | yes |
+| **Go binary:** build info read | works | works | works |
+| **Go binary:** module-to-module edges from the local module cache | works | works | works |
+| **Go binary:** everything else | as Go | as Go | as Go |
 | **Maven:** POM fetch (dependency tree) | skip | yes | yes |
 | **Maven:** metadata fetch (snapshots, ranges) | skip | yes | yes |
 | **Maven:** checksum files (.sha1, .sha256) | skip | yes | yes |
@@ -103,6 +117,8 @@ output. Three flags control the inclusion of additional dependency types:
   environments (vendor directories) are read by system decomposers that
   run in image and filesystem scans, beside the rpm, deb and apk
   readers. See the [Python](python.md) and [PHP](composer.md) pages.
+- Go executables record the modules linked, with no dependency kinds, so
+  the flags are no-ops for the [Go binary](gobinary.md) decomposer too.
 
 ## Per-decomposer docs
 
@@ -113,4 +129,4 @@ details, data sources, and known limitations.
 
 [HOWTO.md](HOWTO.md) explains how subjects, unpackers and decomposers fit
 together and walks through implementing a source decomposer, a system
-decomposer, or a new unpacker.
+decomposer, an artifact decomposer, or a new unpacker.

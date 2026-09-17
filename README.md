@@ -11,6 +11,7 @@ Whether you're a developer, security researcher, or compliance officer, Unpack h
 ## Key Features
 
 - **Dependency Extraction**: Analyzes source code to discover dependencies for various languages.
+- **Artifact Inspection**: Reads the dependency data built into artifacts, such as the module list a Go executable carries, on their own or inside container images.
 - **SBOM Parsing**: Reads and understands major SBOM formats: SPDX 2.2, 2.3 and 3.0.1, and CycloneDX.
 - **Multiple Output Formats**: Displays dependencies as a visual tree or exports to standard SBOM formats.
 - **Extensible Architecture**: Easily extendable to support new languages and package managers.
@@ -157,13 +158,36 @@ unpack ls --format=json /path/to/project
 unpack ls --ignore "*/testdata/*" --ignore "temp/" .
 ```
 
+### `unpack artifact`: Inspect Built Artifacts
+
+Some artifacts carry their own dependency data. A Go executable records
+the exact modules linked into it, with versions and checksums, and `artifact`
+reads them straight out of the file: no source tree, no build.
+
+```bash
+# Show the module tree built into a Go binary
+unpack artifact ./bin/tool
+
+# Scan a release directory; files that are not recognized artifacts are skipped
+unpack artifact -f spdx ./dist
+
+# Attest what a binary is made of
+unpack artifact --sign -o tool.bundle.json ./bin/tool
+```
+
+Container image scans run the same probe over the image filesystem, so a Go
+binary in a distroless image shows up with its modules next to the OS
+package inventory. Use `unpack image --no-artifacts` to skip that, or
+`--skip-artifact gobinary` to leave out one kind of artifact.
+
 ## Supported Ecosystems
 
 Unpack includes decomposers for seven package ecosystems. See the
 [decomposer documentation](docs/decomposers/README.md) for details.
 Container image scans additionally report installed Python environments
 (site-packages) and Composer vendor directories next to the OS package
-inventory.
+inventory, and the modules built into any
+[Go executable](docs/decomposers/gobinary.md) they hold.
 
 | Ecosystem | Lock file | Manifest | Remote enrichment |
 | --- | --- | --- | --- |
@@ -174,6 +198,10 @@ inventory.
 | [Python](docs/decomposers/python.md) | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry) | PyPI JSON API |
 | [Ruby (Bundler)](docs/decomposers/ruby.md) | `Gemfile.lock` | _(not read)_ | rubygems.org API |
 | [Rust](docs/decomposers/rust.md) | `Cargo.lock` | `Cargo.toml` | crates.io API |
+
+| Artifact | Reads | Remote enrichment |
+| --- | --- | --- |
+| [Go executables](docs/decomposers/gobinary.md) | Embedded build information | Go module proxy + deps.dev |
 
 Support for more ecosystems is planned.
 
