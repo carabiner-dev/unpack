@@ -261,6 +261,78 @@ func TestExtractSwitches(t *testing.T) {
 	})
 }
 
+func TestSkip(t *testing.T) {
+	t.Parallel()
+	fsys := fstest.MapFS{
+		"app/tool":            {Data: []byte("GOBIN example.com/app")},
+		"app/vendor/helper":   {Data: []byte("GOBIN example.com/helper")},
+		"opt/svc/bin/svc":     {Data: []byte("GOBIN example.com/svc")},
+		"usr/bin/systool":     {Data: []byte("GOBIN example.com/systool")},
+		"usr/lib/x/plugin":    {Data: []byte("GOBIN example.com/plugin")},
+		"usr/local/bin/local": {Data: []byte("GOBIN example.com/local")},
+		"bin/sh":              {Data: []byte("GOBIN example.com/sh")},
+		"lib.so":              {Data: []byte("GOBIN example.com/lib.so")},
+	}
+	fake := &fakeDecomposer{name: "fake", magic: "GOBIN "}
+
+	found := func(t *testing.T, opts Options, subject api.DecomposableSubject) []string {
+		t.Helper()
+		u := newTestUnpacker(fake)
+		u.Options = opts
+		u.Options.Enabled = true
+		lists, err := u.Extract(t.Context(), subject)
+		require.NoError(t, err)
+		names := make([]string, 0, len(lists))
+		for _, nl := range lists {
+			names = append(names, nl.GetNodeByID(nl.GetRootElements()[0]).GetName())
+		}
+		return names
+	}
+	all := &Filesystem{FS: fsys}
+
+	t.Run("nothing skipped", func(t *testing.T) {
+		t.Parallel()
+		assert.Len(t, found(t, Options{}, all), 8)
+	})
+
+	t.Run("anchored directories prune", func(t *testing.T) {
+		t.Parallel()
+		got := found(t, Options{Skip: []string{"/usr/bin/", "/usr/lib/", "/bin/"}}, all)
+		assert.ElementsMatch(t, []string{"app/tool", "app/vendor/helper", "opt/svc/bin/svc", "usr/local/bin/local", "lib.so"}, got)
+	})
+
+	t.Run("unanchored directory matches at any depth", func(t *testing.T) {
+		t.Parallel()
+		got := found(t, Options{Skip: []string{"bin/"}}, all)
+		assert.ElementsMatch(t, []string{"app/tool", "app/vendor/helper", "usr/lib/x/plugin", "lib.so"}, got)
+	})
+
+	t.Run("file globs and negation", func(t *testing.T) {
+		t.Parallel()
+		// As in git, a negation cannot re-include what a pruned parent
+		// hides, so the exclusion targets the siblings, not the parent.
+		got := found(t, Options{Skip: []string{"*.so", "/usr/*", "!/usr/local"}}, all)
+		assert.ElementsMatch(t, []string{"app/tool", "app/vendor/helper", "opt/svc/bin/svc", "usr/local/bin/local", "bin/sh"}, got)
+	})
+
+	t.Run("blank patterns are ignored", func(t *testing.T) {
+		t.Parallel()
+		assert.Len(t, found(t, Options{Skip: []string{"", "  "}}, all), 8)
+	})
+
+	t.Run("system defaults", func(t *testing.T) {
+		t.Parallel()
+		got := found(t, Options{Skip: DefaultSystemSkips}, all)
+		assert.ElementsMatch(t, []string{"app/tool", "app/vendor/helper", "opt/svc/bin/svc", "usr/local/bin/local", "lib.so"}, got)
+	})
+
+	t.Run("explicit paths are probed regardless", func(t *testing.T) {
+		t.Parallel()
+		got := found(t, Options{Skip: []string{"/usr/"}}, &Filesystem{FS: fsys, Only: []string{"usr/bin/systool"}})
+		assert.Equal(t, []string{"usr/bin/systool"}, got)
+	})
+}
+
 func TestDefaultsFor(t *testing.T) {
 	t.Parallel()
 	u := newTestUnpacker(
@@ -276,6 +348,16 @@ func TestDefaultsFor(t *testing.T) {
 
 	opts = u.DefaultsFor("codebase")
 	assert.Equal(t, map[string]bool{"images-only": false, "nowhere": false, "untraited": true}, opts.Decomposers)
+
+	// Whole-system parents get the system skip list, a copy of it; the
+	// rest skip nothing.
+	assert.Equal(t, DefaultSystemSkips, u.DefaultsFor("image").Skip)
+	assert.Equal(t, DefaultSystemSkips, u.DefaultsFor("system").Skip)
+	assert.Nil(t, u.DefaultsFor("codebase").Skip)
+	assert.Nil(t, u.DefaultsFor("").Skip)
+	skips := u.DefaultsFor("image").Skip
+	skips[0] = "changed"
+	assert.NotEqual(t, "changed", DefaultSystemSkips[0])
 
 	// DefaultsFor does not touch the unpacker's own options.
 	assert.Nil(t, u.Options.Decomposers)

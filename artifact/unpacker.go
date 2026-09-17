@@ -14,7 +14,9 @@ import (
 	"io/fs"
 	"slices"
 	"sort"
+	"strings"
 
+	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 	"github.com/google/uuid"
 	"github.com/protobom/protobom/pkg/sbom"
 	"golang.org/x/sync/errgroup"
@@ -45,6 +47,17 @@ type Options struct {
 	// decomposers' own defaults for a given parent subject.
 	Decomposers map[string]bool
 
+	// Skip lists paths the scan leaves out, as gitignore-style patterns
+	// relative to the source root: "/usr/lib/" prunes that directory tree,
+	// "vendor/" prunes any directory of that name, "*.so" skips matching
+	// files anywhere, and "!" negates. A pruned directory is never entered,
+	// so as in git a negation cannot re-include anything below it. Paths
+	// named explicitly (a File subject, a Filesystem restricted with Only)
+	// are probed regardless.
+	// DefaultsFor fills it with DefaultSystemSkips under parents that are
+	// whole systems.
+	Skip []string
+
 	// Networking controls how much network access decomposers are allowed
 	// when enriching what they read from the artifact.
 	Networking api.NetworkLevel
@@ -54,11 +67,29 @@ type Options struct {
 }
 
 // DefaultOptions is the configuration used by NewUnpacker: everything
-// enabled, essential networking.
+// enabled, nothing skipped, essential networking.
 var DefaultOptions = Options{
 	Enabled:     true,
 	Concurrency: defaultConcurrency,
 }
+
+// DefaultSystemSkips are the paths left out when scanning a whole system,
+// such as a container image or a system root. They hold the distribution's
+// own binaries and libraries, which belong to the installed packages the
+// system decomposers inventory, and directories that never hold an
+// application's executables. Skipping them keeps the scan to the places
+// an application is installed in (/app, /opt, /usr/local, /home, the root)
+// and keeps system components from being reported as artifacts.
+var DefaultSystemSkips = []string{
+	"/bin/", "/sbin/", "/lib/", "/lib32/", "/lib64/", "/libx32/",
+	"/usr/bin/", "/usr/sbin/", "/usr/lib/", "/usr/lib32/", "/usr/lib64/", "/usr/libx32/",
+	"/usr/libexec/", "/usr/share/", "/usr/include/", "/usr/src/",
+	"/etc/", "/var/", "/boot/", "/dev/", "/proc/", "/sys/", "/run/",
+}
+
+// systemRootParents are the parent subject types whose data is a whole
+// system, where DefaultSystemSkips applies.
+var systemRootParents = []string{"image", "system"}
 
 // NewUnpacker returns an artifact unpacker with the default options and the
 // built-in artifact decomposers.
@@ -81,12 +112,17 @@ type Unpacker struct {
 
 // DefaultsFor returns the option set the unpacker should run with under a
 // parent subject of the given type, such as "image": DefaultOptions with each
-// registered decomposer switched on or off according to its own defaults.
-// Decomposers that implement api.SubjectDefaults run only under the parents
-// they list; the rest run everywhere. Parents call this, adjust the result
-// to what their caller asked for, and set it as the unpacker's Options.
+// registered decomposer switched on or off according to its own defaults,
+// and, under a parent that is a whole system, DefaultSystemSkips as the
+// skip list. Decomposers that implement api.SubjectDefaults run only under
+// the parents they list; the rest run everywhere. Parents call this, adjust
+// the result to what their caller asked for, and set it as the unpacker's
+// Options.
 func (u *Unpacker) DefaultsFor(parentSubjectType string) Options {
 	opts := DefaultOptions
+	if slices.Contains(systemRootParents, parentSubjectType) {
+		opts.Skip = slices.Clone(DefaultSystemSkips)
+	}
 	opts.Decomposers = make(map[string]bool, len(u.decomposers))
 	for name, d := range u.decomposers {
 		enabled := true
@@ -147,7 +183,7 @@ func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject)
 
 	paths := src.Paths()
 	if paths == nil {
-		if paths, err = regularFiles(fsys); err != nil {
+		if paths, err = regularFiles(fsys, skipMatcher(u.Options.Skip)); err != nil {
 			return nil, fmt.Errorf("listing artifact source: %w", err)
 		}
 	}
@@ -274,13 +310,39 @@ func wrapInFile(graph *sbom.NodeList, path string, ra io.ReaderAt, size int64) (
 	return nl, nil
 }
 
-// regularFiles lists every regular file in fsys, in lexical order. Symlinks
-// are not followed: a link to an artifact is not the artifact.
-func regularFiles(fsys fs.FS) ([]string, error) {
+// skipMatcher compiles skip patterns into a matcher, or nil for none.
+func skipMatcher(patterns []string) gitignore.Matcher {
+	if len(patterns) == 0 {
+		return nil
+	}
+	parsed := make([]gitignore.Pattern, 0, len(patterns))
+	for _, p := range patterns {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		parsed = append(parsed, gitignore.ParsePattern(p, nil))
+	}
+	return gitignore.NewMatcher(parsed)
+}
+
+// regularFiles lists every regular file in fsys, in lexical order, leaving
+// out what skip matches: a matching directory is pruned without being
+// entered. Symlinks are not followed: a link to an artifact is not the
+// artifact.
+func regularFiles(fsys fs.FS, skip gitignore.Matcher) ([]string, error) {
 	var paths []string
 	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if path == "." {
+			return nil
+		}
+		if skip != nil && skip.Match(strings.Split(path, "/"), d.IsDir()) {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
 		}
 		if d.Type().IsRegular() {
 			paths = append(paths, path)

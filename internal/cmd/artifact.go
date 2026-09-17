@@ -49,11 +49,12 @@ func (ao *artifactCmdOptions) Validate() error {
 }
 
 // AddFlags adds the flags of all the embedded option sets to the command.
-// Of the artifact set only the per-decomposer switch applies: turning the
-// scan off wholesale makes no sense on a command that is the scan.
+// Of the artifact set only the skips apply: turning the scan off wholesale
+// makes no sense on a command that is the scan, and nothing is skipped by
+// default when the user points at a path.
 func (ao *artifactCmdOptions) AddFlags(cmd *cobra.Command) {
 	ao.formatOptions.AddFlags(cmd)
-	ao.AddSkipFlag(cmd)
+	ao.AddScanFlags(cmd)
 	ao.Output.AddFlags(cmd)
 	cmd.PersistentFlags().StringVar(
 		&ao.Networking, "networking", networkEssential,
@@ -90,8 +91,10 @@ and that package's dependencies as descendants.
 
 The path may be a single file or a directory. A directory is scanned for
 every artifact of a kind %[1]s understands; files it does not recognize are
-skipped. Every artifact decomposer runs here, whatever its defaults are when
-scanning inside a container image. Use --skip-artifact to leave one out.
+skipped. Every artifact decomposer runs here and every directory is scanned,
+whatever the defaults are when scanning inside a container image. Use
+--skip-artifact to leave out a kind of artifact and --skip-path to leave out
+paths, as gitignore-style patterns relative to the directory.
 
 By default, dependencies are displayed as an ASCII tree in the terminal but
 the data can be exported as an SPDX or CycloneDX SBOM, wrapped in an in-toto
@@ -125,6 +128,7 @@ Usage patterns:
 
 			unpacker := artifact.NewUnpacker()
 			unpacker.Options.Decomposers = opts.Decomposers()
+			unpacker.Options.Skip = opts.SkipPaths
 			unpacker.Options.Networking = networkLevel(opts.Networking)
 
 			lists, err := unpacker.Extract(cmd.Context(), subject)

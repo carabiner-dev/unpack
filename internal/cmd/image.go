@@ -73,8 +73,13 @@ squashes its layers into the filesystem a running container would see, and
 extracts the operating system packages installed in it (apk, dpkg and rpm
 databases, including distroless images). It also scans the filesystem for
 artifacts that carry their own dependency data, such as Go executables, and
-adds each one with the packages built into it. Use --no-artifacts to skip
-that scan, or --skip-artifact to leave out one kind of artifact.
+adds each one with the packages built into it. The scan leaves out the
+distribution's own directories (/usr/bin, /usr/lib, /etc, ...), whose
+contents belong to the installed packages, and looks where applications are
+installed: /app, /opt, /usr/local, /home, the root. Use --no-artifacts to
+skip the scan, --skip-artifact to leave out one kind of artifact,
+--skip-path to leave out more paths, and --scan-system-dirs to scan
+everything.
 
 For a single-arch image the result is the image at the top with its packages
 and artifacts as descendants. For a multi-arch image, the index sits at the
@@ -111,6 +116,8 @@ Usage patterns:
 			unpacker.Options.IncludeFiles = opts.Files
 			unpacker.Options.SkipArtifacts = opts.NoArtifacts
 			unpacker.Options.ArtifactDecomposers = opts.Decomposers()
+			unpacker.Options.ArtifactSkip = opts.SkipPaths
+			unpacker.Options.ScanSystemDirs = opts.ScanSystemDirs
 			unpacker.Options.Networking = networkLevel(opts.Networking)
 
 			lists, err := unpacker.Extract(cmd.Context(), &image.Reference{Ref: opts.Reference})

@@ -89,6 +89,19 @@ source tree. A caller can always override the default:
 | `image.Unpacker` (library) | runs | `Options.SkipArtifacts`, or `Options.ArtifactDecomposers["gobinary"] = false` | `Options.ArtifactDecomposers["gobinary"] = true` |
 | `artifact.Unpacker` under another parent | per `DefaultsFor(parentType)` | `Options.Decomposers["gobinary"] = false` | `Options.Decomposers["gobinary"] = true` |
 
+### Which directories
+
+Inside an image or a system root the unpacker skips the distribution's
+own directories by default (`artifact.DefaultSystemSkips`: `/bin`,
+`/usr/bin`, `/usr/lib`, `/usr/share`, `/etc`, `/var`, `/proc`, ...).
+Executables there belong to installed packages, which the system
+decomposers inventory, and reporting a distro-shipped Go tool as an
+artifact with its own SBOM would double count it. The scan covers where
+applications are installed instead: `/app`, `/opt`, `/usr/local`,
+`/home`, the root, and anything else. `--skip-path` narrows it further
+with gitignore-style patterns and `--scan-system-dirs` opens it up.
+`unpack artifact PATH` skips nothing: the user pointed at the path.
+
 ## Options
 
 The decomposer has no options of its own. `DefaultOptions` returns the
