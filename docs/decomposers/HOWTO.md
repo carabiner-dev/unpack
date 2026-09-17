@@ -540,8 +540,11 @@ a row to the tables in the decomposers README.
 Test on a real artifact. For Go executables use `internal/testbin`, which
 builds a tiny fixture program at test time so its build information is
 complete on every toolchain (test binaries themselves carried an empty
-module list before Go 1.27). For other formats put a small real artifact
-under `testdata/`. Check
+module list before Go 1.27). For data embedded in a section of an
+executable, `artifact/internal/exetest` synthesizes minimal ELF, PE and
+Mach-O files around any section contents, and
+`artifact/internal/executable` reads a section back from all three. For
+other formats put a small real artifact under `testdata/`. Check
 `Matches` on real headers and on noise, `ExtractArtifact` on a real file
 and on a file that passes the filter but is not yours, and the graph
 shape. A test through `artifact.NewUnpacker` with a `File` subject

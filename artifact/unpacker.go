@@ -23,6 +23,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/artifact/gobinary"
+	"github.com/carabiner-dev/unpack/artifact/rustbinary"
 )
 
 // Ensure the artifact unpacker satisfies the unified Unpacker interface.
@@ -62,6 +63,10 @@ type Options struct {
 	// when enriching what they read from the artifact.
 	Networking api.NetworkLevel
 
+	// IncludeBuild includes the dependencies that built an artifact, when
+	// the artifact records them, related through buildDependency edges.
+	IncludeBuild bool
+
 	// Concurrency is how many files are probed at once.
 	Concurrency int
 }
@@ -97,7 +102,8 @@ func NewUnpacker() *Unpacker {
 	return &Unpacker{
 		Options: DefaultOptions,
 		decomposers: map[string]Decomposer{
-			gobinary.Name: gobinary.New(),
+			gobinary.Name:   gobinary.New(),
+			rustbinary.Name: rustbinary.New(),
 		},
 	}
 }
@@ -188,7 +194,10 @@ func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject)
 		}
 	}
 
-	dOpts := &api.DecomposerOptions{Networking: u.Options.Networking}
+	dOpts := &api.DecomposerOptions{
+		Networking:   u.Options.Networking,
+		IncludeBuild: u.Options.IncludeBuild,
+	}
 
 	// Probe the files concurrently, keeping results in path order.
 	results := make([]*sbom.NodeList, len(paths))
