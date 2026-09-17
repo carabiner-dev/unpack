@@ -48,6 +48,9 @@ func liveExtract(t *testing.T, u *Unpacker, ref string) *sbom.NodeList {
 
 func TestLiveExtractSingleArch(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping: conformance tests run external oracles (network, docker); drop -short to run them")
+	}
 
 	var mu sync.Mutex
 	totals := map[string]int64{}
@@ -116,6 +119,9 @@ func TestLiveExtractSingleArch(t *testing.T) {
 
 func TestLiveExtractMultiArch(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping: conformance tests run external oracles (network, docker); drop -short to run them")
+	}
 
 	nl := liveExtract(t, NewUnpacker(), liveAlpineIndex)
 
@@ -159,6 +165,9 @@ func TestLiveExtractMultiArch(t *testing.T) {
 
 func TestLiveExtractDistroless(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping: conformance tests run external oracles (network, docker); drop -short to run them")
+	}
 
 	// Distroless exercises the deb decomposer through the whole stack:
 	// status.d databases, an os-release symlink the tar filesystem must

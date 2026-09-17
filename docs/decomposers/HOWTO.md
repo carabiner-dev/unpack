@@ -430,7 +430,9 @@ If your decomposer takes options that deserve a CLI flag, wire it in
 - Where a reference implementation exists (a package manager that can list
   what it installed), consider a conformance test that compares your output
   with it, skipping when the tool is not available. `system/apk/conformance_test.go`
-  shows the pattern.
+  shows the pattern. Guard it with `testing.Short()` as the existing ones
+  are: oracles reach the network or Docker, so `go test -short ./...` is
+  the quick local run and CI runs the full set.
 
 ### 8. Documentation
 

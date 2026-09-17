@@ -29,6 +29,9 @@ const composerOracleImage = "composer:2"
 // reading of the lock: the package set, and which of them are direct.
 func TestCompareWithComposerShow(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping: conformance tests run external oracles (network, docker); drop -short to run them")
+	}
 	requireDocker(t)
 
 	dir, err := filepath.Abs("testdata/simple")

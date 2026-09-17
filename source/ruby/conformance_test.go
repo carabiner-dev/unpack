@@ -45,6 +45,9 @@ puts({
 // the edges.
 func TestCompareWithBundler(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping: conformance tests run external oracles (network, docker); drop -short to run them")
+	}
 
 	for _, testdata := range []string{"simple", "gitgem"} {
 		t.Run(testdata, func(t *testing.T) {

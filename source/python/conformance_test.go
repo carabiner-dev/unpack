@@ -37,6 +37,9 @@ const uvDockerImage = "ghcr.io/astral-sh/uv:latest"
 // when there is neither. Set UNPACK_FORCE_TESTS=1 to fail instead of skip.
 func TestCompareWithUvExport(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping: conformance tests run external oracles (network, docker); drop -short to run them")
+	}
 	requireUv(t)
 
 	linux312 := [3]string{"linux", "amd64", "3.12"}
@@ -272,6 +275,9 @@ func requireUv(t *testing.T) {
 // compared: the export plugin reads 2.0 and 2.1 locks alike.
 func TestCompareWithPoetryExport(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping: conformance tests run external oracles (network, docker); drop -short to run them")
+	}
 
 	linux312 := [3]string{"linux", "amd64", "3.12"}
 	linux310 := [3]string{"linux", "amd64", "3.10"}

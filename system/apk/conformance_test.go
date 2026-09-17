@@ -31,6 +31,9 @@ const (
 // Set UNPACK_FORCE_TESTS=1 to fail instead of skip when Docker is not available.
 func TestCompareWithApkList(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping: conformance tests run external oracles (network, docker); drop -short to run them")
+	}
 
 	// Docker is only reliably available on Linux CI runners, so only force
 	// the test there. macOS and Windows runners don't ship Docker.

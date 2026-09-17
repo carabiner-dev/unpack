@@ -142,6 +142,9 @@ func extractedGraph(t *testing.T, testdata string, opts *api.DecomposerOptions) 
 // dependency configurations both sides can name.
 func TestCompareWithPnpmLs(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping: conformance tests run external oracles (network, docker); drop -short to run them")
+	}
 
 	for name, tc := range map[string]struct {
 		testdata string
@@ -235,6 +238,9 @@ func parsePnpmLs(t *testing.T, out string) (set, pairs []string) {
 // which answers from the lockfile.
 func TestCompareWithYarnList(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping: conformance tests run external oracles (network, docker); drop -short to run them")
+	}
 
 	for name, tc := range map[string]struct {
 		listArgs []string
@@ -297,6 +303,9 @@ func parseYarnList(t *testing.T, out string) []string {
 // proves they collapse onto one node each.
 func TestCompareWithYarnBerryInfo(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping: conformance tests run external oracles (network, docker); drop -short to run them")
+	}
 
 	for name, testdata := range map[string]string{
 		"a single project": "yarnberry",
