@@ -10,12 +10,14 @@ import (
 	"maps"
 	"net/url"
 	"path"
+	"regexp"
 	"strings"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/google/uuid"
 	"github.com/protobom/protobom/pkg/sbom"
 	"golang.org/x/sync/errgroup"
@@ -178,18 +180,19 @@ func (u *Unpacker) extractIndex(ctx context.Context, refStr string, nref name.Re
 		return nil, fmt.Errorf("reading index manifest: %w", err)
 	}
 
-	// Collect the platform images, skipping non-runnable entries such as
-	// buildx attestation manifests (platform "unknown/unknown").
+	// Collect the platform images, skipping entries that are not runnable
+	// images: OCI artifacts such as signatures, attestations and attached
+	// SBOMs, and buildx attestation manifests.
 	var members []*v1.Descriptor
 	for i := range manifest.Manifests {
 		m := &manifest.Manifests[i]
-		if !m.MediaType.IsImage() || isAttestation(m) {
+		if !m.MediaType.IsImage() || !isRunnable(m) {
 			continue
 		}
 		members = append(members, m)
 	}
 	if len(members) == 0 {
-		return nil, fmt.Errorf("index %q has no platform images", refStr)
+		return nil, fmt.Errorf("index %q has no platform images%s", refStr, referrersTagHint(nref))
 	}
 
 	// Extract every platform image in parallel. Each one is addressed by
@@ -236,14 +239,45 @@ func (u *Unpacker) extractIndex(ctx context.Context, refStr string, nref name.Re
 	return nl, nil
 }
 
-// isAttestation reports whether an index entry is a buildx attestation
-// manifest rather than a runnable platform image.
-func isAttestation(desc *v1.Descriptor) bool {
-	if desc.Annotations["vnd.docker.reference.type"] == "attestation-manifest" {
-		return true
+// isRunnable reports whether an index entry is a platform image rather
+// than something else stored as a manifest. An entry whose artifact type
+// is anything but an image config is an OCI 1.1 artifact (a sigstore
+// bundle, a cosign signature, an attached SBOM); tools may state the
+// config media type as the artifact type of a plain image, which is what
+// OCI defines it to be. A buildx attestation manifest is marked by its
+// annotation or by the "unknown/unknown" platform.
+func isRunnable(desc *v1.Descriptor) bool {
+	if at := types.MediaType(desc.ArtifactType); at != "" && at != types.OCIConfigJSON && at != types.DockerConfigJSON {
+		return false
 	}
-	return desc.Platform != nil &&
-		desc.Platform.OS == "unknown" && desc.Platform.Architecture == "unknown"
+	if desc.Annotations["vnd.docker.reference.type"] == "attestation-manifest" {
+		return false
+	}
+	return desc.Platform == nil ||
+		desc.Platform.OS != "unknown" || desc.Platform.Architecture != "unknown"
+}
+
+// referrersTag matches the fallback tags registries hold referrers under
+// when the referrers API is unavailable: "sha256-<digest>", optionally with
+// a suffix such as ".sig", ".att" or ".sbom", pointing at what is attached
+// to the image with that digest.
+var referrersTag = regexp.MustCompile(`^sha256-([0-9a-f]{64})(\..*)?$`)
+
+// referrersTagHint returns a hint for an index without platform images when
+// the reference is a referrers tag, naming the image the tag refers to.
+func referrersTagHint(nref name.Reference) string {
+	tag, ok := nref.(name.Tag)
+	if !ok {
+		return ""
+	}
+	m := referrersTag.FindStringSubmatch(tag.TagStr())
+	if m == nil {
+		return ""
+	}
+	return fmt.Sprintf(
+		"; the tag holds what is attached to an image (signatures, attestations, SBOMs), the image itself is %s@sha256:%s",
+		tag.Context().Name(), m[1],
+	)
 }
 
 // platformString renders a platform for error messages, tolerating nil.

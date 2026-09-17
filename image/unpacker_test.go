@@ -312,8 +312,11 @@ func TestExtractMultiArch(t *testing.T) {
 
 	amd64 := archImage(t, "amd64", "x86_64")
 	arm64 := archImage(t, "arm64", "aarch64")
-	// A buildx-style attestation entry that must be skipped.
+	// A buildx-style attestation entry that must be skipped, and an OCI
+	// artifact (a sigstore bundle) with no platform and a JSON layer that
+	// would break the squash if it were treated as an image.
 	attestation := makeImage(t, makeLayer(t, file("attestation.json", "{}")))
+	bundle := makeImage(t, makeLayer(t, file("bundle.json", "{}")))
 
 	idx := mutate.AppendManifests(empty.Index,
 		mutate.IndexAddendum{Add: amd64, Descriptor: v1.Descriptor{
@@ -325,6 +328,9 @@ func TestExtractMultiArch(t *testing.T) {
 		mutate.IndexAddendum{Add: attestation, Descriptor: v1.Descriptor{
 			Platform:    &v1.Platform{OS: "unknown", Architecture: "unknown"},
 			Annotations: map[string]string{"vnd.docker.reference.type": "attestation-manifest"},
+		}},
+		mutate.IndexAddendum{Add: bundle, Descriptor: v1.Descriptor{
+			ArtifactType: "application/vnd.dev.sigstore.bundle.v0.3+json",
 		}},
 	)
 
@@ -424,6 +430,56 @@ func TestExtractIndexWithoutPlatformImages(t *testing.T) {
 	u := NewUnpacker()
 	_, err = u.Extract(t.Context(), &Reference{Ref: refStr})
 	require.ErrorContains(t, err, "no platform images")
+	assert.NotContains(t, err.Error(), "the image itself is", "an ordinary tag gets no referrers hint")
+}
+
+// TestExtractReferrersTag points the unpacker at the fallback tag sigstore
+// and cosign keep attachments under: an index of OCI artifacts with no
+// platform images. The error must name the image the tag refers to.
+func TestExtractReferrersTag(t *testing.T) {
+	t.Parallel()
+
+	host := startRegistry(t)
+	bundle := makeImage(t, makeLayer(t, file("bundle.json", "{}")))
+	idx := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
+		Add:        bundle,
+		Descriptor: v1.Descriptor{ArtifactType: "application/vnd.dev.sigstore.bundle.v0.3+json"},
+	})
+	const digest = "51b9a4c2a68d500b861f26e17588db0d6c66677c022041bb8729cd15c98d9642"
+	for _, tag := range []string{"sha256-" + digest, "sha256-" + digest + ".sbom"} {
+		refStr := host + "/test/app:" + tag
+		ref, err := name.ParseReference(refStr)
+		require.NoError(t, err)
+		require.NoError(t, remote.WriteIndex(ref, idx))
+
+		_, err = NewUnpacker().Extract(t.Context(), &Reference{Ref: refStr})
+		require.ErrorContains(t, err, "no platform images")
+		assert.ErrorContains(t, err, host+"/test/app@sha256:"+digest)
+	}
+}
+
+func TestIsRunnable(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		desc v1.Descriptor
+		want bool
+	}{
+		"platform image":       {v1.Descriptor{Platform: &v1.Platform{OS: "linux", Architecture: "amd64"}}, true},
+		"no platform":          {v1.Descriptor{}, true},
+		"config artifact type": {v1.Descriptor{ArtifactType: "application/vnd.oci.image.config.v1+json"}, true},
+		"docker config type":   {v1.Descriptor{ArtifactType: "application/vnd.docker.container.image.v1+json"}, true},
+		"oci artifact":         {v1.Descriptor{ArtifactType: "application/vnd.dev.sigstore.bundle.v0.3+json"}, false},
+		"artifact with platform": {
+			v1.Descriptor{ArtifactType: "application/spdx+json", Platform: &v1.Platform{OS: "linux", Architecture: "amd64"}}, false,
+		},
+		"buildx annotation": {v1.Descriptor{Annotations: map[string]string{"vnd.docker.reference.type": "attestation-manifest"}}, false},
+		"unknown platform":  {v1.Descriptor{Platform: &v1.Platform{OS: "unknown", Architecture: "unknown"}}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, isRunnable(&tc.desc))
+		})
+	}
 }
 
 func TestExtractRejectsOtherSubjects(t *testing.T) {
