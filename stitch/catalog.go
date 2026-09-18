@@ -148,11 +148,11 @@ func (c *Catalog) Add(source string, doc *protosbom.Document) *Supplement {
 }
 
 // Match returns the entries describing the node, in catalog order. An
-// entry describes a node when they share a hash under some algorithm and
-// disagree under none, or, when they share no hash algorithm, when they
-// carry the same purl. The node's type is not considered: a package in a
-// document may well describe a file found on disk, and the stitcher
-// decides what that means.
+// entry describes a node under sbom.SameComponent's rule, minus the node
+// type: they share a hash under some algorithm and disagree under none,
+// or, when they share no hash algorithm, they carry the same purl. A
+// package in a document may well describe a file found on disk, and the
+// stitcher decides what that means.
 func (c *Catalog) Match(n *protosbom.Node) []*Entry {
 	seen := map[*Entry]bool{}
 	var found []*Entry
@@ -161,7 +161,7 @@ func (c *Catalog) Match(n *protosbom.Node) []*Entry {
 			continue
 		}
 		for _, e := range c.byHash[hashKey(algo, v)] {
-			if !seen[e] && !hashesConflict(n, e.Node) {
+			if !seen[e] && !n.HashesConflict(e.Node) {
 				seen[e] = true
 				found = append(found, e)
 			}

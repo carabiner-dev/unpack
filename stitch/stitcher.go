@@ -19,8 +19,8 @@ const PropertyStitchedFrom = "unpack:stitched-from"
 // Options configures a Stitcher.
 type Options struct {
 	// Identity decides which nodes the dedupe pass collapses. Nil means
-	// SameComponent.
-	Identity Identity
+	// sbom.SameComponent.
+	Identity sbom.NodeIdentity
 
 	// NoDedupe leaves duplicate nodes in place after stitching. By
 	// default, nodes that two supplements, or a supplement and the
@@ -132,7 +132,7 @@ func (s *Stitcher) Stitch(nl *sbom.NodeList) (*Report, error) {
 	}
 
 	if !s.Options.NoDedupe {
-		report.Dropped = Dedupe(nl, s.Options.Identity)
+		report.Dropped = nl.Dedupe(s.Options.Identity)
 	}
 	return report, nil
 }
@@ -144,16 +144,16 @@ func apply(nl *sbom.NodeList, node *sbom.Node, entry *Entry) (bool, error) {
 	merged := false
 	switch {
 	case node.GetType() == entry.Node.GetType():
-		if err := Merge(nl, node.GetId(), src, entry.ID()); err != nil {
+		if err := nl.GraftInto(node.GetId(), src, entry.ID()); err != nil {
 			return false, err
 		}
 		merged = true
 	case node.GetType() == sbom.Node_FILE:
-		if err := Attach(nl, node.GetId(), src, entry.ID(), sbom.Edge_generatedFrom); err != nil {
+		if err := nl.Graft(node.GetId(), src, entry.ID(), sbom.Edge_generatedFrom); err != nil {
 			return false, err
 		}
 	default:
-		if err := Attach(nl, node.GetId(), src, entry.ID(), sbom.Edge_contains); err != nil {
+		if err := nl.Graft(node.GetId(), src, entry.ID(), sbom.Edge_contains); err != nil {
 			return false, err
 		}
 	}
