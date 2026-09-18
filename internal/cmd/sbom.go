@@ -18,6 +18,7 @@ import (
 )
 
 type sbomOptions struct {
+	stitchOptions
 	Path            string
 	Format          string
 	Attest          bool
@@ -46,12 +47,14 @@ func (ro *sbomOptions) Validate() error {
 	if ro.Attest && !slices.Contains(sbomFormats, ro.Format) {
 		errs = append(errs, fmt.Errorf("attestations can only be generated when output set to SPDX or CycloneDX"))
 	}
+	errs = append(errs, ro.stitchOptions.Validate())
 
 	return errors.Join(errs...)
 }
 
 // AddFlags adds the subcommands flags
 func (ro *sbomOptions) AddFlags(cmd *cobra.Command) {
+	ro.stitchOptions.AddFlags(cmd)
 	cmd.PersistentFlags().StringVarP(
 		&ro.Path, "path", "p", "", "path to the sbom file",
 	)
@@ -90,6 +93,11 @@ func addSBOM(parent *cobra.Command) {
 
 Unpack sbom takes an SBOM document and returns dependency data from its contents.
 
+With --add-sbom, other documents are stitched in: whenever a component the
+document contains is one a supplemental SBOM describes, by hash or purl, the
+supplement's data is added under it, which turns a shallow SBOM into a
+complete one.
+
 The SBOM can be a bare document or one wrapped in a security envelope: sigstore
 bundles, DSSE envelopes and in-toto statements are opened and the bill of
 materials is read from the predicate they carry. Envelopes are opened, not
@@ -120,6 +128,13 @@ verified: their signatures are not checked here.
 				return errors.New("no dependency data found")
 			}
 			nodelist := nodelists[0]
+
+			// Enrich with supplemental SBOMs, if any, before filtering
+			// so their dependency kinds are filtered like the rest.
+			if err := opts.Stitch(nodelist); err != nil {
+				return fmt.Errorf("stitching supplemental SBOMs: %w", err)
+			}
+			opts.ReportUnused()
 
 			// Filter out excluded dependency types
 			filterNodeListByEdgeType(nodelist, opts)

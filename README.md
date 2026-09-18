@@ -132,6 +132,32 @@ with the statement but `sbom` does not check them, so the data it returns is
 exactly as trustworthy as the file it came from. Verify attestations with a
 tool that does before trusting what they carry.
 
+### Stitching SBOMs: `--add-sbom`
+
+Some components an analysis finds cannot be opened: a binary with no
+embedded dependency data, a vendored library, a package the system did not
+install. If an SBOM for it exists, hand it to `unpack` and it is stitched in.
+Every command that produces dependency data takes `--add-sbom` with a file or
+a directory of files, in any format `unpack sbom` reads, bare or enveloped.
+
+```bash
+# Enrich an image scan with the SBOMs of the binaries it ships
+unpack image --add-sbom ./sboms/ -f spdx ghcr.io/example/app:1.2.3
+
+# Complete a shallow SBOM with the documents describing its components
+unpack sbom -p app.spdx.json --add-sbom deps/ -f spdx
+```
+
+Before the analysis, the supplements are parsed and the components they
+describe are remembered by hash and purl. Whenever the analysis finds one
+of them, the supplement's data goes under it: merged into the component
+when the two are the same kind of thing, or hung below a file as the package
+it was generated from. Supplements chain, so a document describing a
+dependency of another document's subject applies too. Components two
+supplements both describe are collapsed into one. Every stitched component
+carries a reference to the document it came from, and supplements that
+described nothing found are reported.
+
 ### `unpack ls`: List Discovered Codebases
 
 Use `ls` to scan a directory and list the codebases found, along with their IDs. These IDs can then be used with the `extract` command.

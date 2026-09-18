@@ -10,9 +10,12 @@ import (
 
 	"github.com/carabiner-dev/command"
 	"github.com/protobom/protobom/pkg/formats"
+	protosbom "github.com/protobom/protobom/pkg/sbom"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/stitch"
 )
 
 // formatOptions is the reusable options set controlling how extracted
@@ -266,6 +269,90 @@ func validateNetworking(name string) error {
 		return fmt.Errorf("invalid networking level %q (must be essential, full, or disabled)", name)
 	}
 	return nil
+}
+
+// stitchOptions is the reusable options set that adds supplemental bills
+// of materials to a command's output: documents describing components the
+// extraction finds but cannot open, such as a binary without embedded
+// dependency data, get stitched under those components.
+type stitchOptions struct {
+	config *command.OptionsSetConfig
+
+	// AddSBOMs lists supplemental SBOMs to stitch in: files, or
+	// directories of them.
+	AddSBOMs []string
+
+	stitcher *stitch.Stitcher
+}
+
+var _ command.OptionsSet = (*stitchOptions)(nil)
+
+// Config returns the flag configuration of the stitch options.
+func (so *stitchOptions) Config() *command.OptionsSetConfig {
+	if so.config == nil {
+		so.config = &command.OptionsSetConfig{
+			Flags: map[string]command.FlagConfig{
+				"add-sbom": {
+					Long: "add-sbom",
+					Help: "supplemental SBOM (file or directory of files) whose data is stitched under the components it describes when they are found",
+				},
+			},
+		}
+	}
+	return so.config
+}
+
+// AddFlags adds the stitch flags to a command.
+func (so *stitchOptions) AddFlags(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringSliceVar(
+		&so.AddSBOMs, so.Config().LongFlag("add-sbom"), nil, so.Config().HelpText("add-sbom"),
+	)
+}
+
+// Validate loads the supplements, so a bad path fails before any work.
+func (so *stitchOptions) Validate() error {
+	if len(so.AddSBOMs) == 0 || so.stitcher != nil {
+		return nil
+	}
+	catalog := stitch.NewCatalog()
+	if err := catalog.Load(so.AddSBOMs...); err != nil {
+		return fmt.Errorf("loading supplemental SBOMs: %w", err)
+	}
+	for _, p := range catalog.Unparsed() {
+		logrus.Infof("skipped %s: not a bill of materials", p)
+	}
+	so.stitcher = stitch.New(catalog)
+	return nil
+}
+
+// Stitch enriches a node list with the supplements, if any were given.
+func (so *stitchOptions) Stitch(nl *protosbom.NodeList) error {
+	if so.stitcher == nil {
+		return nil
+	}
+	report, err := so.stitcher.Stitch(nl)
+	if err != nil {
+		return err
+	}
+	for _, s := range report.Stitched {
+		logrus.Debugf("stitched %s from %s", s.Entry.Node.GetName(), s.Entry.Supplement.Source)
+	}
+	return nil
+}
+
+// ReportUnused warns about the supplements that described nothing the
+// command found. Call it once, after every list has been stitched.
+func (so *stitchOptions) ReportUnused() {
+	if so.stitcher == nil {
+		return
+	}
+	for _, e := range so.stitcher.Catalog.Unused() {
+		name := e.Node.GetName()
+		if v := e.Node.GetVersion(); v != "" {
+			name += "@" + v
+		}
+		logrus.Warnf("supplemental SBOM %s describes %s, which was not found", e.Supplement.Source, name)
+	}
 }
 
 // networkLevel maps the value of a --networking flag to the API level.
