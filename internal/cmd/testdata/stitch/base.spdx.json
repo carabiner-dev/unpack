@@ -1,0 +1,18 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "base",
+  "documentNamespace": "https://example.com/sboms/base",
+  "creationInfo": {"created": "2026-01-01T00:00:00Z", "creators": ["Tool: test"]},
+  "packages": [
+    {"SPDXID": "SPDXRef-app", "name": "app", "versionInfo": "1.0.0", "downloadLocation": "NOASSERTION", "filesAnalyzed": false,
+     "externalRefs": [{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:generic/app@1.0.0"}]},
+    {"SPDXID": "SPDXRef-tool", "name": "tool", "versionInfo": "1.2.3", "downloadLocation": "NOASSERTION", "filesAnalyzed": false,
+     "externalRefs": [{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:generic/tool@1.2.3"}]}
+  ],
+  "relationships": [
+    {"spdxElementId": "SPDXRef-DOCUMENT", "relatedSpdxElement": "SPDXRef-app", "relationshipType": "DESCRIBES"},
+    {"spdxElementId": "SPDXRef-app", "relatedSpdxElement": "SPDXRef-tool", "relationshipType": "DEPENDS_ON"}
+  ]
+}

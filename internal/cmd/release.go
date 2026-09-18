@@ -19,6 +19,7 @@ import (
 // subcommands plus the release-specific bits.
 type releaseOptions struct {
 	formatOptions
+	stitchOptions
 	Output output.Options
 
 	// Reference points at the release to unpack, parsed from the positional
@@ -34,6 +35,7 @@ func (ro *releaseOptions) Validate() error {
 	}
 	errs = append(errs,
 		ro.formatOptions.Validate(),
+		ro.stitchOptions.Validate(),
 		ro.Output.Validate(),
 	)
 	return errors.Join(errs...)
@@ -42,6 +44,7 @@ func (ro *releaseOptions) Validate() error {
 // AddFlags adds the flags of all the embedded option sets to the command.
 func (ro *releaseOptions) AddFlags(cmd *cobra.Command) {
 	ro.formatOptions.AddFlags(cmd)
+	ro.stitchOptions.AddFlags(cmd)
 	ro.Output.AddFlags(cmd)
 }
 
@@ -120,6 +123,10 @@ Examples:
 				return errors.New("no release data found")
 			}
 			nodelist := lists[0]
+			if err := opts.Stitch(nodelist); err != nil {
+				return fmt.Errorf("stitching supplemental SBOMs: %w", err)
+			}
+			opts.ReportUnused()
 
 			format, isSbom := opts.ProtobomFormat()
 			if !isSbom {

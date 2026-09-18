@@ -36,6 +36,7 @@ const (
 type extractOptions struct {
 	formatOptions
 	filesOptions
+	stitchOptions
 	IgnorePatterns       []string
 	Path                 string
 	Networking           string
@@ -62,6 +63,7 @@ func (ro *extractOptions) Validate() error {
 	errs := []error{
 		ro.formatOptions.Validate(),
 		ro.filesOptions.Validate(),
+		ro.stitchOptions.Validate(),
 	}
 	if ro.Path == "" {
 		errs = append(errs, errors.New("path not defined"))
@@ -90,6 +92,7 @@ func (ro *extractOptions) Validate() error {
 func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 	ro.formatOptions.AddFlags(cmd)
 	ro.filesOptions.AddFlags(cmd)
+	ro.stitchOptions.AddFlags(cmd)
 
 	cmd.PersistentFlags().StringVarP(
 		&ro.Path, "path", "p", ".", "path to the artifact to unpack",
@@ -304,6 +307,7 @@ to the current directory.
 					return err
 				}
 			}
+			opts.ReportUnused()
 
 			return nil
 		},
@@ -334,6 +338,9 @@ func handleCodeBase(ctx context.Context, opts *extractOptions, s *signer.Signer,
 
 	if nodelist == nil {
 		return errors.New("no dependency data found")
+	}
+	if err := opts.Stitch(nodelist); err != nil {
+		return fmt.Errorf("stitching supplemental SBOMs: %w", err)
 	}
 
 	format, isSbom := opts.ProtobomFormat()
