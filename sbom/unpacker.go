@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/protobom/protobom/pkg/reader"
 	protosbom "github.com/protobom/protobom/pkg/sbom"
@@ -53,27 +54,38 @@ func (u *Unpacker) Extract(_ context.Context, subject api.DecomposableSubject) (
 	}
 	defer closeFn() //nolint:errcheck // best-effort close of read-only source
 
-	doc, err := reader.New().ParseStream(r)
+	doc, err := ParseDocument(r)
 	if err != nil {
-		// protobom only knows bare documents. The subject may still be a
-		// bill of materials, wrapped in a security envelope, so try to
-		// open it before reporting the format as unreadable.
-		envDoc, envErr := parseEnveloped(r)
-		switch {
-		case envErr == nil:
-			doc = envDoc
-		case errors.Is(envErr, errNoEnvelopedSBOM):
-			// We did open an envelope, it just is not carrying an SBOM.
-			// That diagnosis is worth more than protobom's, which only
-			// ever saw the envelope.
-			return nil, fmt.Errorf("parsing SBOM data: %w", envErr)
-		default:
-			logrus.Debugf("data was not read as an enveloped SBOM either: %v", envErr)
-			return nil, fmt.Errorf("parsing SBOM data: %w", err)
-		}
+		return nil, err
 	}
-
 	return []*protosbom.NodeList{doc.GetNodeList()}, nil
+}
+
+// ParseDocument reads a bill of materials in any format protobom
+// understands, bare or wrapped in a security envelope (an in-toto
+// statement, a DSSE envelope, a sigstore bundle), and returns the parsed
+// document with its metadata.
+func ParseDocument(r io.ReadSeeker) (*protosbom.Document, error) {
+	doc, err := reader.New().ParseStream(r)
+	if err == nil {
+		return doc, nil
+	}
+	// protobom only knows bare documents. The data may still be a bill of
+	// materials, wrapped in a security envelope, so try to open it before
+	// reporting the format as unreadable.
+	envDoc, envErr := parseEnveloped(r)
+	switch {
+	case envErr == nil:
+		return envDoc, nil
+	case errors.Is(envErr, errNoEnvelopedSBOM):
+		// We did open an envelope, it just is not carrying an SBOM. That
+		// diagnosis is worth more than protobom's, which only ever saw
+		// the envelope.
+		return nil, fmt.Errorf("parsing SBOM data: %w", envErr)
+	default:
+		logrus.Debugf("data was not read as an enveloped SBOM either: %v", envErr)
+		return nil, fmt.Errorf("parsing SBOM data: %w", err)
+	}
 }
 
 // RegisterDecomposer is a no-op: the SBOM unpacker has no decomposers.
