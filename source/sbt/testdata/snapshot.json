@@ -1,0 +1,96 @@
+{
+  "version": 0,
+  "job": {
+    "correlator": "release_sbom",
+    "id": "42",
+    "html_url": "https://github.com/example/demo/actions/runs/42"
+  },
+  "sha": "0123456789abcdef0123456789abcdef01234567",
+  "ref": "refs/tags/v1.0.0",
+  "detector": {
+    "name": "sbt-github-dependency-submission",
+    "url": "https://github.com/scalacenter/sbt-dependency-submission",
+    "version": "3.2.3"
+  },
+  "metadata": {},
+  "manifests": {
+    "com.example:core_3:1.0.0": {
+      "name": "com.example:core_3:1.0.0",
+      "file": { "source_location": "build.sbt" },
+      "metadata": { "baseDirectory": "/home/runner/work/demo/demo/core" },
+      "resolved": {
+        "org.scala-lang:scala3-library_3:3.3.4": {
+          "package_url": "pkg:maven/org.scala-lang/scala3-library_3@3.3.4",
+          "metadata": { "config": "compile" },
+          "relationship": "direct",
+          "scope": "runtime",
+          "dependencies": ["org.scala-lang:scala-library:2.13.14"]
+        },
+        "org.scala-lang:scala-library:2.13.14": {
+          "package_url": "pkg:maven/org.scala-lang/scala-library@2.13.14",
+          "metadata": { "config": "compile" },
+          "relationship": "indirect",
+          "scope": "runtime",
+          "dependencies": []
+        },
+        "org.jline:jline:3.26.3": {
+          "package_url": "pkg:maven/org.jline/jline@3.26.3?packaging=jdk8",
+          "metadata": { "config": "compile" },
+          "relationship": "direct",
+          "scope": "runtime",
+          "dependencies": ["org.gone:evicted:0.1"]
+        },
+        "org.example:stray:1.0": {
+          "package_url": "pkg:maven/org.example/stray@1.0",
+          "metadata": { "config": "compile" },
+          "relationship": "indirect",
+          "scope": "runtime",
+          "dependencies": []
+        },
+        "org.scalameta:munit_3:1.0.0": {
+          "package_url": "pkg:maven/org.scalameta/munit_3@1.0.0",
+          "metadata": { "config": "test" },
+          "relationship": "direct",
+          "scope": "development",
+          "dependencies": ["junit:junit:4.13.2", "org.scala-lang:scala3-library_3:3.3.4"]
+        },
+        "junit:junit:4.13.2": {
+          "package_url": "pkg:maven/junit/junit@4.13.2",
+          "metadata": { "config": "test" },
+          "relationship": "indirect",
+          "scope": "development",
+          "dependencies": []
+        }
+      }
+    },
+    "com.example:app_3:1.0.0": {
+      "name": "com.example:app_3:1.0.0",
+      "file": { "source_location": "build.sbt" },
+      "metadata": { "baseDirectory": "/home/runner/work/demo/demo/app" },
+      "resolved": {
+        "com.example:core_3:1.0.0": {
+          "package_url": "pkg:maven/com.example/core_3@1.0.0",
+          "metadata": { "config": "compile" },
+          "relationship": "direct",
+          "scope": "runtime",
+          "dependencies": ["org.scala-lang:scala3-library_3:3.3.4"]
+        },
+        "org.scala-lang:scala3-library_3:3.3.4": {
+          "package_url": "pkg:maven/org.scala-lang/scala3-library_3@3.3.4",
+          "metadata": { "config": "compile" },
+          "relationship": "indirect",
+          "scope": "runtime",
+          "dependencies": ["org.scala-lang:scala-library:2.13.14"]
+        },
+        "org.scala-lang:scala-library:2.13.14": {
+          "package_url": "pkg:maven/org.scala-lang/scala-library@2.13.14",
+          "metadata": { "config": "compile" },
+          "relationship": "indirect",
+          "scope": "runtime",
+          "dependencies": []
+        }
+      }
+    }
+  },
+  "scanned": "2026-09-29T19:39:00Z"
+}

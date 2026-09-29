@@ -14,6 +14,7 @@ can be serialized as SPDX or CycloneDX.
 | [Python](python.md) | `source/python/` | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry only) | PyPI JSON API |
 | [Ruby (Bundler)](ruby.md) | `source/ruby/` | `Gemfile.lock` | _(not read — executable Ruby)_ | rubygems.org API |
 | [Rust](rust.md) | `source/rust/` | `Cargo.lock` | `Cargo.toml` | crates.io API |
+| [sbt](sbt.md) | `source/sbt/` | _(a GitHub dependency snapshot, given with `--sbt-snapshot`)_ | _(not read — executable Scala)_ | _(none)_ |
 
 ## Artifact decomposers
 
@@ -91,11 +92,11 @@ output. Three flags control the inclusion of additional dependency types:
 
 ### Per-decomposer mapping
 
-| Flag | Go | Maven | npm | PHP | Python | Ruby | Rust |
-|------|-------|-------|-----|-----|--------|------|------|
-| `--include-dev` | _(no-op)_ | test-scoped deps | `devDependencies` (all lockfiles) | `require-dev` | dependency groups (PEP 735) | _(no-op)_ | `[dev-dependencies]` |
-| `--include-build` | _(no-op)_ | `<build><plugins>` | _(no-op)_ | _(no-op)_ | _(no-op)_ | _(no-op)_ | `[build-dependencies]` |
-| `--include-optional` | _(no-op)_ | `<optional>true</optional>` | `optionalDependencies` | _(no-op)_ | extras | _(no-op)_ | _(no-op)_ |
+| Flag | Go | Maven | npm | PHP | Python | Ruby | Rust | sbt |
+|------|-------|-------|-----|-----|--------|------|------|-----|
+| `--include-dev` | _(no-op)_ | test-scoped deps | `devDependencies` (all lockfiles) | `require-dev` | dependency groups (PEP 735) | _(no-op)_ | `[dev-dependencies]` | `development` scope |
+| `--include-build` | _(no-op)_ | `<build><plugins>` | _(no-op)_ | _(no-op)_ | _(no-op)_ | _(no-op)_ | `[build-dependencies]` | _(no-op)_ |
+| `--include-optional` | _(no-op)_ | `<optional>true</optional>` | `optionalDependencies` | _(no-op)_ | extras | _(no-op)_ | _(no-op)_ | _(no-op)_ |
 
 **Notes:**
 
