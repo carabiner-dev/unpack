@@ -48,7 +48,10 @@ jobs:
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
         go-version: ${{ matrix.go-version }}
-        cache: false
+        # This workflow runs on pull requests without secrets or publishing,
+        # the module and build caches only save compiling everything anew.
+        cache: true
+        cache-dependency-path: go.sum
 
     - name: Install npm test dependencies
       run: |
