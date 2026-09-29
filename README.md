@@ -229,6 +229,7 @@ inventory, and the modules built into any
 | [Python](docs/decomposers/python.md) | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry) | PyPI JSON API |
 | [Ruby (Bundler)](docs/decomposers/ruby.md) | `Gemfile.lock` | _(not read)_ | rubygems.org API |
 | [Rust](docs/decomposers/rust.md) | `Cargo.lock` | `Cargo.toml` | crates.io API |
+| [sbt](docs/decomposers/sbt.md) | _(a dependency snapshot, `--sbt-snapshot`)_ | _(not read)_ | _(none)_ |
 
 | Artifact | Reads | Remote enrichment |
 | --- | --- | --- |

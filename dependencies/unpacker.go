@@ -265,6 +265,13 @@ func (unpacker *Unpacker) RegisterDecomposer(d api.Decomposer) {
 	unpacker.decomposers[fmt.Sprintf("%T", d)] = d
 }
 
+// RegisterDecomposerAs registers a decomposer under a language name, the
+// one codebase IDs carry (sbt:.), for decomposers that only run when the
+// caller enables them.
+func (unpacker *Unpacker) RegisterDecomposerAs(language string, d api.Decomposer) {
+	unpacker.decomposers[language] = d
+}
+
 func (unpacker *Unpacker) UnregisterDecomposer(d api.Decomposer) {
 	delete(unpacker.decomposers, fmt.Sprintf("%T", d))
 }

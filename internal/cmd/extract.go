@@ -19,6 +19,7 @@ import (
 
 	"github.com/carabiner-dev/unpack/dependencies"
 	"github.com/carabiner-dev/unpack/source/python"
+	"github.com/carabiner-dev/unpack/source/sbt"
 )
 
 const (
@@ -50,6 +51,7 @@ type extractOptions struct {
 	OutputPrefix         string
 	Platform             string
 	PythonVersion        string
+	SbtSnapshot          string
 }
 
 var validFormats = []string{formatSPDX, formatSPDX3, formatCDX, formatCDXS, formatTree}
@@ -115,6 +117,11 @@ func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(
 		&ro.PythonVersion, "python-version", "",
 		"Python version to resolve dependencies for (default: the newest the lockfile supports)",
+	)
+
+	cmd.PersistentFlags().StringVar(
+		&ro.SbtSnapshot, "sbt-snapshot", "",
+		"GitHub dependency snapshot of an sbt build (written by sbt-dependency-submission) to read the build's dependencies from; enables the sbt decomposer",
 	)
 
 	cmd.PersistentFlags().BoolVar(
@@ -237,6 +244,12 @@ to the current directory.
 					Decomposer: python.New(),
 					Options:    &python.Options{PythonVersion: opts.PythonVersion},
 				})
+			}
+
+			// sbt builds are only read from the snapshot sbt wrote of
+			// them, so the decomposer only exists when given one.
+			if opts.SbtSnapshot != "" {
+				unpacker.RegisterDecomposerAs("sbt", sbt.New(opts.SbtSnapshot))
 			}
 
 			unpacker.Options.Networking = networkLevel(opts.Networking)
