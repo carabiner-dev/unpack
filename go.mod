@@ -21,7 +21,7 @@ require (
 	github.com/knqyf263/go-rpmdb v0.1.1
 	github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
 	github.com/package-url/packageurl-go v0.1.7
-	github.com/protobom/protobom v0.6.2-0.20260918013909-728e43bc61b1
+	github.com/protobom/protobom v0.6.2
 	github.com/sirupsen/logrus v1.10.2
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
