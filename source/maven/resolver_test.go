@@ -4,6 +4,7 @@
 package maven
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,7 +19,7 @@ type fakeAgentImpl struct {
 	responses map[string]string // URL -> response body
 }
 
-func (f *fakeAgentImpl) SendGetRequest(_ *http.Client, url string) (*http.Response, error) {
+func (f *fakeAgentImpl) SendGetRequest(_ context.Context, _ *http.Client, url string) (*http.Response, error) {
 	body, ok := f.responses[url]
 	if !ok {
 		return &http.Response{
@@ -32,11 +33,11 @@ func (f *fakeAgentImpl) SendGetRequest(_ *http.Client, url string) (*http.Respon
 	}, nil
 }
 
-func (f *fakeAgentImpl) SendPostRequest(_ *http.Client, _ string, _ []byte, _ string) (*http.Response, error) {
+func (f *fakeAgentImpl) SendPostRequest(_ context.Context, _ *http.Client, _ string, _ []byte, _ string) (*http.Response, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (f *fakeAgentImpl) SendHeadRequest(_ *http.Client, _ string) (*http.Response, error) {
+func (f *fakeAgentImpl) SendHeadRequest(_ context.Context, _ *http.Client, _ string) (*http.Response, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 

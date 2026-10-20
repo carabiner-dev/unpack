@@ -9,7 +9,7 @@ import (
 
 	"github.com/carabiner-dev/command/output"
 	"github.com/carabiner-dev/protograph"
-	"github.com/carabiner-dev/signer"
+	"github.com/policylabs/signer"
 	"github.com/spf13/cobra"
 
 	"github.com/carabiner-dev/unpack/release"

@@ -10,7 +10,7 @@ import (
 	"slices"
 
 	"github.com/carabiner-dev/protograph"
-	"github.com/carabiner-dev/signer"
+	"github.com/policylabs/signer"
 	"github.com/protobom/protobom/pkg/formats"
 	"github.com/spf13/cobra"
 

@@ -4,6 +4,7 @@
 package maven
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,18 +19,18 @@ import (
 // failingAgentImpl returns 404 for all requests instantly (no retries needed).
 type failingAgentImpl struct{}
 
-func (f *failingAgentImpl) SendGetRequest(_ *http.Client, url string) (*http.Response, error) {
+func (f *failingAgentImpl) SendGetRequest(_ context.Context, _ *http.Client, url string) (*http.Response, error) {
 	return &http.Response{
 		StatusCode: http.StatusNotFound,
 		Body:       io.NopCloser(strings.NewReader("")),
 	}, fmt.Errorf("not found: %s", url)
 }
 
-func (f *failingAgentImpl) SendPostRequest(_ *http.Client, _ string, _ []byte, _ string) (*http.Response, error) {
+func (f *failingAgentImpl) SendPostRequest(_ context.Context, _ *http.Client, _ string, _ []byte, _ string) (*http.Response, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (f *failingAgentImpl) SendHeadRequest(_ *http.Client, _ string) (*http.Response, error) {
+func (f *failingAgentImpl) SendHeadRequest(_ context.Context, _ *http.Client, _ string) (*http.Response, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -37,15 +38,15 @@ func (f *failingAgentImpl) SendHeadRequest(_ *http.Client, _ string) (*http.Resp
 // response) for all requests, as opposed to a definitive 404.
 type transientFailAgentImpl struct{}
 
-func (f *transientFailAgentImpl) SendGetRequest(_ *http.Client, url string) (*http.Response, error) {
+func (f *transientFailAgentImpl) SendGetRequest(_ context.Context, _ *http.Client, url string) (*http.Response, error) {
 	return nil, fmt.Errorf("connection refused: %s", url)
 }
 
-func (f *transientFailAgentImpl) SendPostRequest(_ *http.Client, _ string, _ []byte, _ string) (*http.Response, error) {
+func (f *transientFailAgentImpl) SendPostRequest(_ context.Context, _ *http.Client, _ string, _ []byte, _ string) (*http.Response, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (f *transientFailAgentImpl) SendHeadRequest(_ *http.Client, _ string) (*http.Response, error) {
+func (f *transientFailAgentImpl) SendHeadRequest(_ context.Context, _ *http.Client, _ string) (*http.Response, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
