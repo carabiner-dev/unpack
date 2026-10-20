@@ -10,7 +10,7 @@ import (
 
 	"github.com/carabiner-dev/command/output"
 	"github.com/carabiner-dev/protograph"
-	"github.com/carabiner-dev/signer"
+	"github.com/policylabs/signer"
 	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/spf13/cobra"
 

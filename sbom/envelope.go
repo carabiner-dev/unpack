@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/carabiner-dev/collector/envelope"
-	predicatejson "github.com/carabiner-dev/collector/predicate/json"
+	"github.com/policylabs/collector/envelope"
+	predicatejson "github.com/policylabs/collector/predicate/json"
 	"github.com/protobom/protobom/pkg/reader"
 	protosbom "github.com/protobom/protobom/pkg/sbom"
 	"github.com/sirupsen/logrus"

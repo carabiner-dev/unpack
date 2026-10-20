@@ -13,8 +13,8 @@ import (
 	"strings"
 
 	"github.com/carabiner-dev/protograph"
-	"github.com/carabiner-dev/signer"
 	"github.com/fatih/color"
+	"github.com/policylabs/signer"
 	"github.com/spf13/cobra"
 
 	"github.com/carabiner-dev/unpack/dependencies"
