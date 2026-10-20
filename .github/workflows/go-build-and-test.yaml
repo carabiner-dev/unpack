@@ -63,7 +63,7 @@ jobs:
     # on every OS; without it they would fall back to Docker on Linux and
     # skip elsewhere.
     - name: Install uv
-      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
 
     # Re-enable the race detector (go test -race) once a release-utils
     # release carries the fix for the data race in http.Agent.Client,
