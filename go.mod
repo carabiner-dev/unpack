@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/carabiner-dev/command v0.3.4
+	github.com/carabiner-dev/core v0.0.0-20261021172444-8c8c6fd01bab
 	github.com/carabiner-dev/github v0.2.3
 	github.com/carabiner-dev/hasher v0.2.4
 	github.com/carabiner-dev/protograph v0.0.0-20260829192612-b6c398db6f78
