@@ -77,7 +77,8 @@ type Options struct {
 	// file when available .
 	UseGitIgnore bool
 
-	// CodebaseFilter filters to a specific codebase by ID (e.g., "golang:./services/api").
+	// CodebaseFilter filters to a specific codebase by ID (e.g., "golang:services/api";
+	// the older "golang:./services/api" is accepted too).
 	// If empty, all codebases are included.
 	CodebaseFilter string
 
@@ -215,8 +216,14 @@ func (unpacker *Unpacker) filterCodebases(codebases map[api.Decomposer][]string,
 			if err != nil {
 				return nil, fmt.Errorf("computing relative path: %w", err)
 			}
+			// The filter's path is canonical (ParseCodebaseID); compare the
+			// computed one in the same form.
+			canonical, err := CanonicalCodebasePath(relPath)
+			if err != nil {
+				return nil, fmt.Errorf("canonicalizing %q: %w", relPath, err)
+			}
 
-			if relPath == filterPath {
+			if canonical == filterPath {
 				filtered[decomposer] = []string{absPath}
 				found = true
 				break
@@ -309,10 +316,19 @@ func (unpacker *Unpacker) ListCodebases(ctx context.Context, path string) ([]Cod
 				return nil, fmt.Errorf("computing relative path: %w", err)
 			}
 
+			// The id and path are the platform's canonical ones.
+			canonical, err := CanonicalCodebasePath(relPath)
+			if err != nil {
+				return nil, fmt.Errorf("canonicalizing %q: %w", relPath, err)
+			}
+			id, err := GenerateCodebaseID(language, canonical)
+			if err != nil {
+				return nil, fmt.Errorf("naming codebase at %q: %w", relPath, err)
+			}
 			result = append(result, CodebaseInfo{
-				ID:       GenerateCodebaseID(language, relPath),
+				ID:       id,
 				Language: language,
-				Path:     relPath,
+				Path:     canonical,
 				AbsPath:  absPath,
 			})
 		}

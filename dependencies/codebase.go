@@ -4,9 +4,7 @@
 package dependencies
 
 import (
-	"errors"
-	"fmt"
-	"strings"
+	core "github.com/carabiner-dev/core/api/carabiner/core/v1"
 )
 
 // Codebase is the DecomposableSubject consumed by the dependencies unpacker. It
@@ -22,29 +20,29 @@ func (c *Codebase) DecomposableType() string { return "codebase" }
 
 // CodebaseInfo contains information about a discovered codebase.
 type CodebaseInfo struct {
-	ID       string // e.g., "golang:./services/api"
+	ID       string // canonical, e.g. "golang:services/api" ("golang:." at the root)
 	Language string // e.g., "golang", "rust"
-	Path     string // Relative path from input directory
+	Path     string // canonical path relative to the input directory ("." for the root)
 	AbsPath  string // Absolute filesystem path
 }
 
-// GenerateCodebaseID creates a codebase ID from language and relative path.
-func GenerateCodebaseID(language, relativePath string) string {
-	return fmt.Sprintf("%s:%s", language, relativePath)
+// GenerateCodebaseID creates a codebase ID from language and relative path in
+// the platform's canonical form (core.CodebaseSourceID): forward slashes, no
+// leading "./", no trailing slash, "." for the root. The same codebase gets
+// the same id here and on the platform, which keys its record by it.
+func GenerateCodebaseID(language, relativePath string) (string, error) {
+	return core.CodebaseSourceID(language, relativePath)
 }
 
-// ParseCodebaseID parses a codebase ID into its language and path components.
+// ParseCodebaseID parses a codebase ID into its language and canonical path,
+// accepting the forms unpack used to write ("golang:./backend") as well as
+// the canonical one.
 func ParseCodebaseID(id string) (language, path string, err error) {
-	language, path, ok := strings.Cut(id, ":")
-	if !ok {
-		return "", "", errors.New("invalid codebase ID format: missing colon separator")
-	}
+	return core.ParseCodebaseSourceID(id)
+}
 
-	if language == "" {
-		return "", "", errors.New("invalid codebase ID format: empty language")
-	}
-	if path == "" {
-		return "", "", errors.New("invalid codebase ID format: empty path")
-	}
-	return language, path, nil
+// CanonicalCodebasePath is core's canonical form of a path relative to the
+// scanned directory, so a path unpack computed compares equal to a parsed id.
+func CanonicalCodebasePath(relativePath string) (string, error) {
+	return core.CanonicalCodebasePath(relativePath)
 }
