@@ -124,11 +124,12 @@ there the pipeline is the same `Extract` call for everything.
 
 **Unpackers fan out to decomposers.** How depends on the kind of subject:
 
-- The codebase unpacker indexes the directory tree once (respecting
-  `.gitignore` and ignore patterns), asks every `SourceDecomposer` where
-  its codebases are via `FindCodeBases`, then calls `Extract` once per
+- The codebase unpacker indexes the directory tree once (respecting the
+  caller's ignore patterns but not `.gitignore`, so a gitignored lock file
+  still marks a codebase), asks every `SourceDecomposer` where its
+  codebases are via `FindCodeBases`, then calls `Extract` once per
   location with `WorkDir` set to that directory. Each call yields one
-  NodeList.
+  NodeList. `.gitignore` only applies when cataloging files into the SBOM.
 - The system unpacker opens the subject's filesystem and calls
   `ExtractFromFS` on every decomposer. A decomposer whose database is not
   present returns `(nil, nil)` and is skipped. Errors from one decomposer do
