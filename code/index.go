@@ -22,9 +22,16 @@ const gitIgnoreFile = ".gitignore"
 // DefaultIgnorePatterns are default patterns we add to the gitignores from
 // the project and any patterns passed by the user
 var DefaultIgnorePatterns = []string{
-	// This prevents indexing code included in any pulled
-	// JS modules pulled by npm.
+	// Install trees: the packages a codebase pulls in carry their own
+	// manifests and lock files, which would otherwise read as codebases
+	// of their own. Projects normally gitignore these, but detection does
+	// not read .gitignore (see dependencies.Options.UseGitIgnore).
 	"node_modules/",
+	"vendor/",
+	".venv/",
+	"venv/",
+	// Git's object store never holds a codebase.
+	".git/",
 }
 
 // PathIndex lists all directories with their files
@@ -99,12 +106,8 @@ func (i *Indexer) CatalogDirectories(path string, funcs ...optFn) (*PathIndex, e
 	}
 
 	var matcher gitignore.Matcher
-
 	if len(patterns) > 0 {
-		// Build the new gitignore matcher
 		matcher = gitignore.NewMatcher(patterns)
-	} else {
-		fmt.Printf("No hay patterns\n")
 	}
 
 	index := PathIndex{}

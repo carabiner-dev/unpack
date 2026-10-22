@@ -47,8 +47,13 @@ func (di *defaultImplementation) IndexPaths(
 		return ret, nil
 	}
 	for _, path := range src.Paths {
+		// The index only serves codebase detection, so it never honors the
+		// project's .gitignore: lock files are routinely ignored (a Composer
+		// library does not commit its composer.lock) and the codebase is
+		// still there. Options.UseGitIgnore governs cataloging files into
+		// the SBOM, which happens in ExtractCodeBases.
 		idx, err := indexer.CatalogDirectories(
-			path, code.WithUseGitignore(opts.UseGitIgnore),
+			path, code.WithUseGitignore(false),
 			code.WithExtraIgnorePattners(opts.IgnorePatterns),
 		)
 		if err != nil {
@@ -128,10 +133,11 @@ func (di *defaultImplementation) ExtractCodeBases(
 			if opts.IndexFiles {
 				opts.logger.Debug(fmt.Sprintf("indexing all files in %s", cbPath))
 				fsd, err := filesystem.New()
-				fsd.Options.IgnorePatterns = append(fsd.Options.IgnorePatterns, opts.IgnorePatterns...)
 				if err != nil {
 					return nil, fmt.Errorf("creating fs decomposer: %w", err)
 				}
+				fsd.Options.IgnorePatterns = append(fsd.Options.IgnorePatterns, opts.IgnorePatterns...)
+				fsd.Options.NoGitignore = !opts.UseGitIgnore
 
 				nlFiles, err := fsd.IndexFS(os.DirFS(cbPath))
 				if err != nil {

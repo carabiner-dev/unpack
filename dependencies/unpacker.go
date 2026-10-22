@@ -70,11 +70,15 @@ type Options struct {
 	// for the root nodes.
 	ReadGitVersion bool
 
-	// IgnorePatterns are additional paths to ignore (in addition to thise in .gitignore)
+	// IgnorePatterns are additional paths to ignore, as gitignore-style
+	// patterns. They apply both when detecting codebases and when
+	// cataloging files into the SBOM.
 	IgnorePatterns []string
 
-	// UseGitIgnore instructs the unpacker to use load patterns from the gitignore
-	// file when available .
+	// UseGitIgnore instructs the unpacker to honor the project's .gitignore
+	// when cataloging files into the SBOM (see IndexFiles). It does not
+	// affect codebase detection: a codebase is found even when its lock or
+	// manifest is gitignored, as Composer libraries routinely do.
 	UseGitIgnore bool
 
 	// CodebaseFilter filters to a specific codebase by ID (e.g., "golang:services/api";
