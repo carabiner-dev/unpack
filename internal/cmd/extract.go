@@ -298,7 +298,7 @@ to the current directory.
 				if !opts.IgnoreExtraCodebases && !opts.MultipleOutputs {
 					fmt.Fprintln(os.Stderr)
 					fmt.Fprintf(os.Stderr, "%s Multiple codebases found.\n", color.RedString("Error:"))
-					fmt.Fprintln(os.Stderr, "Run unpack extract <codebase ID>")
+					fmt.Fprintln(os.Stderr, "Run unpack extract <codebase ID> (or unpack extract --multi with an SBOM format)")
 					fmt.Fprintln(os.Stderr)
 					return listCodebases(cmd.Context(), &codebasesOptions{
 						Path:           opts.Path,
