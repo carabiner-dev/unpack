@@ -396,7 +396,7 @@ func (eo *extRefOptions) Config() *command.OptionsSetConfig {
 			Flags: map[string]command.FlagConfig{
 				"ext-ref": {
 					Long: "ext-ref",
-					Help: "external reference to add to the components the output describes, as TYPE:url (e.g. vcs:https://github.com/org/repo); repeat for more than one",
+					Help: "external reference to add to the components the output describes, as TYPE:url (e.g. vcs:https://github.com/org/repo); repeatable, needs an SBOM format. CycloneDX keeps every type, SPDX 2.3 keeps package manager and security types and writes the rest as OTHER",
 				},
 			},
 		}
@@ -414,8 +414,19 @@ func (eo *extRefOptions) AddFlags(cmd *cobra.Command) {
 
 // Validate parses the references, so a bad one fails before any work.
 func (eo *extRefOptions) Validate() error {
+	return eo.ValidateFor("")
+}
+
+// ValidateFor parses the references and checks they have somewhere to
+// go: the tree view does not show them, so asking for references with
+// it is a mistake, as attesting the tree is. An empty format skips the
+// check, for callers that have no format.
+func (eo *extRefOptions) ValidateFor(format string) error {
 	eo.refs = nil
 	errs := []error{}
+	if len(eo.ExtRefs) > 0 && format != "" && !slices.Contains(sbomFormats, format) {
+		errs = append(errs, errors.New("external references can only be added when output set to SPDX or CycloneDX"))
+	}
 	for _, raw := range eo.ExtRefs {
 		ref, err := parseExtRef(raw)
 		if err != nil {

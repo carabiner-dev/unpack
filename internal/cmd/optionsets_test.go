@@ -191,6 +191,23 @@ func TestExtRefOptions(t *testing.T) {
 		require.Len(t, eo.refs, 1)
 	})
 
+	t.Run("validate for a format", func(t *testing.T) {
+		t.Parallel()
+		for _, format := range sbomFormats {
+			eo := &extRefOptions{ExtRefs: []string{"vcs:https://a"}}
+			require.NoError(t, eo.ValidateFor(format), format)
+			require.Len(t, eo.refs, 1)
+		}
+
+		// The tree shows no references: asking for them is a mistake.
+		eo := &extRefOptions{ExtRefs: []string{"vcs:https://a"}}
+		require.ErrorContains(t, eo.ValidateFor(formatTree), "SPDX or CycloneDX")
+
+		// But the tree without references is fine, and so is no format.
+		require.NoError(t, (&extRefOptions{}).ValidateFor(formatTree))
+		require.NoError(t, (&extRefOptions{ExtRefs: []string{"vcs:https://a"}}).ValidateFor(""))
+	})
+
 	t.Run("validate is idempotent", func(t *testing.T) {
 		t.Parallel()
 		eo := &extRefOptions{ExtRefs: []string{"vcs:https://a"}}

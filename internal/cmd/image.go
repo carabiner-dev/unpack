@@ -24,6 +24,7 @@ type imageOptions struct {
 	filesOptions
 	artifactOptions
 	stitchOptions
+	extRefOptions
 	Output output.Options
 
 	// Reference is the OCI reference of the image to unpack, taken from
@@ -46,6 +47,7 @@ func (io_ *imageOptions) Validate() error {
 		io_.filesOptions.Validate(),
 		io_.artifactOptions.Validate(),
 		io_.stitchOptions.Validate(),
+		io_.ValidateFor(io_.Format),
 		io_.Output.Validate(),
 	)
 	return errors.Join(errs...)
@@ -57,6 +59,7 @@ func (io_ *imageOptions) AddFlags(cmd *cobra.Command) {
 	io_.filesOptions.AddFlags(cmd)
 	io_.artifactOptions.AddFlags(cmd)
 	io_.stitchOptions.AddFlags(cmd)
+	io_.extRefOptions.AddFlags(cmd)
 	io_.Output.AddFlags(cmd)
 	cmd.PersistentFlags().StringVar(
 		&io_.Networking, "networking", networkEssential,
@@ -135,6 +138,7 @@ Usage patterns:
 				return fmt.Errorf("stitching supplemental SBOMs: %w", err)
 			}
 			opts.ReportUnused()
+			opts.Apply(nodelist)
 
 			format, isSbom := opts.ProtobomFormat()
 			if !isSbom {
