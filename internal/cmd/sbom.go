@@ -19,6 +19,7 @@ import (
 
 type sbomOptions struct {
 	stitchOptions
+	extRefOptions
 	Path            string
 	Format          string
 	Attest          bool
@@ -47,7 +48,7 @@ func (ro *sbomOptions) Validate() error {
 	if ro.Attest && !slices.Contains(sbomFormats, ro.Format) {
 		errs = append(errs, fmt.Errorf("attestations can only be generated when output set to SPDX or CycloneDX"))
 	}
-	errs = append(errs, ro.stitchOptions.Validate())
+	errs = append(errs, ro.stitchOptions.Validate(), ro.ValidateFor(ro.Format))
 
 	return errors.Join(errs...)
 }
@@ -55,6 +56,7 @@ func (ro *sbomOptions) Validate() error {
 // AddFlags adds the subcommands flags
 func (ro *sbomOptions) AddFlags(cmd *cobra.Command) {
 	ro.stitchOptions.AddFlags(cmd)
+	ro.extRefOptions.AddFlags(cmd)
 	cmd.PersistentFlags().StringVarP(
 		&ro.Path, "path", "p", "", "path to the sbom file",
 	)
@@ -135,6 +137,7 @@ verified: their signatures are not checked here.
 				return fmt.Errorf("stitching supplemental SBOMs: %w", err)
 			}
 			opts.ReportUnused()
+			opts.Apply(nodelist)
 
 			// Filter out excluded dependency types
 			filterNodeListByEdgeType(nodelist, opts)

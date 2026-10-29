@@ -24,6 +24,7 @@ type artifactCmdOptions struct {
 	formatOptions
 	artifactOptions
 	stitchOptions
+	extRefOptions
 	Output output.Options
 
 	// Path is the artifact to unpack, or a directory to scan for
@@ -48,6 +49,7 @@ func (ao *artifactCmdOptions) Validate() error {
 		ao.formatOptions.Validate(),
 		ao.artifactOptions.Validate(),
 		ao.stitchOptions.Validate(),
+		ao.ValidateFor(ao.Format),
 		ao.Output.Validate(),
 	)
 	return errors.Join(errs...)
@@ -61,6 +63,7 @@ func (ao *artifactCmdOptions) AddFlags(cmd *cobra.Command) {
 	ao.formatOptions.AddFlags(cmd)
 	ao.AddScanFlags(cmd)
 	ao.stitchOptions.AddFlags(cmd)
+	ao.extRefOptions.AddFlags(cmd)
 	ao.Output.AddFlags(cmd)
 	cmd.PersistentFlags().StringVar(
 		&ao.Networking, "networking", networkEssential,
@@ -160,6 +163,7 @@ Usage patterns:
 				return fmt.Errorf("stitching supplemental SBOMs: %w", err)
 			}
 			opts.ReportUnused()
+			opts.Apply(nodelist)
 
 			format, isSbom := opts.ProtobomFormat()
 			if !isSbom {

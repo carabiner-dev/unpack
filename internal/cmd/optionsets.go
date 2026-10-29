@@ -7,12 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/carabiner-dev/command"
 	"github.com/protobom/protobom/pkg/formats"
 	protosbom "github.com/protobom/protobom/pkg/sbom"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/proto"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/stitch"
@@ -366,4 +368,142 @@ func networkLevel(name string) api.NetworkLevel {
 	default:
 		return api.NetworkEssential
 	}
+}
+
+// extRefOptions is the reusable options set that adds external references
+// to the output: links from the components a document describes (its root
+// nodes) to resources outside it, such as the repository the code came
+// from, a build log or an attestation about the component.
+//
+// Each reference is given as TYPE:url, TYPE being one of protobom's
+// external reference types. The type is matched case-insensitively and
+// dashes stand for underscores, so issue-tracker is ISSUE_TRACKER.
+type extRefOptions struct {
+	config *command.OptionsSetConfig
+
+	// ExtRefs holds the references as given on the command line.
+	ExtRefs []string
+
+	refs []*protosbom.ExternalReference
+}
+
+var _ command.OptionsSet = (*extRefOptions)(nil)
+
+// Config returns the flag configuration of the external reference options.
+func (eo *extRefOptions) Config() *command.OptionsSetConfig {
+	if eo.config == nil {
+		eo.config = &command.OptionsSetConfig{
+			Flags: map[string]command.FlagConfig{
+				"ext-ref": {
+					Long: "ext-ref",
+					Help: "external reference to add to the components the output describes, as TYPE:url (e.g. vcs:https://github.com/org/repo); repeatable, needs an SBOM format. CycloneDX keeps every type, SPDX 2.3 keeps package manager and security types and writes the rest as OTHER",
+				},
+			},
+		}
+	}
+	return eo.config
+}
+
+// AddFlags adds the external reference flag to a command. The flag is an
+// array, not a slice: URLs carry commas, so each value stays whole.
+func (eo *extRefOptions) AddFlags(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringArrayVar(
+		&eo.ExtRefs, eo.Config().LongFlag("ext-ref"), nil, eo.Config().HelpText("ext-ref"),
+	)
+}
+
+// Validate parses the references, so a bad one fails before any work.
+func (eo *extRefOptions) Validate() error {
+	return eo.ValidateFor("")
+}
+
+// ValidateFor parses the references and checks they have somewhere to
+// go: the tree view does not show them, so asking for references with
+// it is a mistake, as attesting the tree is. An empty format skips the
+// check, for callers that have no format.
+func (eo *extRefOptions) ValidateFor(format string) error {
+	eo.refs = nil
+	errs := []error{}
+	if len(eo.ExtRefs) > 0 && format != "" && !slices.Contains(sbomFormats, format) {
+		errs = append(errs, errors.New("external references can only be added when output set to SPDX or CycloneDX"))
+	}
+	for _, raw := range eo.ExtRefs {
+		ref, err := parseExtRef(raw)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		eo.refs = append(eo.refs, ref)
+	}
+	return errors.Join(errs...)
+}
+
+// Apply adds the references to every root node of the list. Each node gets
+// its own copy, so a later change to one node's references does not leak
+// into another's.
+func (eo *extRefOptions) Apply(nl *protosbom.NodeList) {
+	if len(eo.refs) == 0 || nl == nil {
+		return
+	}
+	roots := nl.GetRootNodes()
+	if len(roots) == 0 {
+		logrus.Warn("no root components to add external references to")
+		return
+	}
+	for _, n := range roots {
+		for _, ref := range eo.refs {
+			clone, ok := proto.Clone(ref).(*protosbom.ExternalReference)
+			if !ok {
+				continue
+			}
+			n.ExternalReferences = append(n.ExternalReferences, clone)
+		}
+	}
+}
+
+// parseExtRef reads an external reference from its TYPE:url form.
+func parseExtRef(raw string) (*protosbom.ExternalReference, error) {
+	typeName, url, found := strings.Cut(raw, ":")
+	if !found || strings.TrimSpace(typeName) == "" {
+		return nil, fmt.Errorf("invalid external reference %q (want TYPE:url, e.g. vcs:https://github.com/org/repo)", raw)
+	}
+	if strings.TrimSpace(url) == "" {
+		return nil, fmt.Errorf("invalid external reference %q: no url after the type", raw)
+	}
+	refType, err := parseExtRefType(typeName)
+	if err != nil {
+		return nil, fmt.Errorf("invalid external reference %q: %w", raw, err)
+	}
+	return &protosbom.ExternalReference{
+		Url:  strings.TrimSpace(url),
+		Type: refType,
+	}, nil
+}
+
+// parseExtRefType resolves a type name to protobom's enum. Matching is
+// case-insensitive and dashes stand for underscores; UNKNOWN, the enum's
+// zero, is not a type a caller can ask for.
+func parseExtRefType(name string) (protosbom.ExternalReference_ExternalReferenceType, error) {
+	key := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(name), "-", "_"))
+	value, ok := protosbom.ExternalReference_ExternalReferenceType_value[key]
+	if !ok || value == int32(protosbom.ExternalReference_UNKNOWN) {
+		return protosbom.ExternalReference_UNKNOWN, fmt.Errorf(
+			"unknown external reference type %q (one of %s)", name, strings.Join(extRefTypeNames(), ", "),
+		)
+	}
+	return protosbom.ExternalReference_ExternalReferenceType(value), nil
+}
+
+// extRefTypeNames lists the external reference types a caller may use, in
+// the lowercase, dashed form the flag's help shows, sorted.
+func extRefTypeNames() []string {
+	names := make([]string, 0, len(protosbom.ExternalReference_ExternalReferenceType_value))
+	for name, value := range protosbom.ExternalReference_ExternalReferenceType_value {
+		if value == int32(protosbom.ExternalReference_UNKNOWN) {
+			continue
+		}
+		names = append(names, strings.ToLower(strings.ReplaceAll(name, "_", "-")))
+	}
+	slices.Sort(names)
+	return names
 }

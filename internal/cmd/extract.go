@@ -38,6 +38,7 @@ type extractOptions struct {
 	formatOptions
 	filesOptions
 	stitchOptions
+	extRefOptions
 	IgnorePatterns       []string
 	Path                 string
 	Networking           string
@@ -66,6 +67,7 @@ func (ro *extractOptions) Validate() error {
 		ro.formatOptions.Validate(),
 		ro.filesOptions.Validate(),
 		ro.stitchOptions.Validate(),
+		ro.ValidateFor(ro.Format),
 	}
 	if ro.Path == "" {
 		errs = append(errs, errors.New("path not defined"))
@@ -95,6 +97,7 @@ func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 	ro.formatOptions.AddFlags(cmd)
 	ro.filesOptions.AddFlags(cmd)
 	ro.stitchOptions.AddFlags(cmd)
+	ro.extRefOptions.AddFlags(cmd)
 
 	cmd.PersistentFlags().StringVarP(
 		&ro.Path, "path", "p", ".", "path to the artifact to unpack",
@@ -298,7 +301,7 @@ to the current directory.
 				if !opts.IgnoreExtraCodebases && !opts.MultipleOutputs {
 					fmt.Fprintln(os.Stderr)
 					fmt.Fprintf(os.Stderr, "%s Multiple codebases found.\n", color.RedString("Error:"))
-					fmt.Fprintln(os.Stderr, "Run unpack extract <codebase ID>")
+					fmt.Fprintln(os.Stderr, "Run unpack extract <codebase ID> (or unpack extract --multi with an SBOM format)")
 					fmt.Fprintln(os.Stderr)
 					return listCodebases(cmd.Context(), &codebasesOptions{
 						Path:           opts.Path,
@@ -355,6 +358,7 @@ func handleCodeBase(ctx context.Context, opts *extractOptions, s *signer.Signer,
 	if err := opts.Stitch(nodelist); err != nil {
 		return fmt.Errorf("stitching supplemental SBOMs: %w", err)
 	}
+	opts.Apply(nodelist)
 
 	format, isSbom := opts.ProtobomFormat()
 	if !isSbom {
