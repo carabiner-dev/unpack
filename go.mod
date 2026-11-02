@@ -22,7 +22,7 @@ require (
 	github.com/policylabs/attestation v0.3.0
 	github.com/policylabs/collector v0.4.0
 	github.com/policylabs/signer v0.6.4
-	github.com/protobom/protobom v0.6.2
+	github.com/protobom/protobom v0.7.0
 	github.com/sirupsen/logrus v1.10.2
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
