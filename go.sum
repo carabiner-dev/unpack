@@ -109,8 +109,8 @@ github.com/carabiner-dev/openeox v1.0.0 h1:iVfs9jgu2s2Jrb95bJK5FWMx55qF3aHBk9RhU
 github.com/carabiner-dev/openeox v1.0.0/go.mod h1:+6i8M7PhtWk2jRtUC1anZnhmOr5cXKMLGYjwFcqPDa0=
 github.com/carabiner-dev/osv v0.1.2 h1:W5nZOGuygnqzB7YbGon6ab3iFHxFZZgzS3m7GEvYnfc=
 github.com/carabiner-dev/osv v0.1.2/go.mod h1:06cHx1aOdlb53feQxjBIRt3NSFfQKg1b1hrHHj/57QQ=
-github.com/carabiner-dev/protograph v0.0.0-20260829192612-b6c398db6f78 h1:CTBxvCX2QsrdOmLxH1aD++Vgfs87PKxMwr6Tfm/nHmw=
-github.com/carabiner-dev/protograph v0.0.0-20260829192612-b6c398db6f78/go.mod h1:wNTsoLghgcmuecqaOPVqT4rIMoJqNfxRCi3hWCLwONU=
+github.com/carabiner-dev/protograph v0.1.0 h1:RhOqz5D/K4UEMBJgw5lDVzJt6VOr9Flfl9oKcuTy0+s=
+github.com/carabiner-dev/protograph v0.1.0/go.mod h1:yLzHXYbyvr/Csp7VJwKnMFd74cpJJVbkfcGvf7KLCAM=
 github.com/carabiner-dev/spdx3 v0.1.0 h1:Q6nMLXV0BhtqDQuwRDOaJDZR670TK4jdOvZqvTW/ctY=
 github.com/carabiner-dev/spdx3 v0.1.0/go.mod h1:d/t010TrZvYZBeYGpvHeId6QpRvGLlqK7cy0E81npPA=
 github.com/carabiner-dev/termtable v1.1.1 h1:YRE0BJpchX1ld6WSEhJ+LYr+mHAxf8lgO3VN3YGB77U=
