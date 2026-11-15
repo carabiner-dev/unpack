@@ -8,7 +8,7 @@ require (
 	github.com/carabiner-dev/core v0.0.0-20261021172444-8c8c6fd01bab
 	github.com/carabiner-dev/github v0.2.4
 	github.com/carabiner-dev/hasher v0.2.4
-	github.com/carabiner-dev/protograph v0.0.0-20260829192612-b6c398db6f78
+	github.com/carabiner-dev/protograph v0.1.0
 	github.com/carabiner-dev/termtable v1.1.1
 	github.com/fatih/color v1.19.0
 	github.com/go-git/go-git/v5 v5.19.3
