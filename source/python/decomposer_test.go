@@ -313,6 +313,84 @@ func TestExtractWorkspace(t *testing.T) {
 		liba.GetIdentifiers()[int32(sbom.SoftwareIdentifierType_PURL)])
 }
 
+// TestExtractWorkspaceMemberOrder reads a workspace whose lock lists a
+// member after the member that depends on it. The dependent is walked
+// first and reaches the other before its turn as a root: it is still one
+// node, a root, with its own extras and groups.
+func TestExtractWorkspaceMemberOrder(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "uv.lock"), []byte(`version = 1
+revision = 3
+requires-python = ">=3.12"
+
+[manifest]
+members = [
+    "app",
+    "zlib-member",
+]
+
+[[package]]
+name = "app"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "zlib-member" },
+]
+
+[[package]]
+name = "idna"
+version = "3.18"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "pytest"
+version = "8.0.0"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "zlib-member"
+version = "0.2.0"
+source = { editable = "packages/zlib-member" }
+dependencies = [
+    { name = "idna" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+`), 0o600))
+
+	opts := linuxOpts(t, "3.12")
+	opts.WorkDir = dir
+	opts.IncludeDev = true
+	opts.Networking = api.NetworkDisabled
+	nl, err := New().Extract(opts)
+	require.NoError(t, err)
+
+	// nodeNamed requires a single node of the name.
+	app := nodeNamed(t, nl, "app")
+	member := nodeNamed(t, nl, "zlib-member")
+	require.Equal(t, []string{app.GetId(), member.GetId()}, nl.GetRootElements())
+	require.Len(t, nl.GetNodes(), 4)
+
+	// The member is related under its dependent and keeps its subtree,
+	// each edge once, and its dev group, which only its own turn adds.
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, app, member))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, member, nodeNamed(t, nl, "idna")))
+	require.True(t, hasEdge(nl, sbom.Edge_devDependency, member, nodeNamed(t, nl, "pytest")))
+	edges := 0
+	for _, e := range nl.GetEdges() {
+		edges += len(e.GetTo())
+	}
+	require.Equal(t, 3, edges)
+
+	// It is one of the project's own packages wherever it was reached from.
+	require.Equal(t, []sbom.Purpose{sbom.Purpose_APPLICATION}, member.GetPrimaryPurpose())
+}
+
 // TestExtractGitDependency reads a lock whose dependency comes from a git
 // repository rather than the index.
 func TestExtractGitDependency(t *testing.T) {
