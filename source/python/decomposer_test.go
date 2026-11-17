@@ -691,6 +691,67 @@ werkzeug==3.0.1 \
 		werkzeug.GetHashes()[int32(sbom.HashAlgorithm_SHA256)])
 }
 
+// TestExtractRequirementsComments reads a file where comments sit under
+// entries: only a via annotation, in either of its forms, says what pulled
+// an entry in. A comment of the author's names nothing, and neither does
+// one that follows an include.
+func TestExtractRequirementsComments(t *testing.T) {
+	t.Parallel()
+
+	dir := filepath.Join(t.TempDir(), "commented")
+	require.NoError(t, os.Mkdir(dir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "common.txt"), []byte("idna==3.18\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte(
+		`# The web stack
+requests==2.31.0
+# flask
+flask==3.0.0
+    # via -r requirements.in
+jinja2==3.1.2
+    # via flask
+    # markupsafe
+markupsafe==2.1.3
+    # via
+    #   jinja2
+    #   werkzeug
+werkzeug==3.0.1
+    # via flask
+
+-r common.txt
+# requests
+`), 0o600))
+
+	opts := linuxOpts(t, "3.12")
+	opts.WorkDir = dir
+	opts.Networking = api.NetworkDisabled
+	nl, err := New().Extract(opts)
+	require.NoError(t, err)
+
+	root := nodeNamed(t, nl, "commented")
+	flask := nodeNamed(t, nl, "flask")
+	jinja2 := nodeNamed(t, nl, "jinja2")
+	markupsafe := nodeNamed(t, nl, "markupsafe")
+	requests := nodeNamed(t, nl, "requests")
+	idna := nodeNamed(t, nl, "idna")
+
+	// The comments naming flask and requests are not annotations: the
+	// entries above them stay where they were declared.
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, root, requests))
+	require.False(t, hasEdge(nl, sbom.Edge_dependsOn, flask, requests))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, root, idna))
+	require.False(t, hasEdge(nl, sbom.Edge_dependsOn, requests, idna))
+
+	// The single form names one parent, and a comment after it is not a
+	// second one.
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, flask, jinja2))
+	require.False(t, hasEdge(nl, sbom.Edge_dependsOn, markupsafe, jinja2))
+
+	// The list form names one per line.
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, jinja2, markupsafe))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, nodeNamed(t, nl, "werkzeug"), markupsafe))
+	require.False(t, hasEdge(nl, sbom.Edge_dependsOn, root, markupsafe))
+}
+
 // TestExtractRequirementsLoose reads a hand-written file: partial pins, a
 // git reference, an include, and no via annotations.
 func TestExtractRequirementsLoose(t *testing.T) {

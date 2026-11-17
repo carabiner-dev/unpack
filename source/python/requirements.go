@@ -59,13 +59,28 @@ func readRequirementsFile(path string, visited map[string]bool) ([]*requirementE
 	}
 
 	entries := []*requirementEntry{}
+
+	// annotated is the entry of this file a via annotation would belong
+	// to, the one right above it, and listing says the annotation is in
+	// its list form, each parent on a comment line of its own.
+	var annotated *requirementEntry
+	listing := false
+
 	for _, line := range logicalLines(string(data)) {
-		switch {
-		case strings.HasPrefix(line, "#"):
-			// A via annotation belongs to the entry above it.
-			if len(entries) > 0 {
-				entries[len(entries)-1].Via = append(entries[len(entries)-1].Via, viaNames(line)...)
+		if strings.HasPrefix(line, "#") {
+			// A via annotation belongs to the entry above it. Any other
+			// comment is the author's, or the compiler's header, and
+			// names nothing.
+			if annotated != nil {
+				var names []string
+				names, listing = viaNames(line, listing)
+				annotated.Via = append(annotated.Via, names...)
 			}
+			continue
+		}
+		annotated, listing = nil, false
+
+		switch {
 		case strings.HasPrefix(line, "-r ") || strings.HasPrefix(line, "--requirement "):
 			_, include, _ := strings.Cut(line, " ")
 			included, err := readRequirementsFile(
@@ -91,6 +106,7 @@ func readRequirementsFile(path string, visited map[string]bool) ([]*requirementE
 				return nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
 			}
 			entries = append(entries, entry)
+			annotated = entry
 		}
 	}
 	return entries, nil
@@ -117,21 +133,24 @@ func logicalLines(data string) []string {
 	return lines
 }
 
-// viaNames reads the names out of one "# via" annotation line: the inline
-// form names one parent, the list form indents each on its own line.
-func viaNames(line string) []string {
+// viaNames reads the parents out of one comment line under an entry.
+// Compiled files write the annotation in two forms: "# via flask" names
+// one parent on the line, and a bare "# via" opens a list, each parent on
+// a comment line of its own below it. listing says whether such a list
+// is open, and the second return value whether it is after this line. A
+// comment that is neither names nothing.
+func viaNames(line string, listing bool) (names []string, stillListing bool) {
 	text := strings.TrimSpace(strings.TrimPrefix(line, "#"))
-	if text == "via" || text == "" {
-		return nil
+	switch {
+	case text == "via":
+		return nil, true
+	case strings.HasPrefix(text, "via "):
+		return []string{strings.TrimSpace(strings.TrimPrefix(text, "via "))}, false
+	case listing && text != "":
+		return []string{text}, true
+	default:
+		return nil, listing
 	}
-	if name, found := strings.CutPrefix(text, "via "); found {
-		text = name
-	}
-	// Annotation lines that are not via entries: the header comment.
-	if strings.ContainsAny(text, ":/") && strings.HasPrefix(text, "uv ") {
-		return nil
-	}
-	return []string{text}
 }
 
 // inlineComment matches the comment a line ends with. As pip reads it, a
