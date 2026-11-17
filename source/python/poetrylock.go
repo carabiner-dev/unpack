@@ -81,6 +81,11 @@ type PoetryDependency struct {
 	Name   string
 	Marker string
 	Extras []string
+
+	// Constraint is the version constraint the edge was resolved under.
+	// A lock that holds several versions of the target, one for each
+	// environment they differ in, is told apart by it.
+	Constraint string
 }
 
 // PoetryFile is one distribution artifact.
@@ -209,13 +214,13 @@ func normalizePoetryMarkers(raw any, groups []string) (map[string]string, error)
 }
 
 // normalizePoetryDependency reads one entry of the dependency table. The
-// version constraints are dropped: the resolved versions live on the
-// package entries, and the edge only has to name its target.
+// resolved versions live on the package entries; the version constraint is
+// kept only to say which entry the edge means when its target has several.
 func normalizePoetryDependency(name string, raw any) ([]PoetryDependency, error) {
 	switch value := raw.(type) {
 	case string:
 		// A bare constraint: unconditional edge.
-		return []PoetryDependency{{Name: NormalizeName(name)}}, nil
+		return []PoetryDependency{{Name: NormalizeName(name), Constraint: value}}, nil
 	case map[string]any:
 		return []PoetryDependency{poetryDependencyFromTable(name, value)}, nil
 	case []map[string]any:
@@ -242,6 +247,9 @@ func normalizePoetryDependency(name string, raw any) ([]PoetryDependency, error)
 
 func poetryDependencyFromTable(name string, table map[string]any) PoetryDependency {
 	dep := PoetryDependency{Name: NormalizeName(name)}
+	if version, ok := table["version"].(string); ok {
+		dep.Constraint = version
+	}
 	if marker, ok := table["markers"].(string); ok {
 		dep.Marker = marker
 	}

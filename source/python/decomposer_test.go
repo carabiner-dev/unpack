@@ -446,6 +446,123 @@ func TestExtractPoetryLegacy(t *testing.T) {
 		nodeNamed(t, nl, "poetrylegacy"), nodeNamed(t, nl, "iniconfig")))
 }
 
+// TestExtractPoetrySeveralVersions reads a 2.0 lock holding two versions
+// of one package, as Poetry writes when the version resolved differs by
+// environment. The entries state no markers of their own, so the edge's
+// constraint and the Python versions each supports tell them apart.
+func TestExtractPoetrySeveralVersions(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte(`[project]
+name = "severalapp"
+version = "0.1.0"
+requires-python = ">=3.7"
+dependencies = ["libb", "direct>=2 ; python_version >= '3.9'", "direct<2 ; python_version < '3.9'", "bypython"]
+`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "poetry.lock"), []byte(`[[package]]
+name = "bypython"
+version = "1.0"
+description = ""
+optional = false
+python-versions = ">=3.7,<3.9"
+files = []
+
+[[package]]
+name = "bypython"
+version = "2.0"
+description = ""
+optional = false
+python-versions = ">=3.9"
+files = []
+
+[[package]]
+name = "direct"
+version = "1.9"
+description = ""
+optional = false
+python-versions = ">=3.7"
+files = []
+
+[[package]]
+name = "direct"
+version = "2.1"
+description = ""
+optional = false
+python-versions = ">=3.7"
+files = []
+
+[[package]]
+name = "libb"
+version = "1.0"
+description = ""
+optional = false
+python-versions = ">=3.7"
+files = []
+
+[package.dependencies]
+shared = [
+    {version = "<2", markers = "python_version < \"3.9\""},
+    {version = ">=2", markers = "python_version >= \"3.9\""},
+]
+
+[[package]]
+name = "shared"
+version = "1.5"
+description = ""
+optional = false
+python-versions = ">=3.7"
+files = []
+
+[[package]]
+name = "shared"
+version = "2.5"
+description = ""
+optional = false
+python-versions = ">=3.7"
+files = []
+
+[metadata]
+lock-version = "2.0"
+python-versions = ">=3.7"
+content-hash = "abc"
+`), 0o600))
+
+	for _, tc := range []struct {
+		python                   string
+		shared, direct, bypython string
+	}{
+		{python: "3.12", shared: "2.5", direct: "2.1", bypython: "2.0"},
+		{python: "3.8", shared: "1.5", direct: "1.9", bypython: "1.0"},
+	} {
+		t.Run(tc.python, func(t *testing.T) {
+			t.Parallel()
+			opts := linuxOpts(t, tc.python)
+			opts.WorkDir = dir
+			opts.Networking = api.NetworkDisabled
+			nl, err := New().Extract(opts)
+			require.NoError(t, err)
+
+			root := nodeNamed(t, nl, "severalapp")
+			libb := nodeNamed(t, nl, "libb")
+
+			// nodeNamed requires one node of the name: the other version
+			// is not in the graph.
+			shared := nodeNamed(t, nl, "shared")
+			require.Equal(t, tc.shared, shared.GetVersion(), "by the constraint on a lock edge")
+			require.True(t, hasEdge(nl, sbom.Edge_dependsOn, libb, shared))
+
+			direct := nodeNamed(t, nl, "direct")
+			require.Equal(t, tc.direct, direct.GetVersion(), "by the constraint the manifest declares")
+			require.True(t, hasEdge(nl, sbom.Edge_dependsOn, root, direct))
+
+			bypython := nodeNamed(t, nl, "bypython")
+			require.Equal(t, tc.bypython, bypython.GetVersion(), "by the Python versions each entry supports")
+			require.True(t, hasEdge(nl, sbom.Edge_dependsOn, root, bypython))
+		})
+	}
+}
+
 // TestExtractDispatch pins which lockfile wins when a codebase has
 // several: uv.lock is the one uv keeps current.
 func TestExtractDispatch(t *testing.T) {
