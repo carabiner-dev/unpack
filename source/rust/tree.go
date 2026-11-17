@@ -53,21 +53,20 @@ func NewDependencyTree(toml *CargoToml, lock *CargoLock, opts *Options) *Depende
 func (dt *DependencyTree) Build(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	nl := sbom.NewNodeList()
 
-	// Find the root package(s) - local packages without a source
-	roots := dt.cargoLock.FindRootPackages()
+	roots := dt.rootPackages()
 	if len(roots) == 0 {
 		return nil, fmt.Errorf("no root package found in Cargo.lock")
 	}
 
-	// Process each root package
+	// The root nodes come first, all of them, so that a root another
+	// root depends on is found already made when the walk reaches it:
+	// it is related as it is, and not made a second time.
 	for _, root := range roots {
-		rootKey := PackageKey{Name: root.Name, Version: root.Version}
-
-		// Create root node
 		rootNode := dt.createNode(root)
 
-		// Add license from Cargo.toml
-		if dt.cargoToml.Package.License != "" {
+		// The license is the one Cargo.toml states, for the package it
+		// describes.
+		if dt.cargoToml.Package.License != "" && dt.isManifestPackage(root) {
 			rootNode.Licenses = []string{license.Normalize(dt.cargoToml.Package.License, "")}
 		}
 
@@ -87,9 +86,12 @@ func (dt *DependencyTree) Build(opts *api.DecomposerOptions) (*sbom.NodeList, er
 		}
 
 		nl.AddRootNode(rootNode)
-		dt.nodeCache[rootKey] = rootNode
+		dt.nodeCache[PackageKey{Name: root.Name, Version: root.Version}] = rootNode
+	}
 
-		// Build the dependency tree recursively
+	// Build each root's dependency tree recursively
+	for _, root := range roots {
+		rootNode := dt.nodeCache[PackageKey{Name: root.Name, Version: root.Version}]
 		visited := make(map[PackageKey]bool)
 		if err := dt.buildSubtree(nl, root, rootNode, visited); err != nil {
 			return nil, fmt.Errorf("building dependency tree: %w", err)
@@ -97,6 +99,47 @@ func (dt *DependencyTree) Build(opts *api.DecomposerOptions) (*sbom.NodeList, er
 	}
 
 	return nl, nil
+}
+
+// rootPackages picks the packages the graph is rooted at, out of the local
+// ones: those Cargo.lock gives no source, which are the project's own
+// packages and anything it requires by path.
+//
+// A project that is a single package is rooted at it, and a local package
+// beside it is a path dependency, reached as any other dependency is. In
+// a workspace the members are the project, each a root, as every member
+// is built from it; the manifest's own package, when it has one, comes
+// first. The lock does not tell a member from a path dependency outside
+// the workspace, so there every local package is taken for a member.
+func (dt *DependencyTree) rootPackages() []*LockPackage {
+	local := dt.cargoLock.FindRootPackages()
+
+	var manifest *LockPackage
+	if name := dt.cargoToml.Package.Name; name != "" {
+		for _, pkg := range local {
+			if pkg.Name == name {
+				manifest = pkg
+				break
+			}
+		}
+	}
+
+	switch {
+	case manifest == nil:
+		// A virtual workspace, or a lock that does not hold the package
+		// the manifest names: nothing singles a local package out.
+		return local
+	case dt.cargoToml.Workspace == nil:
+		return []*LockPackage{manifest}
+	}
+
+	roots := []*LockPackage{manifest}
+	for _, pkg := range local {
+		if pkg != manifest {
+			roots = append(roots, pkg)
+		}
+	}
+	return roots
 }
 
 // buildSubtree recursively builds the dependency subtree for a package.

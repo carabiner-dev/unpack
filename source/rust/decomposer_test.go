@@ -551,6 +551,146 @@ dependencies = [
 	}, edges(nl))
 }
 
+// rustEdges lists a graph as "from -> to" lines by package name, sorted.
+func rustEdges(nl *sbom.NodeList) []string {
+	lines := []string{}
+	for _, e := range nl.GetEdges() {
+		for _, to := range e.GetTo() {
+			lines = append(lines, nl.GetNodeByID(e.GetFrom()).GetName()+" -> "+nl.GetNodeByID(to).GetName())
+		}
+	}
+	sort.Strings(lines)
+	return lines
+}
+
+// rustRootNames lists the names of a graph's roots, in order.
+func rustRootNames(nl *sbom.NodeList) []string {
+	names := make([]string, 0, len(nl.GetRootElements()))
+	for _, id := range nl.GetRootElements() {
+		names = append(names, nl.GetNodeByID(id).GetName())
+	}
+	return names
+}
+
+// localPackagesLock is a lock with three local packages: app requires
+// helper, which requires the registry crate dep, and tool stands alone.
+const localPackagesLock = `
+version = 4
+
+[[package]]
+name = "app"
+version = "1.0.0"
+dependencies = [
+  "helper",
+]
+
+[[package]]
+name = "dep"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "helper"
+version = "0.3.0"
+dependencies = [
+  "dep",
+]
+
+[[package]]
+name = "tool"
+version = "0.1.0"
+dependencies = [
+  "dep",
+]
+`
+
+// TestRootPackages checks which local packages a graph is rooted at, by
+// the kind of project Cargo.toml describes, and that a local package is in
+// the graph once however many ways it is reached.
+func TestRootPackages(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		manifest string
+		roots    []string
+		edges    []string
+		licensed []string
+	}{
+		{
+			// A local package beside the project's is a path dependency.
+			// tool, which nothing requires, is not part of this project.
+			name: "single package",
+			manifest: `
+[package]
+name = "app"
+version = "1.0.0"
+license = "MIT"
+
+[dependencies]
+helper = { path = "../helper" }
+`,
+			roots:    []string{"app"},
+			edges:    []string{"app -> helper", "helper -> dep"},
+			licensed: []string{"app"},
+		},
+		{
+			// The members are roots, the manifest's package first, and
+			// a member another requires is still one node.
+			name: "package with a workspace",
+			manifest: `
+[package]
+name = "helper"
+version = "0.3.0"
+license = "MIT"
+
+[workspace]
+members = ["app", "tool"]
+`,
+			roots:    []string{"helper", "app", "tool"},
+			edges:    []string{"app -> helper", "helper -> dep", "tool -> dep"},
+			licensed: []string{"helper"},
+		},
+		{
+			name: "virtual workspace",
+			manifest: `
+[workspace]
+members = ["app", "helper", "tool"]
+`,
+			roots: []string{"app", "helper", "tool"},
+			edges: []string{"app -> helper", "helper -> dep", "tool -> dep"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tmpDir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "Cargo.toml"), []byte(tc.manifest), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "Cargo.lock"), []byte(localPackagesLock), 0o600))
+
+			nl, err := New().Extract(&api.DecomposerOptions{WorkDir: tmpDir, Networking: api.NetworkDisabled})
+			require.NoError(t, err)
+
+			require.Equal(t, tc.roots, rustRootNames(nl))
+			require.Equal(t, tc.edges, rustEdges(nl))
+
+			// One node per package, and the manifest's license on the
+			// package it describes alone.
+			seen := map[string]int{}
+			licensed := []string{}
+			for _, n := range nl.GetNodes() {
+				seen[n.GetName()]++
+				if len(n.GetLicenses()) > 0 {
+					licensed = append(licensed, n.GetName())
+				}
+			}
+			for name, count := range seen {
+				require.Equal(t, 1, count, "%s is in the graph %d times", name, count)
+			}
+			require.ElementsMatch(t, tc.licensed, licensed)
+		})
+	}
+}
+
 // TestListDependencies tests the helper function for debugging.
 func TestListDependencies(t *testing.T) {
 	t.Parallel()
