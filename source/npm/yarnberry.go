@@ -215,10 +215,27 @@ func (bb *berryBuilder) workspaceEdges(ws *BerryPackage, manifest *PackageJSON) 
 	return nil
 }
 
+// lookup finds the entry a dependency reference selects. Yarn 4 writes a
+// reference as the selector's own, protocol included ("npm:^2.1.3").
+// Yarn 2 and 3 write a range on the registry bare ("^2.1.3") while keying
+// the entry with the protocol, so a reference naming no protocol is also
+// tried as an npm one.
+func (bb *berryBuilder) lookup(name, ref string) (*BerryPackage, bool) {
+	if pkg, ok := bb.lock.Entries[name+"@"+ref]; ok {
+		return pkg, true
+	}
+	if !strings.Contains(ref, ":") {
+		if pkg, ok := bb.lock.Entries[name+"@npm:"+ref]; ok {
+			return pkg, true
+		}
+	}
+	return nil, false
+}
+
 // addEdge resolves a reference through the lock's selectors, relates it,
 // and walks into it when it is new.
 func (bb *berryBuilder) addEdge(name, ref string, parent *sbom.Node, edgeType sbom.Edge_Type) error {
-	pkg, ok := bb.lock.Entries[name+"@"+ref]
+	pkg, ok := bb.lookup(name, ref)
 	if !ok {
 		return fmt.Errorf("the lock has no entry for %s@%s", name, ref)
 	}
