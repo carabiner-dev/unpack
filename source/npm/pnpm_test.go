@@ -4,6 +4,8 @@
 package npm
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/protobom/protobom/pkg/sbom"
@@ -150,4 +152,195 @@ func TestFindCodeBasesLockfiles(t *testing.T) {
 	locations, err := New().FindCodeBases(&index)
 	require.NoError(t, err)
 	require.Equal(t, []string{"app", "tool"}, locations)
+}
+
+// pnpmPeerVariantsLock is a lock where plug is installed twice, once for
+// each version of the peer it is resolved against, in the spelling of
+// each schema generation.
+var pnpmPeerVariantsLock = map[string]string{
+	"schema 9": `lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    dependencies:
+      x:
+        specifier: ^1.0.0
+        version: 1.0.0
+      y:
+        specifier: ^1.0.0
+        version: 1.0.0
+
+packages:
+
+  common@1.0.0:
+    resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
+
+  host@1.0.0:
+    resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
+
+  host@2.0.0:
+    resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
+
+  plug@1.0.0:
+    resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
+    peerDependencies:
+      host: '*'
+
+  x@1.0.0:
+    resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
+
+  y@1.0.0:
+    resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
+
+snapshots:
+
+  common@1.0.0: {}
+
+  host@1.0.0: {}
+
+  host@2.0.0: {}
+
+  plug@1.0.0(host@1.0.0):
+    dependencies:
+      common: 1.0.0
+      host: 1.0.0
+
+  plug@1.0.0(host@2.0.0):
+    dependencies:
+      common: 1.0.0
+      host: 2.0.0
+
+  x@1.0.0:
+    dependencies:
+      host: 1.0.0
+      plug: 1.0.0(host@1.0.0)
+
+  y@1.0.0:
+    dependencies:
+      host: 2.0.0
+      plug: 1.0.0(host@2.0.0)
+`,
+	"schema 6": `lockfileVersion: '6.0'
+
+dependencies:
+  x:
+    specifier: ^1.0.0
+    version: 1.0.0
+  y:
+    specifier: ^1.0.0
+    version: 1.0.0
+
+packages:
+
+  /common@1.0.0:
+    resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
+    dev: false
+
+  /host@1.0.0:
+    resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
+    dev: false
+
+  /host@2.0.0:
+    resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
+    dev: false
+
+  /plug@1.0.0(host@1.0.0):
+    resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
+    peerDependencies:
+      host: '*'
+    dependencies:
+      common: 1.0.0
+      host: 1.0.0
+    dev: false
+
+  /plug@1.0.0(host@2.0.0):
+    resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
+    peerDependencies:
+      host: '*'
+    dependencies:
+      common: 1.0.0
+      host: 2.0.0
+    dev: false
+
+  /x@1.0.0:
+    resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
+    dependencies:
+      host: 1.0.0
+      plug: 1.0.0(host@1.0.0)
+    dev: false
+
+  /y@1.0.0:
+    resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
+    dependencies:
+      host: 2.0.0
+      plug: 1.0.0(host@2.0.0)
+    dev: false
+`,
+}
+
+// TestParsePnpmLockPeerVariants checks that the entries pnpm writes for one
+// package resolved against different peers fold into one package holding
+// the union of their edges.
+func TestParsePnpmLockPeerVariants(t *testing.T) {
+	t.Parallel()
+	for name, doc := range pnpmPeerVariantsLock {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			lock, err := ParsePnpmLock([]byte(doc))
+			require.NoError(t, err)
+
+			plug := lock.Packages["plug@1.0.0"]
+			require.NotNil(t, plug)
+			require.Equal(t, map[string][]string{
+				"common": {"1.0.0"},
+				"host":   {"1.0.0", "2.0.0"},
+			}, plug.DependencyVersions)
+
+			// The single-version form keeps the variant that sorts first.
+			require.Equal(t, map[string]string{"common": "1.0.0", "host": "1.0.0"}, plug.Dependencies)
+
+			// A package with no variants lists one version per name.
+			require.Equal(t, map[string][]string{
+				"host": {"1.0.0"},
+				"plug": {"1.0.0"},
+			}, lock.Packages["x@1.0.0"].DependencyVersions)
+			require.Nil(t, lock.Packages["common@1.0.0"].DependencyVersions)
+		})
+	}
+}
+
+// TestExtractPnpmPeerVariants checks the graph of the same lock: one node
+// for the package, with an edge to each version its variants resolve.
+func TestExtractPnpmPeerVariants(t *testing.T) {
+	t.Parallel()
+	for name, doc := range pnpmPeerVariantsLock {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte(
+				`{"name": "variants", "version": "1.0.0", "dependencies": {"x": "^1.0.0", "y": "^1.0.0"}}`,
+			), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "pnpm-lock.yaml"), []byte(doc), 0o600))
+
+			nl, err := New().Extract(&api.DecomposerOptions{WorkDir: dir, Networking: api.NetworkDisabled})
+			require.NoError(t, err)
+
+			hosts := map[string]*sbom.Node{}
+			for _, n := range nl.GetNodes() {
+				if n.GetName() == "host" {
+					hosts[n.GetVersion()] = n
+				}
+			}
+			require.Len(t, hosts, 2)
+
+			// pnpmNodeNamed requires a single node of the name.
+			plug := pnpmNodeNamed(t, nl, "plug")
+			require.True(t, pnpmHasEdge(nl, sbom.Edge_dependsOn, pnpmNodeNamed(t, nl, "x"), plug))
+			require.True(t, pnpmHasEdge(nl, sbom.Edge_dependsOn, pnpmNodeNamed(t, nl, "y"), plug))
+			require.True(t, pnpmHasEdge(nl, sbom.Edge_dependsOn, plug, hosts["1.0.0"]))
+			require.True(t, pnpmHasEdge(nl, sbom.Edge_dependsOn, plug, hosts["2.0.0"]))
+			require.True(t, pnpmHasEdge(nl, sbom.Edge_dependsOn, plug, pnpmNodeNamed(t, nl, "common")))
+		})
+	}
 }
