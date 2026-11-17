@@ -97,6 +97,12 @@ func ParsePackageJSONData(data []byte) (*PackageJSON, error) {
 }
 
 // GetDirectDependencies returns a map of dependency names to their types.
+//
+// A package may be declared in more than one table, and the map holds one
+// type per name, the first of normal, dev, peer and optional it is
+// declared as. A package the project needs at runtime is installed
+// whatever else it is used for, so one that is also a dev dependency
+// stays a normal one.
 func (pj *PackageJSON) GetDirectDependencies() map[string]DependencyType {
 	deps := make(map[string]DependencyType)
 
@@ -107,7 +113,10 @@ func (pj *PackageJSON) GetDirectDependencies() map[string]DependencyType {
 
 	// Dev dependencies
 	for name := range pj.DevDependencies {
-		deps[name] = DepTypeDev
+		// Don't override if already set
+		if _, exists := deps[name]; !exists {
+			deps[name] = DepTypeDev
+		}
 	}
 
 	// Peer dependencies

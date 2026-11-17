@@ -213,6 +213,215 @@ func TestBuildTreeDependencyManagement(t *testing.T) {
 	require.Equal(t, "5.0.0", dt.resolved["com.dep:managed"].Coordinate.Version)
 }
 
+// TestBuildTreeManagementOverridesTransitive checks that the project's
+// dependencyManagement decides the version and scope of what its
+// dependencies bring in, and only fills in what its own declarations
+// leave out.
+func TestBuildTreeManagementOverridesTransitive(t *testing.T) {
+	t.Parallel()
+
+	pomFor := func(artifact, version, deps string) string {
+		return `<?xml version="1.0"?>
+<project>
+    <groupId>com.dep</groupId>
+    <artifactId>` + artifact + `</artifactId>
+    <version>` + version + `</version>
+    <dependencies>` + deps + `</dependencies>
+</project>`
+	}
+	dep := func(artifact, version, scope string) string {
+		s := "<dependency><groupId>com.dep</groupId><artifactId>" + artifact + "</artifactId><version>" + version + "</version>"
+		if scope != "" {
+			s += "<scope>" + scope + "</scope>"
+		}
+		return s + "</dependency>"
+	}
+	url := func(artifact, version string) string {
+		return "https://repo.test/com/dep/" + artifact + "/" + version + "/" + artifact + "-" + version + ".pom"
+	}
+
+	resolver := newTestResolver(map[string]string{
+		url("lib", "1.0"): pomFor("lib", "1.0",
+			dep("pinned", "1.0", "")+dep("scoped", "1.0", "")+dep("unmanaged", "1.0", "")+dep("testonly", "1.0", "test")),
+		url("pinned", "3.0"):    pomFor("pinned", "3.0", ""),
+		url("scoped", "1.0"):    pomFor("scoped", "1.0", ""),
+		url("unmanaged", "1.0"): pomFor("unmanaged", "1.0", ""),
+		url("direct", "1.0"):    pomFor("direct", "1.0", ""),
+	})
+
+	pom := &POM{
+		GroupID:    "com.example",
+		ArtifactID: "app",
+		Version:    "1.0.0",
+		DependencyManagement: &DependencyManagement{
+			Dependencies: []Dependency{
+				{GroupID: "com.dep", ArtifactID: "pinned", Version: "3.0"},
+				{GroupID: "com.dep", ArtifactID: "scoped", Scope: ScopeRuntime},
+				{GroupID: "com.dep", ArtifactID: "direct", Version: "2.0"},
+				{GroupID: "com.dep", ArtifactID: "testonly", Version: "2.0", Scope: ScopeCompile},
+			},
+		},
+		Dependencies: []Dependency{
+			{GroupID: "com.dep", ArtifactID: "lib", Version: "1.0"},
+			{GroupID: "com.dep", ArtifactID: "direct", Version: "1.0"},
+		},
+	}
+
+	dt := NewDependencyTree(pom, resolver, &defaultOptions)
+	require.NoError(t, dt.Build())
+
+	// The managed version replaces the one lib's POM states.
+	require.Equal(t, "3.0", dt.resolved["com.dep:pinned"].Coordinate.Version)
+	require.Contains(t, dt.edges["com.dep:lib:1.0"], dt.resolved["com.dep:pinned"].Coordinate.String())
+
+	// And so does the managed scope, the version left as stated.
+	require.Equal(t, "1.0", dt.resolved["com.dep:scoped"].Coordinate.Version)
+	require.Equal(t, ScopeRuntime, dt.resolved["com.dep:scoped"].Scope)
+
+	// What management does not name is untouched.
+	require.Equal(t, "1.0", dt.resolved["com.dep:unmanaged"].Coordinate.Version)
+
+	// A version the project declares itself stands.
+	require.Equal(t, "1.0", dt.resolved["com.dep:direct"].Coordinate.Version)
+
+	// A dependency that is not transitive as declared stays out, whatever
+	// scope the project manages it to.
+	require.NotContains(t, dt.resolved, "com.dep:testonly")
+}
+
+// TestBuildTreeInheritsParentDependencies checks that what a parent POM
+// declares is a dependency of the POMs that inherit from it: of the
+// project, and of a dependency with a parent of its own.
+func TestBuildTreeInheritsParentDependencies(t *testing.T) {
+	t.Parallel()
+
+	const header = `<?xml version="1.0"?><project>`
+	dep := func(artifact, version string) string {
+		return "<dependency><groupId>com.dep</groupId><artifactId>" + artifact + "</artifactId><version>" + version + "</version></dependency>"
+	}
+	url := func(artifact, version string) string {
+		return "https://repo.test/com/dep/" + artifact + "/" + version + "/" + artifact + "-" + version + ".pom"
+	}
+
+	resolver := newTestResolver(map[string]string{
+		// The project's parent brings in a logging library, with its
+		// version in a property the project overrides.
+		url("app-parent", "1.0"): header + `<groupId>com.dep</groupId><artifactId>app-parent</artifactId><version>1.0</version>
+<packaging>pom</packaging>
+<properties><logging.version>1.0</logging.version></properties>
+<dependencies>` + dep("logging", "${logging.version}") + `</dependencies></project>`,
+		// A dependency whose own parent brings something in too.
+		url("lib", "1.0"): header + `<artifactId>lib</artifactId>
+<parent><groupId>com.dep</groupId><artifactId>lib-parent</artifactId><version>1.0</version></parent></project>`,
+		url("lib-parent", "1.0"): header + `<groupId>com.dep</groupId><artifactId>lib-parent</artifactId><version>1.0</version>
+<packaging>pom</packaging>
+<dependencies>` + dep("annotations", "4.0") + `</dependencies></project>`,
+		url("logging", "2.0"):     header + `<groupId>com.dep</groupId><artifactId>logging</artifactId><version>2.0</version></project>`,
+		url("annotations", "4.0"): header + `<groupId>com.dep</groupId><artifactId>annotations</artifactId><version>4.0</version></project>`,
+	})
+
+	pom, err := resolver.ResolveEffectivePOM(&POM{
+		GroupID:    "com.example",
+		ArtifactID: "app",
+		Version:    "1.0.0",
+		Parent:     &Parent{GroupID: "com.dep", ArtifactID: "app-parent", Version: "1.0"},
+		Properties: Properties{"logging.version": "2.0"},
+		Dependencies: []Dependency{
+			{GroupID: "com.dep", ArtifactID: "lib", Version: "1.0"},
+		},
+	})
+	require.NoError(t, err)
+
+	dt := NewDependencyTree(pom, resolver, &defaultOptions)
+	require.NoError(t, dt.Build())
+
+	// From the project's parent, under the root, at the version the
+	// project's own property gives it.
+	require.Equal(t, "2.0", dt.resolved["com.dep:logging"].Coordinate.Version)
+	require.Equal(t,
+		[]string{"com.dep:lib:1.0", "com.dep:logging:2.0"},
+		dt.edges["com.example:app:1.0.0"])
+
+	// From the dependency's parent, under the dependency.
+	require.Equal(t, []string{"com.dep:annotations:4.0"}, dt.edges["com.dep:lib:1.0"])
+}
+
+// TestBuildTreeEdgesToMediatedDependency checks that every dependency
+// requiring an artifact gets an edge to it, at the version mediation chose
+// and not the one each asked for, unless it excludes the artifact.
+func TestBuildTreeEdgesToMediatedDependency(t *testing.T) {
+	t.Parallel()
+
+	dep := func(artifact, version string) string {
+		return "<dependency><groupId>com.dep</groupId><artifactId>" + artifact + "</artifactId><version>" + version + "</version></dependency>"
+	}
+	pomFor := func(artifact, version, deps string) string {
+		return `<?xml version="1.0"?><project><groupId>com.dep</groupId><artifactId>` + artifact +
+			`</artifactId><version>` + version + `</version><dependencies>` + deps + `</dependencies></project>`
+	}
+	url := func(artifact, version string) string {
+		return "https://repo.test/com/dep/" + artifact + "/" + version + "/" + artifact + "-" + version + ".pom"
+	}
+
+	resolver := newTestResolver(map[string]string{
+		url("a", "1.0"):      pomFor("a", "1.0", dep("shared", "1.0")),
+		url("b", "1.0"):      pomFor("b", "1.0", dep("shared", "2.0")+dep("direct", "2.0")),
+		url("c", "1.0"):      pomFor("c", "1.0", dep("shared", "1.0")),
+		url("shared", "1.0"): pomFor("shared", "1.0", ""),
+		url("direct", "1.0"): pomFor("direct", "1.0", ""),
+	})
+
+	pom := &POM{
+		GroupID:    "com.example",
+		ArtifactID: "app",
+		Version:    "1.0.0",
+		Dependencies: []Dependency{
+			{GroupID: "com.dep", ArtifactID: "a", Version: "1.0"},
+			{GroupID: "com.dep", ArtifactID: "b", Version: "1.0"},
+			{
+				GroupID: "com.dep", ArtifactID: "c", Version: "1.0",
+				Exclusions: []Exclusion{{GroupID: "com.dep", ArtifactID: "shared"}},
+			},
+			{GroupID: "com.dep", ArtifactID: "direct", Version: "1.0"},
+		},
+	}
+
+	dt := NewDependencyTree(pom, resolver, &defaultOptions)
+	require.NoError(t, dt.Build())
+
+	// One version of each, the nearest and then the first declared.
+	require.Equal(t, "1.0", dt.resolved["com.dep:shared"].Coordinate.Version)
+	require.Equal(t, "1.0", dt.resolved["com.dep:direct"].Coordinate.Version)
+
+	// a reached shared first; b asked for another version and depends on
+	// the one chosen, as it does on the version of direct the project
+	// declares.
+	require.Equal(t, []string{"com.dep:shared:1.0"}, dt.edges["com.dep:a:1.0"])
+	require.Equal(t, []string{"com.dep:shared:1.0", "com.dep:direct:1.0"}, dt.edges["com.dep:b:1.0"])
+
+	// c is declared with shared excluded: no edge.
+	require.Empty(t, dt.edges["com.dep:c:1.0"])
+
+	// The root's edges are its own declarations, each once.
+	require.Equal(t,
+		[]string{"com.dep:a:1.0", "com.dep:b:1.0", "com.dep:c:1.0", "com.dep:direct:1.0"},
+		dt.edges["com.example:app:1.0.0"])
+
+	// And the graph holds each package once, with both parents related.
+	nl, err := dt.ToNodeList(nil)
+	require.NoError(t, err)
+	require.Len(t, nl.GetNodes(), 6)
+	parents := 0
+	for _, e := range nl.GetEdges() {
+		for _, to := range e.GetTo() {
+			if nl.GetNodeByID(to).GetName() == "shared" {
+				parents++
+			}
+		}
+	}
+	require.Equal(t, 2, parents)
+}
+
 func TestToNodeList(t *testing.T) {
 	t.Parallel()
 	pom := &POM{

@@ -6,6 +6,7 @@ package maven
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -125,11 +126,6 @@ func (dt *DependencyTree) Build() error {
 		dep := entry.dep
 		key := dep.Key()
 
-		// Skip if already resolved (nearest definition wins)
-		if _, exists := dt.resolved[key]; exists {
-			continue
-		}
-
 		// Skip excluded dependencies
 		if dt.isExcluded(dep.GroupID, dep.ArtifactID, entry.exclusions) {
 			continue
@@ -151,6 +147,15 @@ func (dt *DependencyTree) Build() error {
 
 		// Skip optional dependencies unless configured to include them
 		if dep.IsOptional() && !dt.opts.IncludeOptional {
+			continue
+		}
+
+		// Already resolved: the nearest definition won, and this one
+		// neither changes its version nor is walked again. The parent
+		// depends on the artifact all the same, so it gets its edge, to
+		// the version that was chosen.
+		if winner, exists := dt.resolved[key]; exists {
+			dt.addEdge(entry.parentCoord, winner.Coordinate.String())
 			continue
 		}
 
@@ -240,20 +245,21 @@ func (dt *DependencyTree) Build() error {
 		}
 
 		// Record edge
-		dt.edges[entry.parentCoord] = append(dt.edges[entry.parentCoord], coord.String())
+		dt.addEdge(entry.parentCoord, coord.String())
 
 		// Enqueue transitive dependencies
 		// Accumulate exclusions from this dependency
 		allExclusions := append(entry.exclusions, dep.Exclusions...) //nolint:gocritic
 
 		for i := range transitiveDeps {
-			tdep := dt.applyManagement(transitiveDeps[i])
-			tScope := tdep.EffectiveScope()
-
-			// Only compile and runtime deps are transitive
+			// Only compile and runtime deps are transitive. Maven decides
+			// that on the scope the dependency is declared with, before
+			// the project's management has its say.
+			tScope := transitiveDeps[i].EffectiveScope()
 			if tScope != ScopeCompile && tScope != ScopeRuntime {
 				continue
 			}
+			tdep := dt.applyTransitiveManagement(transitiveDeps[i])
 
 			queue = append(queue, queueEntry{
 				dep:         tdep,
@@ -327,7 +333,42 @@ func (dt *DependencyTree) AddBuildPlugins() {
 	}
 }
 
-// applyManagement applies dependencyManagement overrides to a dependency.
+// addEdge records that one coordinate depends on another, once, and never
+// on itself.
+func (dt *DependencyTree) addEdge(parentCoord, childCoord string) {
+	if parentCoord == childCoord || slices.Contains(dt.edges[parentCoord], childCoord) {
+		return
+	}
+	dt.edges[parentCoord] = append(dt.edges[parentCoord], childCoord)
+}
+
+// applyTransitiveManagement applies the project's dependencyManagement to
+// a dependency of one of its dependencies. There the managed version and
+// scope are not defaults but the project's decision: they replace what
+// the dependency's own POM states, which is how a project pins a version
+// across its whole tree.
+func (dt *DependencyTree) applyTransitiveManagement(dep Dependency) Dependency { //nolint:gocritic // returns modified copy
+	managed, ok := dt.managed[dep.Key()]
+	if !ok {
+		return dep
+	}
+
+	if managed.Version != "" {
+		dep.Version = managed.Version
+	}
+	if managed.Scope != "" {
+		dep.Scope = managed.Scope
+	}
+	if len(dep.Exclusions) == 0 && len(managed.Exclusions) > 0 {
+		dep.Exclusions = managed.Exclusions
+	}
+
+	return dep
+}
+
+// applyManagement applies dependencyManagement to a dependency the project
+// declares itself: what the declaration states stands, and management
+// fills in what it leaves out.
 func (dt *DependencyTree) applyManagement(dep Dependency) Dependency { //nolint:gocritic // returns modified copy
 	managed, ok := dt.managed[dep.Key()]
 	if !ok {
