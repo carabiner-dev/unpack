@@ -119,6 +119,46 @@ __metadata:
 	}, npmEdges(nl))
 }
 
+// TestParseYarnBerryNames checks the name a berry entry is given: the
+// package its resolution fetches, read up to the first @ after a scope,
+// since what follows may hold more of them. An alias and a patch resolve
+// to packages named otherwise than their selectors might suggest.
+func TestParseYarnBerryNames(t *testing.T) {
+	t.Parallel()
+
+	lock, err := ParseYarnBerryLock([]byte(`__metadata:
+  version: 8
+  cacheKey: 10c0
+
+"app@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "app@workspace:."
+  dependencies:
+    pad: "npm:lodash.padstart@^4.6.1"
+    typescript: "patch:typescript@npm%3A^5.4.0#optional!builtin<compat/typescript>"
+  languageName: unknown
+  linkType: soft
+
+"pad@npm:lodash.padstart@^4.6.1":
+  version: 4.6.1
+  resolution: "lodash.padstart@npm:4.6.1"
+  languageName: node
+  linkType: hard
+
+"typescript@patch:typescript@npm%3A^5.4.0#optional!builtin<compat/typescript>":
+  version: 5.4.5
+  resolution: "typescript@patch:typescript@npm%3A5.4.5#optional!builtin<compat/typescript>::version=5.4.5&hash=5adc0c"
+  languageName: node
+  linkType: hard
+`))
+	require.NoError(t, err)
+
+	require.Equal(t, "lodash.padstart", lock.Entries["pad@npm:lodash.padstart@^4.6.1"].Name)
+	require.Equal(t, "typescript",
+		lock.Entries["typescript@patch:typescript@npm%3A^5.4.0#optional!builtin<compat/typescript>"].Name)
+	require.Equal(t, "app", lock.Workspaces["."].Name)
+}
+
 func TestExtractYarnBerryDevAndOptional(t *testing.T) {
 	t.Parallel()
 

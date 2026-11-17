@@ -85,7 +85,7 @@ func ParseYarnLock(data []byte) (*YarnLock, error) {
 			current = &YarnPackage{}
 			inDeps = nil
 			for _, selector := range selectors {
-				name, err := yarnSelectorName(selector)
+				name, err := yarnSelectorPackage(selector)
 				if err != nil {
 					return nil, err
 				}
@@ -167,14 +167,42 @@ func yarnSelectors(line string) ([]string, error) {
 	return selectors, nil
 }
 
-// yarnSelectorName reads the package name out of a selector. A scoped name
-// holds an @ of its own, so the name ends at the last one.
-func yarnSelectorName(selector string) (string, error) {
-	at := strings.LastIndex(selector, "@")
-	if at <= 0 {
-		return "", fmt.Errorf("unparseable yarn.lock selector %q", selector)
+// yarnSelectorName splits a selector into the name it is declared under
+// and what follows: a range, or a reference to somewhere else. A scoped
+// name opens with an @ of its own, so the name ends at the first one
+// after that. What follows may hold more of them, in a URL or in the
+// name of another package, so the last one says nothing.
+func yarnSelectorName(selector string) (name, reference string, err error) {
+	at := strings.Index(selector[min(1, len(selector)):], "@")
+	if at < 0 {
+		return "", "", fmt.Errorf("unparseable yarn.lock selector %q", selector)
 	}
-	return selector[:at], nil
+	return selector[:at+1], selector[at+2:], nil
+}
+
+// yarnSelectorPackage reads out of a classic selector the name of the
+// package it resolves to. That is the name it is declared under, except
+// for an alias, "name@npm:other@range", which installs another package
+// under that name: the lock entry is the other package's.
+func yarnSelectorPackage(selector string) (string, error) {
+	name, reference, err := yarnSelectorName(selector)
+	if err != nil {
+		return "", err
+	}
+	target, isAlias := strings.CutPrefix(reference, "npm:")
+	if !isAlias {
+		return name, nil
+	}
+	// "other@range", or "other" alone for any version. A reference with
+	// neither a name nor an @ after its scope is a range on the name
+	// itself.
+	if aliased, _, err := yarnSelectorName(target); err == nil && aliased != "" {
+		return aliased, nil
+	}
+	if target != "" && !strings.ContainsAny(target[:1], "0123456789^~<>=*") {
+		return target, nil
+	}
+	return name, nil
 }
 
 // yarnKeyValue splits a field or dependency line: a key, a space, and a

@@ -76,7 +76,9 @@ func ParseYarnBerryLock(data []byte) (*YarnBerryLock, error) {
 			continue
 		}
 
-		name, err := yarnSelectorName(entry.Resolution)
+		// The resolution names the package fetched, whatever name a
+		// selector asked for it under.
+		name, _, err := yarnSelectorName(entry.Resolution)
 		if err != nil {
 			return nil, fmt.Errorf("entry %q: %w", key, err)
 		}

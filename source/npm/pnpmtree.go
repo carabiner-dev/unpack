@@ -151,12 +151,19 @@ func (pb *pnpmBuilder) addEdge(importerDir, name, ref string, parent *sbom.Node,
 		return nil
 	}
 
-	key := name + "@" + ref
-	pkg, ok := pb.lock.Packages[key]
+	// A reference is a version of the name it is declared under, or, for
+	// an alias, the key of another package: "foo: bar@1.2.0" installs bar
+	// under the name foo. Schema 6 writes that key with a leading slash.
+	pkg, ok := pb.lock.Packages[name+"@"+ref]
 	if !ok {
-		return fmt.Errorf("the lock has no package for %s", key)
+		pkg, ok = pb.lock.Packages[strings.TrimPrefix(ref, "/")]
+	}
+	if !ok {
+		return fmt.Errorf("the lock has no package for %s@%s", name, ref)
 	}
 
+	// The node is the package's, whichever name led to it.
+	key := pkg.Name + "@" + pkg.Version
 	node, known := pb.nodes[key]
 	if !known {
 		node = pb.packageNode(pkg)
