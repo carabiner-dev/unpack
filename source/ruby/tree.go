@@ -5,6 +5,7 @@ package ruby
 
 import (
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -113,10 +114,17 @@ func (rb *rubyBuilder) rootNode() *sbom.Node {
 
 // addEdge resolves a gem name to the target platform's variant, relates
 // it, and walks into it when it is new.
+//
+// A name the lock holds no spec for gets no edge. Sound locks have them:
+// Bundler writes no spec for itself, so a gem depending on bundler names
+// one that is not there, and a gem declared for platforms the lock was
+// not resolved for is listed among the dependencies with nothing behind
+// it. Neither is a reason to refuse the rest of the graph.
 func (rb *rubyBuilder) addEdge(name string, parent *sbom.Node) error {
 	spec := rb.selectSpec(name)
 	if spec == nil {
-		return fmt.Errorf("the lockfile has no spec for %s", name)
+		slog.Debug("ruby: the lockfile has no spec for a dependency", "gem", name, "required_by", parent.GetName())
+		return nil
 	}
 
 	node, known := rb.nodes[name]
