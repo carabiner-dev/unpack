@@ -3,7 +3,10 @@
 
 package v1
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // NetworkLevel controls how much network access the decomposers are allowed to use.
 type NetworkLevel int
@@ -35,6 +38,18 @@ type DecomposerOptions struct {
 
 	// CommitHash captures the hash of the last commit when running in a repository
 	CommitHash string
+
+	// CommitTime is when that commit was made. Together with the tags
+	// below it lets a decomposer name the code the way its ecosystem
+	// does, where that is not the form Version comes in: a Go module at
+	// an untagged commit is known by a pseudo-version, built from the
+	// commit's time and hash and the version tagged before it.
+	CommitTime time.Time
+
+	// Tags lists the tags on the commit, and AncestorTags those on the
+	// commits it descends from.
+	Tags         []string
+	AncestorTags []string
 
 	// Networking controls how much network access decomposers are allowed.
 	// Defaults to NetworkEssential.

@@ -95,12 +95,20 @@ func (di *defaultImplementation) ExtractCodeBases(
 	for d, codebases := range codebaseMap {
 		for _, cbPath := range codebases {
 			// If this is a git repo, compute the version from the tag data
+			// The decomposer also gets what the history says about the
+			// commit, to name it the way its ecosystem does when that is
+			// not the form of the version computed here.
 			var ver, hashHex string
+			revision := &git.Revision{}
 			if opts.ReadGitVersion && helpers.IsDir(filepath.Join(cbPath, ".git")) {
 				var err error
 				ver, hashHex, err = git.RepoVersion(filepath.Join(cbPath, ".git"))
 				if err != nil {
 					return nil, fmt.Errorf("reading version from repo: %w", err)
+				}
+				revision, err = git.HeadRevision(filepath.Join(cbPath, ".git"))
+				if err != nil {
+					return nil, fmt.Errorf("reading revision from repo: %w", err)
 				}
 			}
 
@@ -108,6 +116,9 @@ func (di *defaultImplementation) ExtractCodeBases(
 				WorkDir:         cbPath,
 				Version:         ver,
 				CommitHash:      hashHex,
+				CommitTime:      revision.Time,
+				Tags:            revision.Tags,
+				AncestorTags:    revision.AncestorTags,
 				Networking:      opts.Networking,
 				Platform:        opts.Platform,
 				IncludeDev:      opts.IncludeDev,
