@@ -467,6 +467,11 @@ func (dt *DependencyTree) ToNodeList(opts *api.DecomposerOptions) (*sbom.NodeLis
 		Version:    dt.rootPOM.EffectiveVersion(),
 	}
 
+	// The tree was built with the root at the version its POM declares,
+	// and its edges are keyed by that coordinate. A version from the
+	// options renames the node, not the key the edges are found under.
+	graphKey := rootCoord.String()
+
 	// Use version from options if provided
 	version := rootCoord.Version
 	if opts != nil && opts.Version != "" {
@@ -504,7 +509,7 @@ func (dt *DependencyTree) ToNodeList(opts *api.DecomposerOptions) (*sbom.NodeLis
 
 	// Create a map of coord string -> node for linking
 	nodeMap := map[string]*sbom.Node{
-		rootCoord.String(): rootNode,
+		graphKey: rootNode,
 	}
 
 	// Create nodes for all resolved dependencies
@@ -527,8 +532,8 @@ func (dt *DependencyTree) ToNodeList(opts *api.DecomposerOptions) (*sbom.NodeLis
 	// Create edges in BFS order from root so that parent nodes are always
 	// added to the NodeList before their children (RelateNodeAtID requires
 	// the parent to already exist in the NodeList).
-	queue := []string{rootCoord.String()}
-	visited := map[string]struct{}{rootCoord.String(): {}}
+	queue := []string{graphKey}
+	visited := map[string]struct{}{graphKey: {}}
 	for len(queue) > 0 {
 		parentCoord := queue[0]
 		queue = queue[1:]
