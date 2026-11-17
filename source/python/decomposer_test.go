@@ -911,6 +911,47 @@ werkzeug==3.0.1
 	require.False(t, hasEdge(nl, sbom.Edge_dependsOn, root, markupsafe))
 }
 
+// TestExtractRequirementsCommentUnderViaList reads a file where the
+// author left a comment right under a via list: it is not one more
+// parent, and neither is anything after it.
+func TestExtractRequirementsCommentUnderViaList(t *testing.T) {
+	t.Parallel()
+
+	dir := filepath.Join(t.TempDir(), "vialist")
+	require.NoError(t, os.Mkdir(dir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte(
+		`flask==3.0.0
+    # via -r requirements.in
+jinja2==3.1.2
+    # via flask
+markupsafe==2.1.3
+    # via
+    #   jinja2
+    #   werkzeug
+# requests
+#   flask
+requests==2.31.0
+    # via -r requirements.in
+werkzeug==3.0.1
+    # via flask
+`), 0o600))
+
+	opts := linuxOpts(t, "3.12")
+	opts.WorkDir = dir
+	opts.Networking = api.NetworkDisabled
+	nl, err := New().Extract(opts)
+	require.NoError(t, err)
+
+	markupsafe := nodeNamed(t, nl, "markupsafe")
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, nodeNamed(t, nl, "jinja2"), markupsafe))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, nodeNamed(t, nl, "werkzeug"), markupsafe))
+
+	// The comment names a package of the file, and the line after it is
+	// set in like an item: neither is a parent.
+	require.False(t, hasEdge(nl, sbom.Edge_dependsOn, nodeNamed(t, nl, "requests"), markupsafe))
+	require.False(t, hasEdge(nl, sbom.Edge_dependsOn, nodeNamed(t, nl, "flask"), markupsafe))
+}
+
 // TestExtractRequirementsViaKinds reads a compiled file whose annotations
 // name the three things one can: the project, through its requirements
 // file or its manifest; a package of this environment; and a package the
