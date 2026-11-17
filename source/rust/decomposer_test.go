@@ -493,6 +493,110 @@ dependencies = [
 	require.Equal(t, []string{"test-pkg -> serde_json", "test-pkg -> tempfile"}, rustEdges(nl))
 }
 
+// TestMemberDependencyTypes checks that the dependencies of a workspace
+// member are typed by the member's own manifest: found through the
+// workspace's member patterns or a path dependency, with a dependency it
+// inherits from the workspace typed by the crate the workspace names.
+func TestMemberDependencyTypes(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	write := func(rel, content string) {
+		path := filepath.Join(tmpDir, filepath.FromSlash(rel))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	}
+
+	write("Cargo.toml", `
+[workspace]
+members = ["crates/*"]
+
+[workspace.dependencies]
+tmp = { package = "tempfile", version = "3" }
+`)
+	write("crates/app/Cargo.toml", `
+[package]
+name = "app"
+version = "1.0.0"
+
+[dependencies]
+helper = { path = "../../helper" }
+serde = "1"
+
+[dev-dependencies]
+tmp = { workspace = true }
+
+[build-dependencies]
+cc = "1"
+`)
+	// Not matched by the member patterns: reached by path alone.
+	write("helper/Cargo.toml", `
+[package]
+name = "helper"
+version = "0.1.0"
+
+[dev-dependencies]
+serde = "1"
+`)
+	write("Cargo.lock", `
+version = 4
+
+[[package]]
+name = "app"
+version = "1.0.0"
+dependencies = [
+  "cc",
+  "helper",
+  "serde",
+  "tempfile",
+]
+
+[[package]]
+name = "cc"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "helper"
+version = "0.1.0"
+dependencies = [
+  "serde",
+]
+
+[[package]]
+name = "serde"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "tempfile"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+`)
+
+	root, err := ParseCargoToml(tmpDir)
+	require.NoError(t, err)
+	members := ReadMemberManifests(tmpDir, root)
+	require.Len(t, members, 2)
+	require.Contains(t, members, "app")
+	require.Contains(t, members, "helper")
+
+	// By default only what each member needs at runtime: serde is a dev
+	// dependency of helper, and a normal one of app.
+	d := New()
+	nl, err := d.Extract(&api.DecomposerOptions{WorkDir: tmpDir, Networking: api.NetworkDisabled})
+	require.NoError(t, err)
+	require.Equal(t, []string{"app -> helper", "app -> serde"}, rustEdges(nl))
+
+	nl, err = d.Extract(&api.DecomposerOptions{
+		WorkDir: tmpDir, Networking: api.NetworkDisabled, IncludeDev: true, IncludeBuild: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"app -> cc", "app -> helper", "app -> serde", "app -> tempfile", "helper -> serde",
+	}, rustEdges(nl))
+}
+
 // TestEdgeTypesOnlyFromManifestPackage checks that the kinds Cargo.toml
 // declares qualify the edges of the package it describes and no others: a
 // crate the root only uses for its tests is still part of the build when

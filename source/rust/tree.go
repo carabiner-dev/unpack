@@ -30,6 +30,10 @@ type DependencyTree struct {
 	// Direct dependency types from Cargo.toml
 	directDeps map[string]DependencyType
 
+	// memberDeps holds the same for the project's other local packages,
+	// by package name, when their manifests were given.
+	memberDeps map[string]map[string]DependencyType
+
 	// Cache of created nodes by package key
 	nodeCache map[PackageKey]*sbom.Node
 }
@@ -197,20 +201,66 @@ func (dt *DependencyTree) buildSubtree(nl *sbom.NodeList, pkg *LockPackage, pare
 	return nil
 }
 
+// SetMemberManifests gives the tree the manifests of the project's local
+// packages other than the one the root Cargo.toml describes, by package
+// name (see ReadMemberManifests). With them, the dependencies of a
+// workspace member are typed by what the member itself declares; without,
+// they are all taken as normal dependencies.
+func (dt *DependencyTree) SetMemberManifests(members map[string]*CargoToml) {
+	renames := map[string]string{}
+	if dt.cargoToml.Workspace != nil {
+		for name := range dt.cargoToml.Workspace.Dependencies {
+			if renamed := dt.cargoToml.Workspace.Dependencies[name].Package; renamed != "" {
+				renames[name] = renamed
+			}
+		}
+	}
+
+	dt.memberDeps = make(map[string]map[string]DependencyType, len(members))
+	for name, manifest := range members {
+		if manifest == nil {
+			continue
+		}
+		manifest.workspaceRenames = renames
+		dt.memberDeps[name] = manifest.GetDirectDependencies()
+	}
+}
+
+// declaredTypes returns the dependency types the manifest of a locked
+// package declares, or nil when the tree has no manifest for it.
+func (dt *DependencyTree) declaredTypes(pkg *LockPackage) map[string]DependencyType {
+	if pkg.Source != "" {
+		return nil
+	}
+	// The root manifest speaks for its own package first: a member
+	// manifest of the same name is the same file.
+	if name := dt.cargoToml.Package.Name; name != "" && name == pkg.Name {
+		return dt.directDeps
+	}
+	if types, ok := dt.memberDeps[pkg.Name]; ok {
+		return types
+	}
+	if dt.isManifestPackage(pkg) {
+		return dt.directDeps
+	}
+	return nil
+}
+
 // determineEdgeType determines the edge type for a dependency relationship.
 //
 // Cargo.lock does not record what kind a dependency is; Cargo.toml does,
 // for the dependencies of the package it describes. So the declared kind
 // applies to an edge from that package and to no other: the same crate
 // required by another package is a dependency of that package's own, and
-// one this reader has no manifest to qualify, hence dependsOn.
+// when this reader has no manifest to qualify it, dependsOn.
 func (dt *DependencyTree) determineEdgeType(parent, dep *LockPackage) sbom.Edge_Type {
-	if !dt.isManifestPackage(parent) {
+	types := dt.declaredTypes(parent)
+	if types == nil {
 		return sbom.Edge_dependsOn
 	}
 
 	//nolint:exhaustive
-	if depType, isDirect := dt.directDeps[dep.Name]; isDirect {
+	if depType, isDirect := types[dep.Name]; isDirect {
 		switch depType {
 		case DepTypeDev:
 			return sbom.Edge_devDependency

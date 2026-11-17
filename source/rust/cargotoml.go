@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/BurntSushi/toml"
 )
@@ -19,6 +20,12 @@ type CargoToml struct {
 	BuildDependencies map[string]DependencySpec `toml:"build-dependencies"`
 	Target            map[string]TargetDeps     `toml:"target"`
 	Workspace         *WorkspaceInfo            `toml:"workspace"`
+
+	// workspaceRenames maps the names of the workspace's shared
+	// dependencies to the crates they rename, for a member manifest that
+	// inherits them ("name = { workspace = true }") and so does not state
+	// the crate itself.
+	workspaceRenames map[string]string
 }
 
 // PackageInfo contains package metadata from Cargo.toml.
@@ -168,6 +175,99 @@ func ParseCargoToml(dir string) (*CargoToml, error) {
 	return ParseCargoTomlData(data)
 }
 
+// maxMemberManifests bounds how many manifests ReadMemberManifests reads.
+const maxMemberManifests = 2000
+
+// ReadMemberManifests reads the manifests of the local packages of the
+// project rooted at dir, other than the root manifest itself: the members
+// its workspace table lists, patterns expanded, and whatever those and the
+// root require by path, as long as it sits inside dir. They are returned
+// by the name of the package each describes.
+//
+// A member's own manifest is what says which of its dependencies are for
+// development or for building, which Cargo.lock does not record. A
+// manifest that cannot be read or parsed is skipped: its package's
+// dependencies are then all taken as normal ones.
+func ReadMemberManifests(dir string, root *CargoToml) map[string]*CargoToml {
+	members := map[string]*CargoToml{}
+	if root == nil {
+		return members
+	}
+
+	// Directories to read, relative to dir, each once.
+	queue := []string{}
+	seen := map[string]struct{}{".": {}}
+	enqueue := func(rel string) {
+		rel = filepath.Clean(rel)
+		if !filepath.IsLocal(rel) {
+			return
+		}
+		if _, dup := seen[rel]; dup {
+			return
+		}
+		seen[rel] = struct{}{}
+		queue = append(queue, rel)
+	}
+	enqueuePaths := func(from string, manifest *CargoToml) {
+		manifest.eachDependency(func(_ string, spec *DependencySpec) {
+			if spec.Path != "" {
+				enqueue(filepath.Join(from, filepath.FromSlash(spec.Path)))
+			}
+		})
+	}
+
+	if root.Workspace != nil {
+		for _, pattern := range root.Workspace.Members {
+			pattern = filepath.FromSlash(pattern)
+			if !filepath.IsLocal(pattern) {
+				continue
+			}
+			matches, err := filepath.Glob(filepath.Join(dir, pattern))
+			if err != nil {
+				continue
+			}
+			sort.Strings(matches)
+			for _, match := range matches {
+				if rel, err := filepath.Rel(dir, match); err == nil {
+					enqueue(rel)
+				}
+			}
+		}
+	}
+	enqueuePaths(".", root)
+
+	for read := 0; len(queue) > 0 && read < maxMemberManifests; read++ {
+		rel := queue[0]
+		queue = queue[1:]
+
+		manifest, err := ParseCargoToml(filepath.Join(dir, rel))
+		if err != nil || manifest.Package.Name == "" {
+			continue
+		}
+		if _, dup := members[manifest.Package.Name]; !dup {
+			members[manifest.Package.Name] = manifest
+		}
+		enqueuePaths(rel, manifest)
+	}
+	return members
+}
+
+// eachDependency calls fn for every dependency the manifest declares, in
+// any section.
+func (ct *CargoToml) eachDependency(fn func(name string, spec *DependencySpec)) {
+	sections := make([]map[string]DependencySpec, 0, 3+3*len(ct.Target))
+	sections = append(sections, ct.Dependencies, ct.DevDependencies, ct.BuildDependencies)
+	for _, target := range ct.Target {
+		sections = append(sections, target.Dependencies, target.DevDependencies, target.BuildDependencies)
+	}
+	for _, section := range sections {
+		for name := range section {
+			spec := section[name]
+			fn(name, &spec)
+		}
+	}
+}
+
 // ParseCargoTomlData parses Cargo.toml content from bytes.
 func ParseCargoTomlData(data []byte) (*CargoToml, error) {
 	var manifest CargoToml
@@ -195,6 +295,8 @@ func (ct *CargoToml) GetDirectDependencies() map[string]DependencyType {
 	declare := func(section map[string]DependencySpec, depType DependencyType) {
 		for name := range section {
 			if renamed := section[name].Package; renamed != "" {
+				name = renamed
+			} else if renamed := ct.workspaceRenames[name]; renamed != "" {
 				name = renamed
 			}
 			if _, exists := deps[name]; !exists {
