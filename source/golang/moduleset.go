@@ -40,7 +40,8 @@ type Replacement struct {
 //
 // Edges among Modules are resolved from each module's own go.mod (see
 // resolveGraph). A module that no edge reaches, not even from the root, is
-// not emitted; list every module a flat inventory must show under Requires.
+// not emitted, unless it is listed under Indirect; list every module a flat
+// inventory must show under Requires.
 type ModuleSet struct {
 	// Main is the module the graph is rooted at. Only its path is read.
 	Main Module
@@ -50,9 +51,17 @@ type ModuleSet struct {
 	// that version.
 	GoVersion string
 
-	// Requires lists the modules the main module requires. Each becomes
-	// an edge from the root.
+	// Requires lists the modules the main module requires directly. Each
+	// becomes an edge from the root.
 	Requires []Module
+
+	// Indirect lists the modules the main module requires on behalf of
+	// its dependencies (go.mod's "// indirect"). They are part of the
+	// build, so each is expected to be reached through the go.mod of the
+	// module that needs it. One that no edge reaches (its parent declares
+	// no requirements, or its go.mod could not be read) is attached to
+	// the root instead, so that it is not lost from the graph.
+	Indirect []Module
 
 	// Modules lists every module in the build, Requires included. This is
 	// the set edges are resolved within: a requirement of one of these
@@ -106,7 +115,8 @@ func (d *Decomposer) BuildNodeList(set *ModuleSet, opts *api.DecomposerOptions) 
 
 // resolveGraph builds the adjacency map of a module set. The root's edges
 // are the set's Requires; every other edge is read from the requiring
-// module's go.mod and kept only when its target is in the set.
+// module's go.mod and kept only when its target is in the set. Indirect
+// modules those edges leave unreached are then attached to the root.
 func (d *Decomposer) resolveGraph(set *ModuleSet, opts *Options, networking api.NetworkLevel) map[string][]string {
 	trees := make(map[string][]string)
 
@@ -122,14 +132,47 @@ func (d *Decomposer) resolveGraph(set *ModuleSet, opts *Options, networking api.
 	}
 
 	d.fetchDependencyGraph(trees, resolved, set.Replaces, opts, networking)
+	attachUnreached(trees, rootKey, set.Indirect)
 	return trees
+}
+
+// attachUnreached adds an edge from the root to each of the modules that
+// cannot be reached from it. Modules are taken in order and reachability
+// is extended as each is attached, so a module that hangs off an earlier
+// orphan stays under it instead of being attached to the root as well.
+func attachUnreached(trees map[string][]string, rootKey string, modules []Module) {
+	if len(modules) == 0 {
+		return
+	}
+
+	reached := make(map[string]struct{})
+	var visit func(key string)
+	visit = func(key string) {
+		if _, ok := reached[key]; ok {
+			return
+		}
+		reached[key] = struct{}{}
+		for _, dep := range trees[key] {
+			visit(dep)
+		}
+	}
+	visit(rootKey)
+
+	for _, m := range modules {
+		if _, ok := reached[m.Key()]; ok {
+			continue
+		}
+		trees[rootKey] = append(trees[rootKey], m.Key())
+		visit(m.Key())
+	}
 }
 
 // moduleSetFromGoMod reduces a parsed go.mod and the go.sum beside it to a
 // module set: the requirements with replace directives applied and excludes
-// dropped, plus every module go.sum knows about, which is how transitive
-// modules enter the set. A missing or unreadable go.sum leaves the set with
-// the requirements alone.
+// dropped, split into the direct ones and those marked "// indirect", plus
+// every module go.sum knows about, which is how transitive modules enter
+// the set. A missing or unreadable go.sum leaves the set with the
+// requirements alone.
 func (d *Decomposer) moduleSetFromGoMod(root *modfile.File, goModPath string) *ModuleSet {
 	set := &ModuleSet{
 		Main:     Module{Path: root.Module.Mod.Path},
@@ -172,7 +215,11 @@ func (d *Decomposer) moduleSetFromGoMod(root *modfile.File, goModPath string) *M
 			continue
 		}
 		m.Sums = sums[m.Key()]
-		set.Requires = append(set.Requires, m)
+		if req.Indirect {
+			set.Indirect = append(set.Indirect, m)
+		} else {
+			set.Requires = append(set.Requires, m)
+		}
 		if _, dup := seen[m.Key()]; !dup {
 			seen[m.Key()] = struct{}{}
 			set.Modules = append(set.Modules, m)
