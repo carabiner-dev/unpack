@@ -64,13 +64,110 @@ func (dt *DependencyTree) Build(opts *api.DecomposerOptions) (*sbom.NodeList, er
 	nl.AddRootNode(rootNode)
 	dt.nodeCache[""] = rootNode
 
+	// The workspace members are the project's own packages too, each a
+	// root. Their nodes are made before anything is walked, so that a
+	// member the root or another member depends on is found already made
+	// and related as it is.
+	members := dt.packageLock.WorkspaceMembers()
+	for _, memberPath := range members {
+		member, ok := dt.pkgByPath[memberPath]
+		if !ok {
+			continue
+		}
+		node := dt.createNode(member)
+		node.PrimaryPurpose = []sbom.Purpose{sbom.Purpose_APPLICATION}
+		if opts.CommitHash != "" {
+			node.ExternalReferences = append(node.ExternalReferences, &sbom.ExternalReference{
+				Hashes: map[int32]string{int32(sbom.HashAlgorithm_SHA1): opts.CommitHash},
+				Type:   sbom.ExternalReference_VCS,
+			})
+		}
+		nl.AddRootNode(node)
+		dt.nodeCache[memberPath] = node
+	}
+
 	// Build the dependency tree from the root's direct dependencies
 	visited := make(map[string]bool)
 	if err := dt.buildFromRoot(nl, rootNode, visited, opts); err != nil {
 		return nil, fmt.Errorf("building dependency tree: %w", err)
 	}
 
+	// And from each member's.
+	for _, memberPath := range members {
+		if err := dt.buildFromMember(nl, memberPath, visited, opts); err != nil {
+			return nil, fmt.Errorf("building dependency tree of %s: %w", memberPath, err)
+		}
+	}
+
 	return nl, nil
+}
+
+// buildFromMember adds the direct dependencies of a workspace member, as
+// its lock entry states them, each kind gated the way the root's are, and
+// walks what they pull in.
+func (dt *DependencyTree) buildFromMember(nl *sbom.NodeList, memberPath string, visited map[string]bool, opts *api.DecomposerOptions) error {
+	member, ok := dt.pkgByPath[memberPath]
+	if !ok {
+		return nil
+	}
+	memberNode := dt.nodeCache[memberPath]
+	visited[memberPath] = true
+
+	// One type per name, the first of normal, dev, peer and optional it
+	// is declared as, like the root's.
+	types := map[string]DependencyType{}
+	for _, section := range []struct {
+		deps    map[string]string
+		depType DependencyType
+	}{
+		{member.Dependencies, DepTypeNormal},
+		{member.DevDependencies, DepTypeDev},
+		{member.PeerDependencies, DepTypePeer},
+		{member.OptionalDependencies, DepTypeOptional},
+	} {
+		for name := range section.deps {
+			if _, declared := types[name]; !declared {
+				types[name] = section.depType
+			}
+		}
+	}
+
+	names := make([]string, 0, len(types))
+	for name := range types {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, depName := range names {
+		depType := types[depName]
+		if depType == DepTypeDev && !opts.IncludeDev {
+			continue
+		}
+		if depType == DepTypeOptional && !opts.IncludeOptional {
+			continue
+		}
+
+		depPath := dt.resolveDependencyPath(memberPath, depName)
+		depPkg, ok := dt.pkgByPath[depPath]
+		if depPath == "" || !ok || depPath == memberPath {
+			continue
+		}
+
+		depNode, exists := dt.nodeCache[depPath]
+		if !exists {
+			depNode = dt.createNode(depPkg)
+			dt.nodeCache[depPath] = depNode
+		}
+		if err := nl.RelateNodeAtID(depNode, memberNode.GetId(), dt.depTypeToEdgeType(depType)); err != nil {
+			return fmt.Errorf("relating %s to %s: %w", depName, member.Name, err)
+		}
+		if !exists && !visited[depPath] {
+			if err := dt.buildSubtree(nl, depPkg, depNode, depPath, visited); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // buildFromRoot builds the dependency tree starting from direct dependencies.
@@ -198,7 +295,14 @@ func (dt *DependencyTree) resolveDependencyPath(parentPath, depName string) stri
 			candidatePath = searchPath + "/node_modules/" + depName
 		}
 
-		if _, ok := dt.pkgByPath[candidatePath]; ok {
+		if candidate, ok := dt.pkgByPath[candidatePath]; ok {
+			// A link stands for a directory of the project, which has
+			// the entry the dependency is really met by.
+			if candidate.Link && candidate.Resolved != "" {
+				if _, ok := dt.pkgByPath[candidate.Resolved]; ok {
+					return candidate.Resolved
+				}
+			}
 			return candidatePath
 		}
 
