@@ -113,8 +113,13 @@ func (dt *DependencyTree) Build(opts *api.DecomposerOptions) (*sbom.NodeList, er
 // beside it is a path dependency, reached as any other dependency is. In
 // a workspace the members are the project, each a root, as every member
 // is built from it; the manifest's own package, when it has one, comes
-// first. The lock does not tell a member from a path dependency outside
-// the workspace, so there every local package is taken for a member.
+// first.
+//
+// The lock does not tell a member from a path dependency outside the
+// workspace; the members' manifests do, when the tree was given them (see
+// SetMemberManifests). A local package that is not among them and that
+// something depends on is then a path dependency. Without the manifests,
+// every local package is taken for a member.
 func (dt *DependencyTree) rootPackages() []*LockPackage {
 	local := dt.cargoLock.FindRootPackages()
 
@@ -129,21 +134,58 @@ func (dt *DependencyTree) rootPackages() []*LockPackage {
 	}
 
 	switch {
-	case manifest == nil:
-		// A virtual workspace, or a lock that does not hold the package
-		// the manifest names: nothing singles a local package out.
-		return local
-	case dt.cargoToml.Workspace == nil:
+	case dt.cargoToml.Workspace == nil && manifest != nil:
 		return []*LockPackage{manifest}
+	case dt.cargoToml.Workspace == nil:
+		// A lock that does not hold the package the manifest names:
+		// nothing singles a local package out.
+		return local
 	}
 
-	roots := []*LockPackage{manifest}
+	roots := make([]*LockPackage, 0, len(local))
+	if manifest != nil {
+		roots = append(roots, manifest)
+	}
+	required := dt.requiredLocalPackages(local)
 	for _, pkg := range local {
-		if pkg != manifest {
-			roots = append(roots, pkg)
+		if pkg == manifest {
+			continue
 		}
+		// With the members known, a local package that is not one and
+		// that something requires is a path dependency. One nothing
+		// requires stays a root whatever it is: it has no other way into
+		// the graph, and a member whose manifest could not be read looks
+		// just like it.
+		if _, isMember := dt.memberDeps[pkg.Name]; !isMember && len(dt.memberDeps) > 0 && required[pkg] {
+			continue
+		}
+		roots = append(roots, pkg)
 	}
 	return roots
+}
+
+// requiredLocalPackages says which of the local packages some package of
+// the lock depends on.
+func (dt *DependencyTree) requiredLocalPackages(local []*LockPackage) map[*LockPackage]bool {
+	isLocal := make(map[*LockPackage]bool, len(local))
+	for _, pkg := range local {
+		isLocal[pkg] = true
+	}
+
+	required := map[*LockPackage]bool{}
+	for i := range dt.cargoLock.Packages {
+		pkg := &dt.cargoLock.Packages[i]
+		for _, depRef := range pkg.Dependencies {
+			dep, err := ResolveDependency(depRef, dt.pkgByKey, dt.pkgByName)
+			if err != nil || dep == pkg {
+				continue
+			}
+			if isLocal[dep] {
+				required[dep] = true
+			}
+		}
+	}
+	return required
 }
 
 // buildSubtree recursively builds the dependency subtree for a package.

@@ -597,6 +597,90 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 	}, rustEdges(nl))
 }
 
+// TestWorkspacePathDependencyOutside checks that in a workspace whose
+// members' manifests are on disk, a local package that is not one of them
+// and that a member requires, a path dependency kept outside the
+// workspace, is reached as a dependency and is not a root. A local
+// package nothing requires stays one, known member or not.
+func TestWorkspacePathDependencyOutside(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	write := func(rel, content string) {
+		path := filepath.Join(tmpDir, filepath.FromSlash(rel))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	}
+
+	write("ws/Cargo.toml", `
+[workspace]
+members = ["crates/*"]
+`)
+	write("ws/crates/app/Cargo.toml", `
+[package]
+name = "app"
+version = "1.0.0"
+
+[dependencies]
+core = { path = "../core" }
+outside = { path = "../../../outside" }
+`)
+	write("ws/crates/core/Cargo.toml", `
+[package]
+name = "core"
+version = "1.0.0"
+`)
+	write("outside/Cargo.toml", `
+[package]
+name = "outside"
+version = "0.5.0"
+
+[dependencies]
+dep = "2"
+`)
+	write("ws/Cargo.lock", `
+version = 4
+
+[[package]]
+name = "app"
+version = "1.0.0"
+dependencies = [
+  "core",
+  "outside",
+]
+
+[[package]]
+name = "core"
+version = "1.0.0"
+
+[[package]]
+name = "dep"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "outside"
+version = "0.5.0"
+dependencies = [
+  "dep",
+]
+
+[[package]]
+name = "unlisted"
+version = "0.1.0"
+`)
+
+	nl, err := New().Extract(&api.DecomposerOptions{
+		WorkDir: filepath.Join(tmpDir, "ws"), Networking: api.NetworkDisabled,
+	})
+	require.NoError(t, err)
+
+	// core is a member though app requires it; outside is not one; and
+	// unlisted, which has no manifest here, is required by nothing.
+	require.Equal(t, []string{"app", "core", "unlisted"}, rustRootNames(nl))
+	require.Equal(t, []string{"app -> core", "app -> outside", "outside -> dep"}, rustEdges(nl))
+}
+
 // TestEdgeTypesOnlyFromManifestPackage checks that the kinds Cargo.toml
 // declares qualify the edges of the package it describes and no others: a
 // crate the root only uses for its tests is still part of the build when
