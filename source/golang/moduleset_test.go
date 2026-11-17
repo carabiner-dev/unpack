@@ -4,6 +4,8 @@
 package golang
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/protobom/protobom/pkg/sbom"
@@ -77,6 +79,64 @@ func TestModuleSetFromGoMod(t *testing.T) {
 			assert.Empty(t, m.Sums)
 		}
 	})
+}
+
+// TestModuleSetSplitsIndirect checks that requirements marked "// indirect"
+// are kept apart from the direct ones, which alone become root edges.
+func TestModuleSetSplitsIndirect(t *testing.T) {
+	t.Parallel()
+	d := Decomposer{}
+
+	dir := t.TempDir()
+	goModPath := filepath.Join(dir, "go.mod")
+	require.NoError(t, os.WriteFile(goModPath, []byte(`module example.com/app
+
+go 1.21
+
+require example.com/direct v1.0.0
+
+require (
+	example.com/reached v1.1.0 // indirect
+	example.com/orphan v1.2.0 // indirect
+)
+`), 0o600))
+
+	modFile, err := d.parseLocalGoMod(goModPath)
+	require.NoError(t, err)
+	set := d.moduleSetFromGoMod(modFile, goModPath)
+
+	assert.Equal(t, []Module{{Path: "example.com/direct", Version: "v1.0.0"}}, set.Requires)
+	assert.Equal(t, []Module{
+		{Path: "example.com/reached", Version: "v1.1.0"},
+		{Path: "example.com/orphan", Version: "v1.2.0"},
+	}, set.Indirect)
+	assert.Len(t, set.Modules, 3, "indirect requirements are part of the set")
+}
+
+func TestAttachUnreached(t *testing.T) {
+	t.Parallel()
+
+	const root = "example.com/app"
+	trees := map[string][]string{
+		root:                        {"example.com/direct@v1.0.0"},
+		"example.com/direct@v1.0.0": {"example.com/reached@v1.1.0"},
+		// The orphan brings a module of its own, and sits in a cycle
+		// with it.
+		"example.com/orphan@v1.2.0": {"example.com/under@v1.3.0"},
+		"example.com/under@v1.3.0":  {"example.com/orphan@v1.2.0"},
+	}
+
+	attachUnreached(trees, root, []Module{
+		{Path: "example.com/reached", Version: "v1.1.0"},
+		{Path: "example.com/orphan", Version: "v1.2.0"},
+		{Path: "example.com/under", Version: "v1.3.0"},
+	})
+
+	assert.Equal(t,
+		[]string{"example.com/direct@v1.0.0", "example.com/orphan@v1.2.0"},
+		trees[root],
+		"only the module no edge reaches is attached to the root",
+	)
 }
 
 // TestBuildNodeListFromSet renders a module set assembled by hand, with no
