@@ -964,8 +964,14 @@ func TestListDependencies(t *testing.T) {
 func TestEnrich(t *testing.T) {
 	t.Parallel()
 
-	// Set up a fake crates.io API server
+	// Set up a fake crates.io API server. Like the real one, it refuses a
+	// client that does not name itself: Go's default User-Agent is
+	// answered 403.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ua := r.UserAgent(); ua == "" || strings.HasPrefix(ua, "Go-http-client") {
+			http.Error(w, "a User-Agent naming the client is required", http.StatusForbidden)
+			return
+		}
 		// Respond to any /crates/{name}/{version} request
 		switch r.URL.Path {
 		case "/crates/anyhow/1.0.98":
