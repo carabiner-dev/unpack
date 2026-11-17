@@ -227,12 +227,20 @@ func (dt *DependencyTree) buildSubtree(nl *sbom.NodeList, pkg *LockPackage, pare
 	visited[parentPath] = true
 
 	// Get the package's dependencies from the lock file
-	if pkg.Dependencies == nil && pkg.OptionalDependencies == nil {
+	if pkg.Dependencies == nil && pkg.OptionalDependencies == nil && pkg.PeerDependencies == nil {
 		return nil
 	}
 
-	// Collect all dependencies (regular + optional) for processing
-	allDeps := make(map[string]sbom.Edge_Type, len(pkg.Dependencies)+len(pkg.OptionalDependencies))
+	// Collect all dependencies (regular + optional + peer) for processing.
+	// A peer is a package this one needs and expects its host to bring:
+	// npm installs it, at the host's level, and when the lock holds it
+	// there this package depends on it like on any other. One that is not
+	// installed, as an optional peer may not be, resolves to nothing below
+	// and gets no edge.
+	allDeps := make(map[string]sbom.Edge_Type, len(pkg.Dependencies)+len(pkg.OptionalDependencies)+len(pkg.PeerDependencies))
+	for name := range pkg.PeerDependencies {
+		allDeps[name] = sbom.Edge_dependsOn
+	}
 	for name := range pkg.Dependencies {
 		allDeps[name] = sbom.Edge_dependsOn
 	}
@@ -255,7 +263,7 @@ func (dt *DependencyTree) buildSubtree(nl *sbom.NodeList, pkg *LockPackage, pare
 		}
 
 		depPkg, ok := dt.pkgByPath[depPath]
-		if !ok {
+		if !ok || depPath == parentPath {
 			continue
 		}
 

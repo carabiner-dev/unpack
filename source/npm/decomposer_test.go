@@ -611,6 +611,51 @@ func TestExtractNpmWorkspaces(t *testing.T) {
 	require.Contains(t, npmEdges(nl), "wsa -> jest@29.0.0 (devDependency)")
 }
 
+// TestExtractNpmTransitivePeers reads a lock where a dependency has peer
+// dependencies: the installed one is a dependency of it, with what it
+// requires in turn, and the one not installed is nothing.
+func TestExtractNpmTransitivePeers(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{
+		"name": "peer-app",
+		"version": "1.0.0",
+		"dependencies": {"plugin": "^1.0.0"}
+	}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package-lock.json"), []byte(`{
+		"name": "peer-app",
+		"version": "1.0.0",
+		"lockfileVersion": 3,
+		"packages": {
+			"": {
+				"name": "peer-app",
+				"version": "1.0.0",
+				"dependencies": {"plugin": "^1.0.0"}
+			},
+			"node_modules/host": {
+				"version": "3.0.0",
+				"peer": true,
+				"dependencies": {"host-dep": "^1.0.0"}
+			},
+			"node_modules/host-dep": {"version": "1.0.0", "peer": true},
+			"node_modules/plugin": {
+				"version": "1.0.0",
+				"peerDependencies": {"host": ">=2", "not-installed": "*"},
+				"peerDependenciesMeta": {"not-installed": {"optional": true}}
+			}
+		}
+	}`), 0o600))
+
+	nl, err := New().Extract(&api.DecomposerOptions{WorkDir: dir, Networking: api.NetworkDisabled})
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"host -> host-dep@1.0.0 (dependsOn)",
+		"peer-app -> plugin@1.0.0 (dependsOn)",
+		"plugin -> host@3.0.0 (dependsOn)",
+	}, npmEdges(nl))
+}
+
 // TestExtractNpmPathDependency reads the lock of a project with no
 // workspaces that requires a directory of its own by path: the directory
 // is a dependency like any other, not a root, with what it requires.
