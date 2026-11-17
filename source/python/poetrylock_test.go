@@ -42,7 +42,7 @@ func TestParsePoetryLockfile(t *testing.T) {
 	// A conditional edge carries its marker...
 	click := poetryPackagesByName(lock, "click")[0]
 	require.Equal(t, []PoetryDependency{
-		{Name: "colorama", Marker: `platform_system == "Windows"`},
+		{Name: "colorama", Marker: `platform_system == "Windows"`, Constraint: "*"},
 	}, click.Dependencies)
 
 	// ...and a package serving several groups applies to each under its
@@ -83,7 +83,7 @@ func TestParsePoetryLockfileLegacy(t *testing.T) {
 
 	click := poetryPackagesByName(lock, "click")[0]
 	require.Equal(t, []PoetryDependency{
-		{Name: "colorama", Marker: `platform_system == "Windows"`},
+		{Name: "colorama", Marker: `platform_system == "Windows"`, Constraint: "*"},
 	}, click.Dependencies)
 }
 
@@ -120,12 +120,13 @@ content-hash = "abc"
 	require.Equal(t, "sample-package", pkg.Name)
 	require.Equal(t, map[string]string{"": `python_version < "3.12"`}, pkg.Markers)
 
-	// Sorted by name, the multi-constraint fanned out, names normalized.
+	// Sorted by name, the multi-constraint fanned out, names normalized,
+	// each with its version constraint as written.
 	require.Equal(t, []PoetryDependency{
-		{Name: "multi", Marker: `python_version < "3.11"`},
-		{Name: "multi", Marker: `python_version >= "3.11"`},
-		{Name: "plain"},
-		{Name: "with-marker", Marker: `sys_platform == "win32"`, Extras: []string{"fast-json"}},
+		{Name: "multi", Marker: `python_version < "3.11"`, Constraint: "<2"},
+		{Name: "multi", Marker: `python_version >= "3.11"`, Constraint: ">=2"},
+		{Name: "plain", Constraint: "^2.0"},
+		{Name: "with-marker", Marker: `sys_platform == "win32"`, Extras: []string{"fast-json"}, Constraint: "*"},
 	}, pkg.Dependencies)
 }
 

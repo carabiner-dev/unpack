@@ -142,16 +142,19 @@ func (pb *poetryBuilder) walkRequirements(reqs []*requirement, parent *sbom.Node
 		if !holds {
 			continue
 		}
-		if err := pb.addEdge(req.Name, req.Extras, parent, edgeType); err != nil {
+		if err := pb.addEdge(req.Name, req.Specifier, req.Extras, parent, edgeType); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// addEdge resolves a target in the lock, relates it, and walks on.
-func (pb *poetryBuilder) addEdge(name string, extras []string, parent *sbom.Node, edgeType sbom.Edge_Type) error {
-	target := pb.resolve(name)
+// addEdge resolves a target in the lock, relates it, and walks on. The
+// constraint is the one the edge states on its target's version.
+func (pb *poetryBuilder) addEdge(
+	name, constraint string, extras []string, parent *sbom.Node, edgeType sbom.Edge_Type,
+) error {
+	target := pb.resolve(name, constraint)
 	if target == nil {
 		// The lock has no applicable entry: the requirement's own marker
 		// held but the package is for other environments (a 2.1 lock says
@@ -180,7 +183,7 @@ func (pb *poetryBuilder) addEdge(name string, extras []string, parent *sbom.Node
 			if !holds {
 				continue
 			}
-			if err := pb.addEdge(dep.Name, dep.Extras, node, sbom.Edge_dependsOn); err != nil {
+			if err := pb.addEdge(dep.Name, dep.Constraint, dep.Extras, node, sbom.Edge_dependsOn); err != nil {
 				return err
 			}
 		}
@@ -198,7 +201,7 @@ func (pb *poetryBuilder) addEdge(name string, extras []string, parent *sbom.Node
 			if err != nil || !holds {
 				continue
 			}
-			if err := pb.addEdge(req.Name, req.Extras, node, sbom.Edge_optionalDependency); err != nil {
+			if err := pb.addEdge(req.Name, req.Specifier, req.Extras, node, sbom.Edge_optionalDependency); err != nil {
 				return err
 			}
 		}
@@ -206,10 +209,19 @@ func (pb *poetryBuilder) addEdge(name string, extras []string, parent *sbom.Node
 	return nil
 }
 
-// resolve finds the lock entry a name points at: the one whose markers, for
-// the group being walked, hold in the environment. Names almost always hold
-// one entry; a few hold several with disjoint markers.
-func (pb *poetryBuilder) resolve(name string) *PoetryPackage {
+// resolve finds the lock entry an edge points at: the one whose markers,
+// for the group being walked, hold in the environment. Names almost always
+// hold one entry; a few hold several, one for each environment the
+// resolved version differs in.
+//
+// A 2.1 lock states on each entry where it applies, which settles it. A
+// 2.0 lock does not, and every entry of the name claims the environment.
+// They are then told apart by what the lock does state: the constraint the
+// edge was resolved under, which only the entry meant for it satisfies,
+// and the Python versions each entry supports. Entries that survive both
+// are indistinguishable from here, and the first in the lock stands.
+func (pb *poetryBuilder) resolve(name, constraint string) *PoetryPackage {
+	var candidates []*PoetryPackage
 	var fallback *PoetryPackage
 	for i := range pb.lock.Packages {
 		pkg := &pb.lock.Packages[i]
@@ -217,18 +229,49 @@ func (pb *poetryBuilder) resolve(name string) *PoetryPackage {
 			continue
 		}
 		if pb.applies(pkg) {
-			return pkg
+			candidates = append(candidates, pkg)
 		}
 		if fallback == nil {
 			fallback = pkg
 		}
 	}
+
+	switch {
+	case len(candidates) == 1:
+		return candidates[0]
+	case len(candidates) > 1:
+		candidates = narrow(candidates, func(pkg *PoetryPackage) (bool, bool) {
+			return satisfies(pkg.Version, constraint)
+		})
+		candidates = narrow(candidates, func(pkg *PoetryPackage) (bool, bool) {
+			return satisfies(pb.env.PythonFullVersion, pkg.PythonVersions)
+		})
+		return candidates[0]
+	}
+
 	if fallback != nil && pb.singleEntry(name) {
 		// The only entry of its name: an edge that survived its own marker
 		// knows better than the package-level split.
 		return fallback
 	}
 	return nil
+}
+
+// narrow keeps the candidates a test holds for. A test that cannot be
+// read for a candidate keeps it, and a test no candidate passes keeps them
+// all: the lock is the resolution, and a constraint this reader cannot
+// reconcile with it is not a reason to drop the edge.
+func narrow(candidates []*PoetryPackage, test func(*PoetryPackage) (holds, known bool)) []*PoetryPackage {
+	kept := make([]*PoetryPackage, 0, len(candidates))
+	for _, pkg := range candidates {
+		if holds, known := test(pkg); holds || !known {
+			kept = append(kept, pkg)
+		}
+	}
+	if len(kept) == 0 {
+		return candidates
+	}
+	return kept
 }
 
 func (pb *poetryBuilder) singleEntry(name string) bool {

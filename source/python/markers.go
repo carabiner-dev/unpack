@@ -104,7 +104,7 @@ func (c *comparison) eval(env *Environment) (bool, error) {
 		return strings.Contains(right, left), nil
 	case "not in":
 		return !strings.Contains(right, left), nil
-	case "===":
+	case opArbitraryEqual:
 		return left == right, nil
 	}
 
@@ -386,9 +386,13 @@ type markerToken struct {
 	text string
 }
 
+// opArbitraryEqual is PEP 440's arbitrary equality, a comparison of the
+// two sides as written.
+const opArbitraryEqual = "==="
+
 // markerOperators lists the comparison operators, longest first so the
 // tokenizer never reads === as == followed by =.
-var markerOperators = []string{"===", "==", "!=", "<=", ">=", "~=", "<", ">"}
+var markerOperators = []string{opArbitraryEqual, "==", "!=", "<=", ">=", "~=", "<", ">"}
 
 func tokenizeMarker(s string) ([]markerToken, error) {
 	tokens := []markerToken{}

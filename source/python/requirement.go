@@ -11,9 +11,10 @@ import (
 
 // This file takes apart requirement strings (PEP 508), the form manifests
 // declare dependencies in: "requests[socks]>=2.28 ; python_version < '3.12'".
-// Only the parts an edge needs are kept — the name, the extras and the
-// marker. Version constraints are input to a resolver, and everything here
-// reads resolved data.
+// Only the parts an edge needs are kept — the name, the extras, the marker
+// and the version constraint as written. Constraints are input to a
+// resolver, and everything here reads resolved data: a constraint is only
+// ever used to choose among versions a lock already resolved.
 
 // requirementPattern matches the head of a requirement: the name and the
 // optional extras list. What follows is a version specifier, a "@ url"
@@ -33,6 +34,11 @@ type requirement struct {
 	// "name==1.2.3". A range constrains a resolver, it does not name a
 	// version, so ranges leave this empty.
 	Version string
+
+	// Specifier is the version constraint as written, pin or range. It
+	// never becomes a node's version; it tells apart the entries of a
+	// lock that holds several versions of one name.
+	Specifier string
 
 	// URL is set for a direct reference: "name @ https://..." or a git+
 	// URL.
@@ -68,6 +74,7 @@ func parseRequirement(line string) (*requirement, error) {
 	case strings.HasPrefix(rest, "@"):
 		req.URL = strings.TrimSpace(strings.TrimPrefix(rest, "@"))
 	default:
+		req.Specifier = rest
 		if pin := exactPin.FindStringSubmatch(rest); pin != nil {
 			req.Version = pin[1]
 		}
