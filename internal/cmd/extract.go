@@ -39,6 +39,7 @@ type extractOptions struct {
 	filesOptions
 	stitchOptions
 	extRefOptions
+	entityOptions
 	IgnorePatterns       []string
 	Path                 string
 	Networking           string
@@ -68,6 +69,7 @@ func (ro *extractOptions) Validate() error {
 		ro.filesOptions.Validate(),
 		ro.stitchOptions.Validate(),
 		ro.ValidateFor(ro.Format),
+		ro.ValidateEntitiesFor(ro.Format),
 	}
 	if ro.Path == "" {
 		errs = append(errs, errors.New("path not defined"))
@@ -98,6 +100,7 @@ func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 	ro.filesOptions.AddFlags(cmd)
 	ro.stitchOptions.AddFlags(cmd)
 	ro.extRefOptions.AddFlags(cmd)
+	ro.entityOptions.AddFlags(cmd)
 
 	cmd.PersistentFlags().StringVarP(
 		&ro.Path, "path", "p", ".", "path to the artifact to unpack",
@@ -359,6 +362,7 @@ func handleCodeBase(ctx context.Context, opts *extractOptions, s *signer.Signer,
 		return fmt.Errorf("stitching supplemental SBOMs: %w", err)
 	}
 	opts.Apply(nodelist)
+	opts.ApplySupplier(nodelist)
 
 	format, isSbom := opts.ProtobomFormat()
 	if !isSbom {
@@ -390,13 +394,14 @@ func handleCodeBase(ctx context.Context, opts *extractOptions, s *signer.Signer,
 		wr = os.Stdout
 	}
 
+	authors := withAuthors(opts.DocumentAuthors())
 	switch {
 	case opts.Sign:
-		err = nodeListToSignedAttestation(s, wr, format, nodelist)
+		err = nodeListToSignedAttestation(s, wr, format, nodelist, authors)
 	case opts.Attest:
-		err = nodeListToAttestation(wr, format, nodelist)
+		err = nodeListToAttestation(wr, format, nodelist, authors)
 	default:
-		err = nodeListToSbom(wr, format, nodelist)
+		err = nodeListToSbom(wr, format, nodelist, authors)
 	}
 
 	if err != nil {
