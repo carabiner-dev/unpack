@@ -422,6 +422,64 @@ func TestBuildTreeEdgesToMediatedDependency(t *testing.T) {
 	require.Equal(t, 2, parents)
 }
 
+// TestBuildTreeManagedExclusionsMerge checks that the exclusions the
+// project manages for a transitive dependency add to the ones the
+// dependency is declared with, where each alone would leave one in.
+func TestBuildTreeManagedExclusionsMerge(t *testing.T) {
+	t.Parallel()
+
+	dep := func(artifact, version, extra string) string {
+		return "<dependency><groupId>com.dep</groupId><artifactId>" + artifact + "</artifactId><version>" + version + "</version>" + extra + "</dependency>"
+	}
+	pomFor := func(artifact, version, deps string) string {
+		return `<?xml version="1.0"?><project><groupId>com.dep</groupId><artifactId>` + artifact +
+			`</artifactId><version>` + version + `</version><dependencies>` + deps + `</dependencies></project>`
+	}
+	url := func(artifact, version string) string {
+		return "https://repo.test/com/dep/" + artifact + "/" + version + "/" + artifact + "-" + version + ".pom"
+	}
+
+	resolver := newTestResolver(map[string]string{
+		// lib declares middle with one exclusion of its own.
+		url("lib", "1.0"): pomFor("lib", "1.0", dep("middle", "1.0",
+			"<exclusions><exclusion><groupId>com.dep</groupId><artifactId>own-excluded</artifactId></exclusion></exclusions>")),
+		url("middle", "1.0"): pomFor("middle", "1.0",
+			dep("own-excluded", "1.0", "")+dep("managed-excluded", "1.0", "")+dep("kept", "1.0", "")),
+		url("kept", "1.0"): pomFor("kept", "1.0", ""),
+	})
+
+	pom := &POM{
+		GroupID:    "com.example",
+		ArtifactID: "app",
+		Version:    "1.0.0",
+		DependencyManagement: &DependencyManagement{
+			Dependencies: []Dependency{
+				{
+					GroupID: "com.dep", ArtifactID: "middle",
+					Exclusions: []Exclusion{{GroupID: "com.dep", ArtifactID: "managed-excluded"}},
+				},
+			},
+		},
+		Dependencies: []Dependency{
+			{GroupID: "com.dep", ArtifactID: "lib", Version: "1.0"},
+		},
+	}
+
+	dt := NewDependencyTree(pom, resolver, &defaultOptions)
+	require.NoError(t, dt.Build())
+
+	require.Contains(t, dt.resolved, "com.dep:middle")
+	require.Contains(t, dt.resolved, "com.dep:kept")
+	require.NotContains(t, dt.resolved, "com.dep:own-excluded")
+	require.NotContains(t, dt.resolved, "com.dep:managed-excluded")
+	require.Equal(t, []string{"com.dep:kept:1.0"}, dt.edges["com.dep:middle:1.0"])
+
+	// The POM read from the repository keeps the exclusions it states.
+	libPOM, err := resolver.FetchPOM("com.dep", "lib", "1.0")
+	require.NoError(t, err)
+	require.Len(t, libPOM.Dependencies[0].Exclusions, 1)
+}
+
 func TestToNodeList(t *testing.T) {
 	t.Parallel()
 	pom := &POM{

@@ -346,7 +346,7 @@ func (dt *DependencyTree) addEdge(parentCoord, childCoord string) {
 // a dependency of one of its dependencies. There the managed version and
 // scope are not defaults but the project's decision: they replace what
 // the dependency's own POM states, which is how a project pins a version
-// across its whole tree.
+// across its whole tree. Its exclusions are added to the dependency's.
 func (dt *DependencyTree) applyTransitiveManagement(dep Dependency) Dependency { //nolint:gocritic // returns modified copy
 	managed, ok := dt.managed[dep.Key()]
 	if !ok {
@@ -359,8 +359,18 @@ func (dt *DependencyTree) applyTransitiveManagement(dep Dependency) Dependency {
 	if managed.Scope != "" {
 		dep.Scope = managed.Scope
 	}
-	if len(dep.Exclusions) == 0 && len(managed.Exclusions) > 0 {
-		dep.Exclusions = managed.Exclusions
+	// Managed exclusions add to the ones the dependency's own POM
+	// states: either is a reason to leave something out. The list is a
+	// new one, as the dependency's belongs to a POM read once and shared.
+	if len(managed.Exclusions) > 0 {
+		merged := make([]Exclusion, 0, len(dep.Exclusions)+len(managed.Exclusions))
+		merged = append(merged, dep.Exclusions...)
+		for _, exclusion := range managed.Exclusions {
+			if !slices.Contains(merged, exclusion) {
+				merged = append(merged, exclusion)
+			}
+		}
+		dep.Exclusions = merged
 	}
 
 	return dep
