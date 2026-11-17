@@ -59,13 +59,28 @@ func readRequirementsFile(path string, visited map[string]bool) ([]*requirementE
 	}
 
 	entries := []*requirementEntry{}
+
+	// annotated is the entry of this file a via annotation would belong
+	// to, the one right above it, and listing says the annotation is in
+	// its list form, each parent on a comment line of its own.
+	var annotated *requirementEntry
+	listing := false
+
 	for _, line := range logicalLines(string(data)) {
-		switch {
-		case strings.HasPrefix(line, "#"):
-			// A via annotation belongs to the entry above it.
-			if len(entries) > 0 {
-				entries[len(entries)-1].Via = append(entries[len(entries)-1].Via, viaNames(line)...)
+		if strings.HasPrefix(line, "#") {
+			// A via annotation belongs to the entry above it. Any other
+			// comment is the author's, or the compiler's header, and
+			// names nothing.
+			if annotated != nil {
+				var names []string
+				names, listing = viaNames(line, listing)
+				annotated.Via = append(annotated.Via, names...)
 			}
+			continue
+		}
+		annotated, listing = nil, false
+
+		switch {
 		case strings.HasPrefix(line, "-r ") || strings.HasPrefix(line, "--requirement "):
 			_, include, _ := strings.Cut(line, " ")
 			included, err := readRequirementsFile(
@@ -91,6 +106,7 @@ func readRequirementsFile(path string, visited map[string]bool) ([]*requirementE
 				return nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
 			}
 			entries = append(entries, entry)
+			annotated = entry
 		}
 	}
 	return entries, nil
@@ -117,21 +133,24 @@ func logicalLines(data string) []string {
 	return lines
 }
 
-// viaNames reads the names out of one "# via" annotation line: the inline
-// form names one parent, the list form indents each on its own line.
-func viaNames(line string) []string {
+// viaNames reads the parents out of one comment line under an entry.
+// Compiled files write the annotation in two forms: "# via flask" names
+// one parent on the line, and a bare "# via" opens a list, each parent on
+// a comment line of its own below it. listing says whether such a list
+// is open, and the second return value whether it is after this line. A
+// comment that is neither names nothing.
+func viaNames(line string, listing bool) (names []string, stillListing bool) {
 	text := strings.TrimSpace(strings.TrimPrefix(line, "#"))
-	if text == "via" || text == "" {
-		return nil
+	switch {
+	case text == "via":
+		return nil, true
+	case strings.HasPrefix(text, "via "):
+		return []string{strings.TrimSpace(strings.TrimPrefix(text, "via "))}, false
+	case listing && text != "":
+		return []string{text}, true
+	default:
+		return nil, listing
 	}
-	if name, found := strings.CutPrefix(text, "via "); found {
-		text = name
-	}
-	// Annotation lines that are not via entries: the header comment.
-	if strings.ContainsAny(text, ":/") && strings.HasPrefix(text, "uv ") {
-		return nil
-	}
-	return []string{text}
 }
 
 // inlineComment matches the comment a line ends with. As pip reads it, a
@@ -205,11 +224,14 @@ func (d *Decomposer) extractRequirements(workDir string, opts *api.DecomposerOpt
 	root := requirementsRoot(workDir, opts)
 	nl.AddRootNode(root)
 
-	// First the nodes: every entry whose marker holds in the environment.
-	nodes := map[packageKey]*sbom.Node{}
-	byName := map[string]*sbom.Node{}
-	enrichable := map[packageKey]bool{}
+	// First what is in this environment: one entry per name, the first
+	// whose marker holds. Two entries of one name survive marker
+	// filtering only in a hand-written file repeating itself.
+	declared := map[string]bool{}
+	selected := map[string]*requirementEntry{}
+	order := []*requirementEntry{}
 	for _, entry := range entries {
+		declared[entry.Name] = true
 		holds, err := env.Evaluate(entry.Marker)
 		if err != nil {
 			return nil, fmt.Errorf("evaluating marker on %s: %w", entry.Name, err)
@@ -217,12 +239,37 @@ func (d *Decomposer) extractRequirements(workDir string, opts *api.DecomposerOpt
 		if !holds {
 			continue
 		}
-		if _, seen := byName[entry.Name]; seen {
-			// Two entries of one name survive marker filtering only in a
-			// hand-written file repeating itself; the first wins.
+		if _, seen := selected[entry.Name]; seen {
 			continue
 		}
+		selected[entry.Name] = entry
+		order = append(order, entry)
+	}
 
+	// An entry every parent of which is left out of this environment is
+	// left out with them: nothing here pulls it in. Dropping one may
+	// orphan another, so this repeats until it settles.
+	for dropped := true; dropped; {
+		dropped = false
+		for _, entry := range order {
+			if _, in := selected[entry.Name]; !in {
+				continue
+			}
+			if parents := classifyVia(entry, declared, selected); parents.orphaned() {
+				delete(selected, entry.Name)
+				dropped = true
+			}
+		}
+	}
+
+	// Then the nodes.
+	nodes := map[packageKey]*sbom.Node{}
+	byName := map[string]*sbom.Node{}
+	enrichable := map[packageKey]bool{}
+	for _, entry := range order {
+		if _, in := selected[entry.Name]; !in {
+			continue
+		}
 		node := requirementNode(entry)
 		nodes[packageKey{name: entry.Name, version: entry.Version}] = node
 		byName[entry.Name] = node
@@ -232,26 +279,21 @@ func (d *Decomposer) extractRequirements(workDir string, opts *api.DecomposerOpt
 		}
 	}
 
-	// Then the edges. A via annotation hangs the entry under what pulled
-	// it in; everything else, and every parent the graph does not hold,
-	// hangs off the root.
-	for _, entry := range entries {
+	// Then the edges. A via annotation hangs the entry under each package
+	// that pulled it in, and off the root as well when the project itself
+	// did; an entry with no annotation hangs off the root.
+	for _, entry := range order {
 		node, ok := byName[entry.Name]
 		if !ok {
 			continue
 		}
-		related := false
-		for _, via := range entry.Via {
-			parent, isNode := byName[NormalizeName(via)]
-			if !isNode || parent == node {
-				continue
-			}
-			if err := nl.RelateNodeAtID(node, parent.GetId(), sbom.Edge_dependsOn); err != nil {
+		parents := classifyVia(entry, declared, selected)
+		for _, name := range parents.packages {
+			if err := nl.RelateNodeAtID(node, byName[name].GetId(), sbom.Edge_dependsOn); err != nil {
 				return nil, err
 			}
-			related = true
 		}
-		if !related {
+		if parents.direct || len(parents.packages) == 0 {
 			if err := nl.RelateNodeAtID(node, root.GetId(), sbom.Edge_dependsOn); err != nil {
 				return nil, err
 			}
@@ -262,6 +304,60 @@ func (d *Decomposer) extractRequirements(workDir string, opts *api.DecomposerOpt
 		NewPyPIClient(dOpts.Concurrency).enrichNodes(nodes, enrichable)
 	}
 	return nl, nil
+}
+
+// viaParents is what an entry's via annotations say pulled it in.
+type viaParents struct {
+	// direct is set when the project itself requires the entry: there is
+	// no annotation, or one names a requirements file or the project's
+	// manifest, or a name the file does not declare at all, which can
+	// only stand for the project.
+	direct bool
+
+	// packages are the entries of this environment that require it.
+	packages []string
+
+	// absent counts the parents the file declares for other
+	// environments.
+	absent int
+}
+
+// orphaned says the entry has parents, and none of them in this
+// environment.
+func (p viaParents) orphaned() bool {
+	return !p.direct && len(p.packages) == 0 && p.absent > 0
+}
+
+// classifyVia sorts an entry's via annotations by what they name. declared
+// holds every name the file has an entry for, selected the entries that
+// are in this environment.
+func classifyVia(entry *requirementEntry, declared map[string]bool, selected map[string]*requirementEntry) viaParents {
+	parents := viaParents{direct: len(entry.Via) == 0}
+	for _, via := range entry.Via {
+		switch {
+		case strings.HasPrefix(via, "-c ") || strings.HasPrefix(via, "--constraint "):
+			// A constraints file narrows the version and requires
+			// nothing.
+			continue
+		case strings.HasPrefix(via, "-") || strings.Contains(via, "("):
+			// "-r requirements.in", or "project (pyproject.toml)".
+			parents.direct = true
+			continue
+		}
+
+		name := NormalizeName(via)
+		switch {
+		case name == entry.Name:
+			continue
+		case !declared[name]:
+			parents.direct = true
+		case selected[name] != nil:
+			parents.packages = append(parents.packages, name)
+		default:
+			parents.absent++
+		}
+	}
+	return parents
 }
 
 // requirementsRoot builds the root node. The format names no project, so

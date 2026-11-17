@@ -68,16 +68,22 @@ func (tb *treeBuilder) build() (*sbom.NodeList, error) {
 		return nil, fmt.Errorf("no project package in the lockfile")
 	}
 
+	// The root nodes come first, all of them, so that a workspace member
+	// another member depends on is found already made when the walk
+	// reaches it: it is related as it is, and not made a second time.
 	for _, root := range roots {
-		if err := tb.addRoot(root); err != nil {
+		tb.addRoot(root)
+	}
+	for _, root := range roots {
+		if err := tb.walkRoot(root); err != nil {
 			return nil, err
 		}
 	}
 	return tb.nl, nil
 }
 
-// addRoot builds the project's own node and everything reachable from it.
-func (tb *treeBuilder) addRoot(root *Package) error {
+// addRoot builds the node of one of the project's own packages.
+func (tb *treeBuilder) addRoot(root *Package) {
 	node := tb.createNode(root)
 	node.PrimaryPurpose = []sbom.Purpose{sbom.Purpose_APPLICATION}
 
@@ -96,10 +102,19 @@ func (tb *treeBuilder) addRoot(root *Package) error {
 
 	tb.nl.AddRootNode(node)
 	tb.nodes[keyOf(root)] = node
-	tb.walked[keyOf(root)] = true
+}
 
-	if err := tb.walkDependencies(root, node, sbom.Edge_dependsOn); err != nil {
-		return err
+// walkRoot adds everything reachable from one of the project's own
+// packages.
+func (tb *treeBuilder) walkRoot(root *Package) error {
+	node := tb.nodes[keyOf(root)]
+
+	// A member an earlier root depends on was walked from there.
+	if !tb.walked[keyOf(root)] {
+		tb.walked[keyOf(root)] = true
+		if err := tb.walkDependencies(root, node, sbom.Edge_dependsOn); err != nil {
+			return err
+		}
 	}
 
 	// The root's extras and dependency groups, when asked for. Sorted so
