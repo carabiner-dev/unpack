@@ -42,6 +42,14 @@ type ComposerPackage struct {
 	// requirements (php, extensions) appear here too, slash-less.
 	Require map[string]string `json:"require"`
 
+	// Replace and Provide name what the package stands in for: other
+	// packages it replaces, as a framework does its own components, and
+	// virtual packages it provides, such as psr/log-implementation. A
+	// requirement on one of those names is met by this package, and the
+	// name has no entry of its own in the lock.
+	Replace map[string]string `json:"replace"`
+	Provide map[string]string `json:"provide"`
+
 	License     []string `json:"license"`
 	Description string   `json:"description"`
 	Homepage    string   `json:"homepage"`
