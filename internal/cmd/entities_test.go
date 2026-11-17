@@ -194,3 +194,34 @@ func TestEntitiesInDocument(t *testing.T) {
 	require.Equal(t, "Organization: Example, Inc (security@example.com)", suppliers["app"])
 	require.Empty(t, suppliers["dep"])
 }
+
+// TestEntityFlagsOnEverySbomCommand checks that every subcommand that
+// writes an SBOM takes the supplier and the authors: whatever the document
+// describes, whoever runs the command is its author, and the software it
+// is about has a supplier to name.
+func TestEntityFlagsOnEverySbomCommand(t *testing.T) {
+	t.Parallel()
+
+	root := rootCommand()
+	addExtract(root)
+	addImage(root)
+	addArtifact(root)
+	addSBOM(root)
+	addRelease(root)
+
+	for _, name := range []string{"extract", "image", "artifact", "sbom", "release"} {
+		sub, _, err := root.Find([]string{name})
+		require.NoError(t, err)
+		require.Equal(t, name, sub.Name())
+
+		supplier := sub.PersistentFlags().Lookup("supplier")
+		require.NotNil(t, supplier, "%s has no --supplier", name)
+		require.Equal(t, "string", supplier.Value.Type())
+
+		// An array, so that a name with a comma stays one value, and
+		// the flag can be given more than once.
+		author := sub.PersistentFlags().Lookup("author")
+		require.NotNil(t, author, "%s has no --author", name)
+		require.Equal(t, "stringArray", author.Value.Type())
+	}
+}

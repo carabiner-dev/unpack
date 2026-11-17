@@ -20,6 +20,7 @@ import (
 type releaseOptions struct {
 	formatOptions
 	stitchOptions
+	entityOptions
 	Output output.Options
 
 	// Reference points at the release to unpack, parsed from the positional
@@ -36,6 +37,7 @@ func (ro *releaseOptions) Validate() error {
 	errs = append(errs,
 		ro.formatOptions.Validate(),
 		ro.stitchOptions.Validate(),
+		ro.ValidateEntitiesFor(ro.Format),
 		ro.Output.Validate(),
 	)
 	return errors.Join(errs...)
@@ -45,6 +47,7 @@ func (ro *releaseOptions) Validate() error {
 func (ro *releaseOptions) AddFlags(cmd *cobra.Command) {
 	ro.formatOptions.AddFlags(cmd)
 	ro.stitchOptions.AddFlags(cmd)
+	ro.entityOptions.AddFlags(cmd)
 	ro.Output.AddFlags(cmd)
 }
 
@@ -127,6 +130,7 @@ Examples:
 				return fmt.Errorf("stitching supplemental SBOMs: %w", err)
 			}
 			opts.ReportUnused()
+			opts.ApplySupplier(nodelist)
 
 			format, isSbom := opts.ProtobomFormat()
 			if !isSbom {
@@ -143,11 +147,11 @@ Examples:
 
 			switch {
 			case opts.Sign:
-				err = nodeListToSignedAttestation(signer.NewSigner(), wr, format, nodelist)
+				err = nodeListToSignedAttestation(signer.NewSigner(), wr, format, nodelist, withAuthors(opts.DocumentAuthors()))
 			case opts.Attest:
-				err = nodeListToAttestation(wr, format, nodelist)
+				err = nodeListToAttestation(wr, format, nodelist, withAuthors(opts.DocumentAuthors()))
 			default:
-				err = nodeListToSbom(wr, format, nodelist)
+				err = nodeListToSbom(wr, format, nodelist, withAuthors(opts.DocumentAuthors()))
 			}
 			if err != nil {
 				return fmt.Errorf("rendering SBOM: %w", err)
