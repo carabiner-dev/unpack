@@ -94,7 +94,7 @@ func (p *PyProject) MainDependencies() ([]*requirement, error) {
 		if NormalizeName(name) == "python" || poetryEntryIsOptional(p.Tool.Poetry.Dependencies[name]) {
 			continue
 		}
-		deps = append(deps, legacyRequirement(name, p.Tool.Poetry.Dependencies[name]))
+		deps = append(deps, legacyRequirements(name, p.Tool.Poetry.Dependencies[name])...)
 	}
 	return deps, nil
 }
@@ -106,12 +106,12 @@ func (p *PyProject) GroupDependencies() (map[string][]*requirement, error) {
 
 	for name, group := range p.Tool.Poetry.Group {
 		for _, dep := range sortedTableKeys(group.Dependencies) {
-			groups[name] = append(groups[name], legacyRequirement(dep, group.Dependencies[dep]))
+			groups[name] = append(groups[name], legacyRequirements(dep, group.Dependencies[dep])...)
 		}
 	}
 	if len(p.Tool.Poetry.DevDependencies) > 0 {
 		for _, dep := range sortedTableKeys(p.Tool.Poetry.DevDependencies) {
-			groups["dev"] = append(groups["dev"], legacyRequirement(dep, p.Tool.Poetry.DevDependencies[dep]))
+			groups["dev"] = append(groups["dev"], legacyRequirements(dep, p.Tool.Poetry.DevDependencies[dep])...)
 		}
 	}
 
@@ -172,17 +172,54 @@ func parseRequirements(lines []string) ([]*requirement, error) {
 	return reqs, nil
 }
 
-// legacyRequirement reads an entry of a [tool.poetry.dependencies]-style
-// table, whose values are constraints: a version string, or a table that
-// may carry markers and extras.
-func legacyRequirement(name string, constraint any) *requirement {
+// legacyRequirements reads an entry of a [tool.poetry.dependencies]-style
+// table, whose values are constraints: a version string, a table that may
+// also carry markers, extras and the Python versions or platform it is
+// for, or a list of such tables when the constraint differs by
+// environment, one requirement each.
+func legacyRequirements(name string, constraint any) []*requirement {
+	switch value := constraint.(type) {
+	case string:
+		return []*requirement{{Name: NormalizeName(name), Specifier: value}}
+	case map[string]any:
+		return []*requirement{legacyRequirementFromTable(name, value)}
+	case []map[string]any:
+		reqs := make([]*requirement, 0, len(value))
+		for _, table := range value {
+			reqs = append(reqs, legacyRequirementFromTable(name, table))
+		}
+		return reqs
+	case []any:
+		reqs := make([]*requirement, 0, len(value))
+		for _, item := range value {
+			if table, ok := item.(map[string]any); ok {
+				reqs = append(reqs, legacyRequirementFromTable(name, table))
+			}
+		}
+		return reqs
+	default:
+		return []*requirement{{Name: NormalizeName(name)}}
+	}
+}
+
+func legacyRequirementFromTable(name string, table map[string]any) *requirement {
 	req := &requirement{Name: NormalizeName(name)}
-	table, ok := constraint.(map[string]any)
-	if !ok {
-		return req
+	if version, ok := table["version"].(string); ok {
+		req.Specifier = version
+	}
+	if python, ok := table["python"].(string); ok {
+		req.Python = python
 	}
 	if marker, ok := table["markers"].(string); ok {
 		req.Marker = marker
+	}
+	// The platform is sys.platform's value, which a marker can state.
+	if platform, ok := table["platform"].(string); ok && platform != "" {
+		onPlatform := fmt.Sprintf("sys_platform == %q", platform)
+		if req.Marker != "" {
+			onPlatform = "(" + req.Marker + ") and " + onPlatform
+		}
+		req.Marker = onPlatform
 	}
 	if extras, ok := table["extras"].([]any); ok {
 		for _, extra := range extras {

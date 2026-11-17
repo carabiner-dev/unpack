@@ -344,3 +344,94 @@ func TestExtractPnpmPeerVariants(t *testing.T) {
 		})
 	}
 }
+
+// TestExtractPnpmAliases reads a lock where a package is installed under
+// another name, in the spelling of each schema generation: the reference
+// is the key of the package installed, and the node is that package's,
+// shared with whoever requires it under its own name.
+func TestExtractPnpmAliases(t *testing.T) {
+	t.Parallel()
+
+	const integrity = "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA=="
+	for name, doc := range map[string]string{
+		"schema 9": `lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    dependencies:
+      pad:
+        specifier: npm:lodash.padstart@^4.6.1
+        version: lodash.padstart@4.6.1
+      user:
+        specifier: ^1.0.0
+        version: 1.0.0
+
+packages:
+
+  '@types/node@20.1.0':
+    resolution: {integrity: ` + integrity + `}
+
+  lodash.padstart@4.6.1:
+    resolution: {integrity: ` + integrity + `}
+
+  user@1.0.0:
+    resolution: {integrity: ` + integrity + `}
+
+snapshots:
+
+  '@types/node@20.1.0': {}
+
+  lodash.padstart@4.6.1: {}
+
+  user@1.0.0:
+    dependencies:
+      '@me/scoped': '@types/node@20.1.0'
+      lodash.padstart: 4.6.1
+`,
+		"schema 6": `lockfileVersion: '6.0'
+
+dependencies:
+  pad:
+    specifier: npm:lodash.padstart@^4.6.1
+    version: /lodash.padstart@4.6.1
+  user:
+    specifier: ^1.0.0
+    version: 1.0.0
+
+packages:
+
+  /@types/node@20.1.0:
+    resolution: {integrity: ` + integrity + `}
+    dev: false
+
+  /lodash.padstart@4.6.1:
+    resolution: {integrity: ` + integrity + `}
+    dev: false
+
+  /user@1.0.0:
+    resolution: {integrity: ` + integrity + `}
+    dependencies:
+      '@me/scoped': /@types/node@20.1.0
+      lodash.padstart: 4.6.1
+    dev: false
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte(
+				`{"name": "alias-app", "version": "1.0.0"}`), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "pnpm-lock.yaml"), []byte(doc), 0o600))
+
+			nl, err := New().Extract(&api.DecomposerOptions{WorkDir: dir, Networking: api.NetworkDisabled})
+			require.NoError(t, err)
+			require.Equal(t, []string{
+				"alias-app -> lodash.padstart@4.6.1 (dependsOn)",
+				"alias-app -> user@1.0.0 (dependsOn)",
+				"user -> @types/node@20.1.0 (dependsOn)",
+				"user -> lodash.padstart@4.6.1 (dependsOn)",
+			}, npmEdges(nl))
+		})
+	}
+}

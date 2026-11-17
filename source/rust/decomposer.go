@@ -77,6 +77,7 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 
 	// Build the dependency tree
 	tree := NewDependencyTree(cargoToml, cargoLock, dOpts)
+	tree.SetMemberManifests(ReadMemberManifests(workDir, cargoToml))
 
 	// Build the protobom NodeList
 	nl, err := tree.Build(opts)

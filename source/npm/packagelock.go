@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -35,8 +36,59 @@ type LockPackage struct {
 	Dependencies         map[string]string `json:"dependencies,omitempty"`
 	OptionalDependencies map[string]string `json:"optionalDependencies,omitempty"`
 
+	// DevDependencies and PeerDependencies are stated for the project's
+	// own packages, the root and the workspace members, as their
+	// package.json declares them.
+	DevDependencies  map[string]string `json:"devDependencies,omitempty"`
+	PeerDependencies map[string]string `json:"peerDependencies,omitempty"`
+
+	// Link marks an entry in node_modules that is a link to a directory
+	// of the project, whose own entry is keyed by the path in Resolved:
+	// a workspace member, or a dependency required by path.
+	Link bool `json:"link,omitempty"`
+
+	// Workspaces is the root entry's workspaces declaration, as written:
+	// a list of patterns or an object holding one.
+	Workspaces json.RawMessage `json:"workspaces,omitempty"`
+
 	// For tracking during tree building
 	path string
+}
+
+// isLocalDirectory says whether a lock key names a directory of the
+// project rather than an installed package: a workspace member, or a
+// dependency required by path.
+func isLocalDirectory(key string) bool {
+	return key != "" && !strings.HasPrefix(key, "node_modules/") && !strings.Contains(key, "/node_modules/")
+}
+
+// HasWorkspaces says whether the project declares workspaces.
+func (pl *PackageLock) HasWorkspaces() bool {
+	root, ok := pl.Packages[""]
+	if !ok {
+		return false
+	}
+	declared := strings.TrimSpace(string(root.Workspaces))
+	return declared != "" && declared != "null" && declared != "[]" && declared != "{}"
+}
+
+// WorkspaceMembers returns the lock keys of the project's workspace
+// members, sorted: the directories of the project the lock holds an entry
+// for. The lock does not tell a member from a directory required by path,
+// so in a project with workspaces each such directory is taken for one,
+// and in a project without there are none.
+func (pl *PackageLock) WorkspaceMembers() []string {
+	if !pl.HasWorkspaces() {
+		return nil
+	}
+	members := []string{}
+	for key := range pl.Packages {
+		if isLocalDirectory(key) && !pl.Packages[key].Link {
+			members = append(members, key)
+		}
+	}
+	sort.Strings(members)
+	return members
 }
 
 // PackageKey uniquely identifies a package by name and version.
@@ -72,9 +124,10 @@ func ParsePackageLockData(data []byte) (*PackageLock, error) {
 	}
 
 	// Store the path in each package for reference
-	for path, pkg := range lock.Packages {
-		pkg.path = path
-		lock.Packages[path] = pkg
+	for key := range lock.Packages {
+		pkg := lock.Packages[key]
+		pkg.path = key
+		lock.Packages[key] = pkg
 	}
 
 	return &lock, nil
@@ -124,10 +177,15 @@ func (pl *PackageLock) BuildPackageIndex() (byKey map[PackageKey]*LockPackage, b
 		pkgCopy := pkg
 		pkgCopy.path = path
 
-		// Determine the package name
+		// Determine the package name. A directory of the project is
+		// named in its entry unless the name is the directory's own.
 		name := pkgCopy.Name
 		if name == "" {
-			name = ExtractPackageName(path)
+			if isLocalDirectory(path) {
+				name = pathBase(path)
+			} else {
+				name = ExtractPackageName(path)
+			}
 		}
 		pkgCopy.Name = name
 
@@ -143,6 +201,12 @@ func (pl *PackageLock) BuildPackageIndex() (byKey map[PackageKey]*LockPackage, b
 	}
 
 	return byKey, byName, byPath
+}
+
+// pathBase returns the last element of a lock key, which is
+// slash-separated on every platform.
+func pathBase(key string) string {
+	return key[strings.LastIndex(key, "/")+1:]
 }
 
 // ParseIntegrity parses an SRI integrity string and returns the algorithm and hash.

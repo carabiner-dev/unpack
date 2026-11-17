@@ -125,6 +125,8 @@ func extractVendor(fsys fs.FS, installedPath string, opts *api.DecomposerOptions
 // buildInstalledTree builds the graph of a vendor directory with no
 // manifest to walk from: every installed package is a node, the require
 // tables are the edges, and whatever nothing here depends on is a root.
+// A requirement is met by the package of its name, or by those standing
+// in for it.
 func buildInstalledTree(lock *ComposerLock, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	cb := &composerBuilder{
 		opts:   opts,
@@ -140,16 +142,39 @@ func buildInstalledTree(lock *ComposerLock, opts *api.DecomposerOptions) (*sbom.
 	for _, pkg := range packages {
 		cb.byName[pkg.Name] = pkg
 	}
+	// A requirement on a name with no package of its own is met by the
+	// installed packages replacing or providing it, as in a lock.
+	cb.standIns = indexStandIns(packages)
 
+	// requirements lists what each package's requirements resolve to
+	// among the installed packages, sorted and without the package
+	// itself. A requirement nothing installed meets resolves to nothing:
+	// a dev-only requirement with dev not asked for, or an incomplete
+	// vendor tree.
+	requirements := map[string][]string{}
 	required := map[string]bool{}
 	for _, pkg := range packages {
 		node := cb.packageNode(pkg)
 		cb.nodes[pkg.Name] = node
+
+		targets := map[string]struct{}{}
 		for name := range pkg.Require {
-			if !isPlatformRequirement(name) {
-				required[name] = true
+			if isPlatformRequirement(name) {
+				continue
+			}
+			for _, target := range cb.resolve(name) {
+				if target.Name != pkg.Name {
+					targets[target.Name] = struct{}{}
+				}
 			}
 		}
+		names := make([]string, 0, len(targets))
+		for name := range targets {
+			names = append(names, name)
+			required[name] = true
+		}
+		sort.Strings(names)
+		requirements[pkg.Name] = names
 	}
 
 	// Roots first, then everything else, then the edges.
@@ -161,21 +186,8 @@ func buildInstalledTree(lock *ComposerLock, opts *api.DecomposerOptions) (*sbom.
 		}
 	}
 	for _, pkg := range packages {
-		names := make([]string, 0, len(pkg.Require))
-		for name := range pkg.Require {
-			if !isPlatformRequirement(name) {
-				names = append(names, name)
-			}
-		}
-		sort.Strings(names)
-		for _, name := range names {
-			target, installed := cb.nodes[name]
-			if !installed {
-				// Required but not installed: a dev-only requirement with
-				// dev not asked for, or an incomplete vendor tree.
-				continue
-			}
-			if err := cb.nl.RelateNodeAtID(target, cb.nodes[pkg.Name].GetId(), sbom.Edge_dependsOn); err != nil {
+		for _, name := range requirements[pkg.Name] {
+			if err := cb.nl.RelateNodeAtID(cb.nodes[name], cb.nodes[pkg.Name].GetId(), sbom.Edge_dependsOn); err != nil {
 				return nil, err
 			}
 		}

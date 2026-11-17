@@ -30,6 +30,10 @@ type DependencyTree struct {
 	// Direct dependency types from Cargo.toml
 	directDeps map[string]DependencyType
 
+	// memberDeps holds the same for the project's other local packages,
+	// by package name, when their manifests were given.
+	memberDeps map[string]map[string]DependencyType
+
 	// Cache of created nodes by package key
 	nodeCache map[PackageKey]*sbom.Node
 }
@@ -109,8 +113,13 @@ func (dt *DependencyTree) Build(opts *api.DecomposerOptions) (*sbom.NodeList, er
 // beside it is a path dependency, reached as any other dependency is. In
 // a workspace the members are the project, each a root, as every member
 // is built from it; the manifest's own package, when it has one, comes
-// first. The lock does not tell a member from a path dependency outside
-// the workspace, so there every local package is taken for a member.
+// first.
+//
+// The lock does not tell a member from a path dependency outside the
+// workspace; the members' manifests do, when the tree was given them (see
+// SetMemberManifests). A local package that is not among them and that
+// something depends on is then a path dependency. Without the manifests,
+// every local package is taken for a member.
 func (dt *DependencyTree) rootPackages() []*LockPackage {
 	local := dt.cargoLock.FindRootPackages()
 
@@ -125,21 +134,58 @@ func (dt *DependencyTree) rootPackages() []*LockPackage {
 	}
 
 	switch {
-	case manifest == nil:
-		// A virtual workspace, or a lock that does not hold the package
-		// the manifest names: nothing singles a local package out.
-		return local
-	case dt.cargoToml.Workspace == nil:
+	case dt.cargoToml.Workspace == nil && manifest != nil:
 		return []*LockPackage{manifest}
+	case dt.cargoToml.Workspace == nil:
+		// A lock that does not hold the package the manifest names:
+		// nothing singles a local package out.
+		return local
 	}
 
-	roots := []*LockPackage{manifest}
+	roots := make([]*LockPackage, 0, len(local))
+	if manifest != nil {
+		roots = append(roots, manifest)
+	}
+	required := dt.requiredLocalPackages(local)
 	for _, pkg := range local {
-		if pkg != manifest {
-			roots = append(roots, pkg)
+		if pkg == manifest {
+			continue
 		}
+		// With the members known, a local package that is not one and
+		// that something requires is a path dependency. One nothing
+		// requires stays a root whatever it is: it has no other way into
+		// the graph, and a member whose manifest could not be read looks
+		// just like it.
+		if _, isMember := dt.memberDeps[pkg.Name]; !isMember && len(dt.memberDeps) > 0 && required[pkg] {
+			continue
+		}
+		roots = append(roots, pkg)
 	}
 	return roots
+}
+
+// requiredLocalPackages says which of the local packages some package of
+// the lock depends on.
+func (dt *DependencyTree) requiredLocalPackages(local []*LockPackage) map[*LockPackage]bool {
+	isLocal := make(map[*LockPackage]bool, len(local))
+	for _, pkg := range local {
+		isLocal[pkg] = true
+	}
+
+	required := map[*LockPackage]bool{}
+	for i := range dt.cargoLock.Packages {
+		pkg := &dt.cargoLock.Packages[i]
+		for _, depRef := range pkg.Dependencies {
+			dep, err := ResolveDependency(depRef, dt.pkgByKey, dt.pkgByName)
+			if err != nil || dep == pkg {
+				continue
+			}
+			if isLocal[dep] {
+				required[dep] = true
+			}
+		}
+	}
+	return required
 }
 
 // buildSubtree recursively builds the dependency subtree for a package.
@@ -197,20 +243,66 @@ func (dt *DependencyTree) buildSubtree(nl *sbom.NodeList, pkg *LockPackage, pare
 	return nil
 }
 
+// SetMemberManifests gives the tree the manifests of the project's local
+// packages other than the one the root Cargo.toml describes, by package
+// name (see ReadMemberManifests). With them, the dependencies of a
+// workspace member are typed by what the member itself declares; without,
+// they are all taken as normal dependencies.
+func (dt *DependencyTree) SetMemberManifests(members map[string]*CargoToml) {
+	renames := map[string]string{}
+	if dt.cargoToml.Workspace != nil {
+		for name := range dt.cargoToml.Workspace.Dependencies {
+			if renamed := dt.cargoToml.Workspace.Dependencies[name].Package; renamed != "" {
+				renames[name] = renamed
+			}
+		}
+	}
+
+	dt.memberDeps = make(map[string]map[string]DependencyType, len(members))
+	for name, manifest := range members {
+		if manifest == nil {
+			continue
+		}
+		manifest.workspaceRenames = renames
+		dt.memberDeps[name] = manifest.GetDirectDependencies()
+	}
+}
+
+// declaredTypes returns the dependency types the manifest of a locked
+// package declares, or nil when the tree has no manifest for it.
+func (dt *DependencyTree) declaredTypes(pkg *LockPackage) map[string]DependencyType {
+	if pkg.Source != "" {
+		return nil
+	}
+	// The root manifest speaks for its own package first: a member
+	// manifest of the same name is the same file.
+	if name := dt.cargoToml.Package.Name; name != "" && name == pkg.Name {
+		return dt.directDeps
+	}
+	if types, ok := dt.memberDeps[pkg.Name]; ok {
+		return types
+	}
+	if dt.isManifestPackage(pkg) {
+		return dt.directDeps
+	}
+	return nil
+}
+
 // determineEdgeType determines the edge type for a dependency relationship.
 //
 // Cargo.lock does not record what kind a dependency is; Cargo.toml does,
 // for the dependencies of the package it describes. So the declared kind
 // applies to an edge from that package and to no other: the same crate
 // required by another package is a dependency of that package's own, and
-// one this reader has no manifest to qualify, hence dependsOn.
+// when this reader has no manifest to qualify it, dependsOn.
 func (dt *DependencyTree) determineEdgeType(parent, dep *LockPackage) sbom.Edge_Type {
-	if !dt.isManifestPackage(parent) {
+	types := dt.declaredTypes(parent)
+	if types == nil {
 		return sbom.Edge_dependsOn
 	}
 
 	//nolint:exhaustive
-	if depType, isDirect := dt.directDeps[dep.Name]; isDirect {
+	if depType, isDirect := types[dep.Name]; isDirect {
 		switch depType {
 		case DepTypeDev:
 			return sbom.Edge_devDependency

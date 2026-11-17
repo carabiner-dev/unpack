@@ -5,6 +5,7 @@ package composer
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/protobom/protobom/pkg/sbom"
@@ -80,6 +81,56 @@ func TestExtractInstalledBare(t *testing.T) {
 	nl = extractInstalledFS(t, "testdata/installed/bare", &api.DecomposerOptions{IncludeDev: true})
 	container := nodeNamed(t, nl, "psr/container")
 	require.Contains(t, nl.GetRootElements(), container.GetId())
+}
+
+// TestExtractInstalledBareStandIns covers a bare vendor directory where
+// requirements name what has no package of its own: a component a
+// framework replaces and a virtual package another provides. The edges go
+// to the packages standing in, which are then not roots.
+func TestExtractInstalledBareStandIns(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "vendor", "composer"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "vendor", "composer", "installed.json"), []byte(`{
+    "packages": [
+        {
+            "name": "acme/framework",
+            "version": "5.1.0",
+            "require": {"acme/console": "self.version"},
+            "replace": {"acme/component": "self.version", "acme/console": "self.version"}
+        },
+        {
+            "name": "acme/logger",
+            "version": "1.0.0",
+            "provide": {"psr/log-implementation": "3.0.0"}
+        },
+        {
+            "name": "acme/plugin",
+            "version": "1.2.0",
+            "require": {
+                "acme/component": "^5.0",
+                "acme/not-installed": "^1.0",
+                "psr/log-implementation": "^3.0"
+            }
+        }
+    ],
+    "dev-package-names": []
+}`), 0o600))
+
+	nl := extractInstalledFS(t, dir, nil)
+
+	plugin := nodeNamed(t, nl, "acme/plugin")
+	framework := nodeNamed(t, nl, "acme/framework")
+	logger := nodeNamed(t, nl, "acme/logger")
+
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, plugin, framework))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, plugin, logger))
+	require.False(t, hasEdge(nl, sbom.Edge_dependsOn, framework, framework))
+
+	// Only the plugin is required by nothing.
+	require.Equal(t, []string{plugin.GetId()}, nl.GetRootElements())
+	require.Len(t, nl.GetNodes(), 3)
 }
 
 // TestExtractInstalledMerges covers a filesystem holding several vendor

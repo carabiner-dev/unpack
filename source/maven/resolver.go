@@ -395,6 +395,41 @@ func (r *Resolver) ResolveVersionRange(groupID, artifactID, rangeSpec string) (s
 	return best, nil
 }
 
+// ResolveLocalEffectivePOM resolves what can be resolved of a POM found in
+// dir without a repository: the parents its source tree holds are merged
+// in, and properties interpolated. Parents and BOMs only a repository has
+// are left out.
+func ResolveLocalEffectivePOM(pom *POM, dir string) (*POM, error) {
+	resolved, err := resolveParents(nil, pom, dir, 0)
+	if err != nil {
+		return nil, fmt.Errorf("resolving parent chain: %w", err)
+	}
+	InterpolatePOM(resolved)
+	return resolved, nil
+}
+
+// ResolveEffectivePOMIn resolves the effective POM of a project's own POM,
+// found in dir. It is ResolveEffectivePOM, except that a parent is looked
+// for in the source tree first, where a multi-module project keeps it:
+// such a parent may never have been published, and when it has, the one
+// beside the module is the one the module is built with.
+func (r *Resolver) ResolveEffectivePOMIn(pom *POM, dir string) (*POM, error) {
+	resolved, err := resolveParents(r, pom, dir, 0)
+	if err != nil {
+		return nil, fmt.Errorf("resolving parent chain: %w", err)
+	}
+
+	// Process BOM imports in dependencyManagement
+	if err := r.resolveBOMImports(resolved, 0); err != nil {
+		return nil, fmt.Errorf("resolving BOM imports: %w", err)
+	}
+
+	// Interpolate all properties
+	InterpolatePOM(resolved)
+
+	return resolved, nil
+}
+
 // ResolveEffectivePOM resolves the full parent chain, merges inherited data,
 // processes BOM imports, and interpolates all properties.
 func (r *Resolver) ResolveEffectivePOM(pom *POM) (*POM, error) {
@@ -417,6 +452,16 @@ func (r *Resolver) ResolveEffectivePOM(pom *POM) (*POM, error) {
 
 // resolveParentChain walks up the parent chain and merges each parent into the child.
 func (r *Resolver) resolveParentChain(pom *POM, depth int) (*POM, error) {
+	return resolveParents(r, pom, "", depth)
+}
+
+// resolveParents walks up the parent chain of a POM and merges each parent
+// into its child. dir is the directory the POM was read from, empty for
+// one from a repository: a POM of the source tree has its parent looked
+// for there first, and that parent, found in a directory of its own, has
+// its parent looked for from there in turn. A parent the source tree does
+// not hold is fetched with the resolver, and left out when there is none.
+func resolveParents(r *Resolver, pom *POM, dir string, depth int) (*POM, error) {
 	if depth > maxParentDepth {
 		return nil, fmt.Errorf("parent chain exceeds maximum depth of %d", maxParentDepth)
 	}
@@ -425,14 +470,21 @@ func (r *Resolver) resolveParentChain(pom *POM, depth int) (*POM, error) {
 		return pom, nil
 	}
 
-	parentPOM, err := r.FetchPOM(pom.Parent.GroupID, pom.Parent.ArtifactID, pom.Parent.Version)
-	if err != nil {
-		// Parent resolution failure is non-fatal: return what we have
-		return pom, nil //nolint:nilerr
+	parentPOM, parentDir := readLocalParent(pom, dir)
+	if parentPOM == nil {
+		if r == nil {
+			return pom, nil
+		}
+		fetched, err := r.FetchPOM(pom.Parent.GroupID, pom.Parent.ArtifactID, pom.Parent.Version)
+		if err != nil {
+			// Parent resolution failure is non-fatal: return what we have
+			return pom, nil //nolint:nilerr
+		}
+		parentPOM = fetched
 	}
 
 	// Recursively resolve the parent's own parents first
-	resolvedParent, err := r.resolveParentChain(parentPOM, depth+1)
+	resolvedParent, err := resolveParents(r, parentPOM, parentDir, depth+1)
 	if err != nil {
 		return pom, nil //nolint:nilerr
 	}

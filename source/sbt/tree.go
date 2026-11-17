@@ -104,8 +104,36 @@ func (sb *snapshotBuilder) addManifest(root *sbom.Node, key string, m *Manifest)
 	// evicted in favor of another version, the edge is lost. It was still
 	// resolved for the module, so it hangs from the module rather than
 	// dropping out of the inventory.
+	//
+	// Only the top of what was not reached hangs there. Something an
+	// unreached module depends on is reached through it, and an edge from
+	// the module as well would make a direct dependency of it.
+	unreached := []string{}
+	below := map[string]struct{}{}
 	for _, ref := range refs {
 		if _, ok := visited[ref]; ok || !sb.included(m.Resolved[ref]) {
+			continue
+		}
+		unreached = append(unreached, ref)
+		for _, child := range m.Resolved[ref].Dependencies {
+			if child != ref {
+				below[child] = struct{}{}
+			}
+		}
+	}
+	for _, ref := range unreached {
+		if _, ok := below[ref]; ok {
+			continue
+		}
+		slog.Debug("sbt: resolved module unreachable from direct dependencies", "manifest", name, "module", ref)
+		if err := sb.walk(m, ref, module, visited); err != nil {
+			return err
+		}
+	}
+	// What is left depends on itself in a circle, with no top to hang
+	// from: the first of each circle stands for it.
+	for _, ref := range unreached {
+		if _, ok := visited[ref]; ok {
 			continue
 		}
 		slog.Debug("sbt: resolved module unreachable from direct dependencies", "manifest", name, "module", ref)

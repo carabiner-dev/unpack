@@ -64,13 +64,110 @@ func (dt *DependencyTree) Build(opts *api.DecomposerOptions) (*sbom.NodeList, er
 	nl.AddRootNode(rootNode)
 	dt.nodeCache[""] = rootNode
 
+	// The workspace members are the project's own packages too, each a
+	// root. Their nodes are made before anything is walked, so that a
+	// member the root or another member depends on is found already made
+	// and related as it is.
+	members := dt.packageLock.WorkspaceMembers()
+	for _, memberPath := range members {
+		member, ok := dt.pkgByPath[memberPath]
+		if !ok {
+			continue
+		}
+		node := dt.createNode(member)
+		node.PrimaryPurpose = []sbom.Purpose{sbom.Purpose_APPLICATION}
+		if opts.CommitHash != "" {
+			node.ExternalReferences = append(node.ExternalReferences, &sbom.ExternalReference{
+				Hashes: map[int32]string{int32(sbom.HashAlgorithm_SHA1): opts.CommitHash},
+				Type:   sbom.ExternalReference_VCS,
+			})
+		}
+		nl.AddRootNode(node)
+		dt.nodeCache[memberPath] = node
+	}
+
 	// Build the dependency tree from the root's direct dependencies
 	visited := make(map[string]bool)
 	if err := dt.buildFromRoot(nl, rootNode, visited, opts); err != nil {
 		return nil, fmt.Errorf("building dependency tree: %w", err)
 	}
 
+	// And from each member's.
+	for _, memberPath := range members {
+		if err := dt.buildFromMember(nl, memberPath, visited, opts); err != nil {
+			return nil, fmt.Errorf("building dependency tree of %s: %w", memberPath, err)
+		}
+	}
+
 	return nl, nil
+}
+
+// buildFromMember adds the direct dependencies of a workspace member, as
+// its lock entry states them, each kind gated the way the root's are, and
+// walks what they pull in.
+func (dt *DependencyTree) buildFromMember(nl *sbom.NodeList, memberPath string, visited map[string]bool, opts *api.DecomposerOptions) error {
+	member, ok := dt.pkgByPath[memberPath]
+	if !ok {
+		return nil
+	}
+	memberNode := dt.nodeCache[memberPath]
+	visited[memberPath] = true
+
+	// One type per name, the first of normal, dev, peer and optional it
+	// is declared as, like the root's.
+	types := map[string]DependencyType{}
+	for _, section := range []struct {
+		deps    map[string]string
+		depType DependencyType
+	}{
+		{member.Dependencies, DepTypeNormal},
+		{member.DevDependencies, DepTypeDev},
+		{member.PeerDependencies, DepTypePeer},
+		{member.OptionalDependencies, DepTypeOptional},
+	} {
+		for name := range section.deps {
+			if _, declared := types[name]; !declared {
+				types[name] = section.depType
+			}
+		}
+	}
+
+	names := make([]string, 0, len(types))
+	for name := range types {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, depName := range names {
+		depType := types[depName]
+		if depType == DepTypeDev && !opts.IncludeDev {
+			continue
+		}
+		if depType == DepTypeOptional && !opts.IncludeOptional {
+			continue
+		}
+
+		depPath := dt.resolveDependencyPath(memberPath, depName)
+		depPkg, ok := dt.pkgByPath[depPath]
+		if depPath == "" || !ok || depPath == memberPath {
+			continue
+		}
+
+		depNode, exists := dt.nodeCache[depPath]
+		if !exists {
+			depNode = dt.createNode(depPkg)
+			dt.nodeCache[depPath] = depNode
+		}
+		if err := nl.RelateNodeAtID(depNode, memberNode.GetId(), dt.depTypeToEdgeType(depType)); err != nil {
+			return fmt.Errorf("relating %s to %s: %w", depName, member.Name, err)
+		}
+		if !exists && !visited[depPath] {
+			if err := dt.buildSubtree(nl, depPkg, depNode, depPath, visited); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // buildFromRoot builds the dependency tree starting from direct dependencies.
@@ -130,12 +227,20 @@ func (dt *DependencyTree) buildSubtree(nl *sbom.NodeList, pkg *LockPackage, pare
 	visited[parentPath] = true
 
 	// Get the package's dependencies from the lock file
-	if pkg.Dependencies == nil && pkg.OptionalDependencies == nil {
+	if pkg.Dependencies == nil && pkg.OptionalDependencies == nil && pkg.PeerDependencies == nil {
 		return nil
 	}
 
-	// Collect all dependencies (regular + optional) for processing
-	allDeps := make(map[string]sbom.Edge_Type, len(pkg.Dependencies)+len(pkg.OptionalDependencies))
+	// Collect all dependencies (regular + optional + peer) for processing.
+	// A peer is a package this one needs and expects its host to bring:
+	// npm installs it, at the host's level, and when the lock holds it
+	// there this package depends on it like on any other. One that is not
+	// installed, as an optional peer may not be, resolves to nothing below
+	// and gets no edge.
+	allDeps := make(map[string]sbom.Edge_Type, len(pkg.Dependencies)+len(pkg.OptionalDependencies)+len(pkg.PeerDependencies))
+	for name := range pkg.PeerDependencies {
+		allDeps[name] = sbom.Edge_dependsOn
+	}
 	for name := range pkg.Dependencies {
 		allDeps[name] = sbom.Edge_dependsOn
 	}
@@ -158,7 +263,7 @@ func (dt *DependencyTree) buildSubtree(nl *sbom.NodeList, pkg *LockPackage, pare
 		}
 
 		depPkg, ok := dt.pkgByPath[depPath]
-		if !ok {
+		if !ok || depPath == parentPath {
 			continue
 		}
 
@@ -198,7 +303,14 @@ func (dt *DependencyTree) resolveDependencyPath(parentPath, depName string) stri
 			candidatePath = searchPath + "/node_modules/" + depName
 		}
 
-		if _, ok := dt.pkgByPath[candidatePath]; ok {
+		if candidate, ok := dt.pkgByPath[candidatePath]; ok {
+			// A link stands for a directory of the project, which has
+			// the entry the dependency is really met by.
+			if candidate.Link && candidate.Resolved != "" {
+				if _, ok := dt.pkgByPath[candidate.Resolved]; ok {
+					return candidate.Resolved
+				}
+			}
 			return candidatePath
 		}
 
@@ -220,12 +332,19 @@ func (dt *DependencyTree) resolveDependencyPath(parentPath, depName string) stri
 	return ""
 }
 
-// depTypeToEdgeType converts a DependencyType to an sbom.Edge_Type.
+// depTypeToEdgeType converts the type of a dependency one of the project's
+// own packages declares to an sbom.Edge_Type.
+//
+// A peer dependency is one the package needs and leaves to whoever uses it
+// to supply. npm installs it beside the project, which is why the lock
+// holds it, but the project does not bring it: it is provided.
 func (dt *DependencyTree) depTypeToEdgeType(depType DependencyType) sbom.Edge_Type {
 	//nolint:exhaustive
 	switch depType {
 	case DepTypeDev:
 		return sbom.Edge_devDependency
+	case DepTypePeer:
+		return sbom.Edge_providedDependency
 	case DepTypeOptional:
 		return sbom.Edge_optionalDependency
 	default:

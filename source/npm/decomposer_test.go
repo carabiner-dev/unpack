@@ -527,6 +527,227 @@ func TestDirectDependencyTypePrecedence(t *testing.T) {
 	require.ElementsMatch(t, []string{"both-app", "both"}, names)
 }
 
+// npmEdges lists a graph as "from -> to (type)" lines by package name,
+// sorted.
+func npmEdges(nl *sbom.NodeList) []string {
+	lines := []string{}
+	for _, e := range nl.GetEdges() {
+		for _, to := range e.GetTo() {
+			lines = append(lines, nl.GetNodeByID(e.GetFrom()).GetName()+" -> "+
+				nl.GetNodeByID(to).GetName()+"@"+nl.GetNodeByID(to).GetVersion()+" ("+e.GetType().String()+")")
+		}
+	}
+	sort.Strings(lines)
+	return lines
+}
+
+// TestExtractNpmWorkspaces reads the lock of a project with workspaces:
+// the members are the project's own packages, each a root with the
+// dependencies its own entry declares, resolved from where it sits.
+func TestExtractNpmWorkspaces(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{
+		"name": "ws-root",
+		"version": "1.0.0",
+		"workspaces": ["packages/*"],
+		"dependencies": {"wsa": "^1.0.0"}
+	}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package-lock.json"), []byte(`{
+		"name": "ws-root",
+		"version": "1.0.0",
+		"lockfileVersion": 3,
+		"packages": {
+			"": {
+				"name": "ws-root",
+				"version": "1.0.0",
+				"workspaces": ["packages/*"],
+				"dependencies": {"wsa": "^1.0.0"}
+			},
+			"node_modules/@scope/wsb": {"resolved": "packages/wsb", "link": true},
+			"node_modules/hoisted": {"version": "1.0.0"},
+			"node_modules/jest": {"version": "29.0.0", "dev": true},
+			"node_modules/shared": {"version": "1.0.0"},
+			"node_modules/wsa": {"resolved": "packages/wsa", "link": true},
+			"packages/wsa": {
+				"version": "1.1.0",
+				"dependencies": {"hoisted": "^1.0.0", "shared": "^1.0.0"},
+				"devDependencies": {"jest": "^29.0.0"}
+			},
+			"packages/wsb": {
+				"name": "@scope/wsb",
+				"version": "2.0.0",
+				"dependencies": {"shared": "^2.0.0", "wsa": "^1.0.0"}
+			},
+			"packages/wsb/node_modules/shared": {"version": "2.0.0"}
+		}
+	}`), 0o600))
+
+	nl, err := New().Extract(&api.DecomposerOptions{WorkDir: dir, Networking: api.NetworkDisabled})
+	require.NoError(t, err)
+
+	roots := make([]string, 0, len(nl.GetRootElements()))
+	for _, id := range nl.GetRootElements() {
+		roots = append(roots, nl.GetNodeByID(id).GetName())
+	}
+	require.Equal(t, []string{"ws-root", "wsa", "@scope/wsb"}, roots)
+
+	// The root's dependency on a member goes to the member itself, at its
+	// version, as does another member's. Each member resolves its own
+	// dependencies from where it sits: wsb has a copy of shared of its
+	// own, wsa the hoisted one.
+	require.Equal(t, []string{
+		"@scope/wsb -> shared@2.0.0 (dependsOn)",
+		"@scope/wsb -> wsa@1.1.0 (dependsOn)",
+		"ws-root -> wsa@1.1.0 (dependsOn)",
+		"wsa -> hoisted@1.0.0 (dependsOn)",
+		"wsa -> shared@1.0.0 (dependsOn)",
+	}, npmEdges(nl))
+
+	// A member's dev dependencies are in when asked for.
+	nl, err = New().Extract(&api.DecomposerOptions{WorkDir: dir, Networking: api.NetworkDisabled, IncludeDev: true})
+	require.NoError(t, err)
+	require.Contains(t, npmEdges(nl), "wsa -> jest@29.0.0 (devDependency)")
+}
+
+// TestExtractNpmTransitivePeers reads a lock where a dependency has peer
+// dependencies: the installed one is a dependency of it, with what it
+// requires in turn, and the one not installed is nothing.
+func TestExtractNpmTransitivePeers(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{
+		"name": "peer-app",
+		"version": "1.0.0",
+		"dependencies": {"plugin": "^1.0.0"}
+	}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package-lock.json"), []byte(`{
+		"name": "peer-app",
+		"version": "1.0.0",
+		"lockfileVersion": 3,
+		"packages": {
+			"": {
+				"name": "peer-app",
+				"version": "1.0.0",
+				"dependencies": {"plugin": "^1.0.0"}
+			},
+			"node_modules/host": {
+				"version": "3.0.0",
+				"peer": true,
+				"dependencies": {"host-dep": "^1.0.0"}
+			},
+			"node_modules/host-dep": {"version": "1.0.0", "peer": true},
+			"node_modules/plugin": {
+				"version": "1.0.0",
+				"peerDependencies": {"host": ">=2", "not-installed": "*"},
+				"peerDependenciesMeta": {"not-installed": {"optional": true}}
+			}
+		}
+	}`), 0o600))
+
+	nl, err := New().Extract(&api.DecomposerOptions{WorkDir: dir, Networking: api.NetworkDisabled})
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"host -> host-dep@1.0.0 (dependsOn)",
+		"peer-app -> plugin@1.0.0 (dependsOn)",
+		"plugin -> host@3.0.0 (dependsOn)",
+	}, npmEdges(nl))
+}
+
+// TestExtractNpmOwnPeers reads the lock of a project whose own packages
+// declare peer dependencies: npm installs them, and the edge says the
+// project expects them provided rather than bringing them. A peer that is
+// also a dev dependency stays one.
+func TestExtractNpmOwnPeers(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{
+		"name": "own-peers",
+		"version": "1.0.0",
+		"workspaces": ["packages/*"],
+		"dependencies": {"runtime": "^1.0.0"},
+		"devDependencies": {"both": "^1.0.0"},
+		"peerDependencies": {"host": ">=3", "both": ">=1"}
+	}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package-lock.json"), []byte(`{
+		"name": "own-peers",
+		"version": "1.0.0",
+		"lockfileVersion": 3,
+		"packages": {
+			"": {
+				"name": "own-peers",
+				"version": "1.0.0",
+				"workspaces": ["packages/*"],
+				"dependencies": {"runtime": "^1.0.0"},
+				"devDependencies": {"both": "^1.0.0"},
+				"peerDependencies": {"host": ">=3", "both": ">=1"}
+			},
+			"node_modules/both": {"version": "1.0.0", "dev": true},
+			"node_modules/host": {"version": "3.0.0", "peer": true, "dependencies": {"host-dep": "^1.0.0"}},
+			"node_modules/host-dep": {"version": "1.0.0", "peer": true},
+			"node_modules/member": {"resolved": "packages/member", "link": true},
+			"node_modules/runtime": {"version": "1.0.0"},
+			"packages/member": {
+				"version": "0.1.0",
+				"peerDependencies": {"host": ">=3"}
+			}
+		}
+	}`), 0o600))
+
+	nl, err := New().Extract(&api.DecomposerOptions{WorkDir: dir, Networking: api.NetworkDisabled})
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"host -> host-dep@1.0.0 (dependsOn)",
+		"member -> host@3.0.0 (providedDependency)",
+		"own-peers -> host@3.0.0 (providedDependency)",
+		"own-peers -> runtime@1.0.0 (dependsOn)",
+	}, npmEdges(nl))
+
+	nl, err = New().Extract(&api.DecomposerOptions{WorkDir: dir, Networking: api.NetworkDisabled, IncludeDev: true})
+	require.NoError(t, err)
+	require.Contains(t, npmEdges(nl), "own-peers -> both@1.0.0 (devDependency)")
+}
+
+// TestExtractNpmPathDependency reads the lock of a project with no
+// workspaces that requires a directory of its own by path: the directory
+// is a dependency like any other, not a root, with what it requires.
+func TestExtractNpmPathDependency(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{
+		"name": "path-app",
+		"version": "1.0.0",
+		"dependencies": {"local-lib": "file:vendor/local-lib"}
+	}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package-lock.json"), []byte(`{
+		"name": "path-app",
+		"version": "1.0.0",
+		"lockfileVersion": 3,
+		"packages": {
+			"": {
+				"name": "path-app",
+				"version": "1.0.0",
+				"dependencies": {"local-lib": "file:vendor/local-lib"}
+			},
+			"node_modules/dep": {"version": "1.0.0"},
+			"node_modules/local-lib": {"resolved": "vendor/local-lib", "link": true},
+			"vendor/local-lib": {"version": "0.3.0", "dependencies": {"dep": "^1.0.0"}}
+		}
+	}`), 0o600))
+
+	nl, err := New().Extract(&api.DecomposerOptions{WorkDir: dir, Networking: api.NetworkDisabled})
+	require.NoError(t, err)
+	require.Len(t, nl.GetRootElements(), 1)
+	require.Equal(t, []string{
+		"local-lib -> dep@1.0.0 (dependsOn)",
+		"path-app -> local-lib@0.3.0 (dependsOn)",
+	}, npmEdges(nl))
+}
+
 // TestDevDependencyEdges verifies that dev dependencies get the correct edge type.
 func TestDevDependencyEdges(t *testing.T) {
 	t.Parallel()

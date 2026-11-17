@@ -56,6 +56,11 @@ type DependencyTree struct {
 	// Adjacency list: parent coord string -> []child coord string
 	edges map[string][]string
 
+	// The scope each edge was declared with, after management: parent
+	// coord string -> child "groupId:artifactId" -> scope. A dependency
+	// whose scope widens passes the change down through these.
+	edgeScopes map[string]map[string]string
+
 	// Managed dependencies from dependencyManagement, keyed by "groupId:artifactId"
 	managed map[string]*Dependency
 }
@@ -64,6 +69,7 @@ type DependencyTree struct {
 type queueEntry struct {
 	dep         Dependency
 	parentCoord string
+	parentKey   string // the parent's "groupId:artifactId"
 	depth       int
 	parentScope string
 	exclusions  []Exclusion // accumulated from all ancestors
@@ -72,12 +78,13 @@ type queueEntry struct {
 // NewDependencyTree creates a new dependency tree builder.
 func NewDependencyTree(rootPOM *POM, resolver *Resolver, opts *Options) *DependencyTree {
 	dt := &DependencyTree{
-		rootPOM:  rootPOM,
-		resolver: resolver,
-		opts:     opts,
-		resolved: make(map[string]*ResolvedDependency),
-		edges:    make(map[string][]string),
-		managed:  make(map[string]*Dependency),
+		rootPOM:    rootPOM,
+		resolver:   resolver,
+		opts:       opts,
+		resolved:   make(map[string]*ResolvedDependency),
+		edges:      make(map[string][]string),
+		edgeScopes: make(map[string]map[string]string),
+		managed:    make(map[string]*Dependency),
 	}
 
 	// Index dependencyManagement
@@ -113,6 +120,7 @@ func (dt *DependencyTree) Build() error {
 		queue = append(queue, queueEntry{
 			dep:         dep,
 			parentCoord: rootCoord.String(),
+			parentKey:   rootCoord.Key(),
 			depth:       1,
 			parentScope: ScopeCompile,
 		})
@@ -131,10 +139,16 @@ func (dt *DependencyTree) Build() error {
 			continue
 		}
 
-		// Determine effective scope
+		// Determine effective scope. The parent's scope is read now and
+		// not as it was when this entry was queued: it may have widened
+		// since.
+		parentScope := entry.parentScope
+		if parent, ok := dt.resolved[entry.parentKey]; ok && entry.depth > 1 {
+			parentScope = parent.Scope
+		}
 		effectiveScope := dep.EffectiveScope()
 		if entry.depth > 1 {
-			effectiveScope = scopeTransitivity(entry.parentScope, effectiveScope)
+			effectiveScope = scopeTransitivity(parentScope, effectiveScope)
 			if effectiveScope == "" {
 				continue // non-transitive scope combination
 			}
@@ -154,8 +168,15 @@ func (dt *DependencyTree) Build() error {
 		// neither changes its version nor is walked again. The parent
 		// depends on the artifact all the same, so it gets its edge, to
 		// the version that was chosen.
+		//
+		// Its scope is another matter. Mediation settles the version on
+		// the nearest path, but the artifact is on every classpath any
+		// path puts it on: reached for tests first and for compilation
+		// later, it is a compile dependency.
 		if winner, exists := dt.resolved[key]; exists {
 			dt.addEdge(entry.parentCoord, winner.Coordinate.String())
+			dt.noteEdgeScope(entry.parentCoord, key, dep.EffectiveScope())
+			dt.widenScope(winner, effectiveScope)
 			continue
 		}
 
@@ -246,6 +267,7 @@ func (dt *DependencyTree) Build() error {
 
 		// Record edge
 		dt.addEdge(entry.parentCoord, coord.String())
+		dt.noteEdgeScope(entry.parentCoord, key, dep.EffectiveScope())
 
 		// Enqueue transitive dependencies
 		// Accumulate exclusions from this dependency
@@ -264,6 +286,7 @@ func (dt *DependencyTree) Build() error {
 			queue = append(queue, queueEntry{
 				dep:         tdep,
 				parentCoord: coord.String(),
+				parentKey:   key,
 				depth:       entry.depth + 1,
 				parentScope: effectiveScope,
 				exclusions:  allExclusions,
@@ -342,11 +365,68 @@ func (dt *DependencyTree) addEdge(parentCoord, childCoord string) {
 	dt.edges[parentCoord] = append(dt.edges[parentCoord], childCoord)
 }
 
+// noteEdgeScope records the scope an edge was declared with, keeping the
+// widest when a parent declares the same artifact more than once.
+func (dt *DependencyTree) noteEdgeScope(parentCoord, childKey, scope string) {
+	scopes := dt.edgeScopes[parentCoord]
+	if scopes == nil {
+		scopes = make(map[string]string)
+		dt.edgeScopes[parentCoord] = scopes
+	}
+	if current, ok := scopes[childKey]; !ok || widerScope(scope, current) {
+		scopes[childKey] = scope
+	}
+}
+
+// widenScope gives a resolved dependency a scope a later path reaches it
+// with, when that is wider than the one it has, and passes the change down
+// to what it brings in. A dependency the project declares itself keeps the
+// scope it is declared with, as in Maven.
+func (dt *DependencyTree) widenScope(rd *ResolvedDependency, scope string) {
+	if rd.Depth <= 1 || !widerScope(scope, rd.Scope) {
+		return
+	}
+	rd.Scope = scope
+
+	for childKey, declared := range dt.edgeScopes[rd.Coordinate.String()] {
+		child, ok := dt.resolved[childKey]
+		if !ok {
+			continue
+		}
+		if derived := scopeTransitivity(scope, declared); derived != "" {
+			dt.widenScope(child, derived)
+		}
+	}
+}
+
+// scopeRank orders the scopes by how much of the build they reach.
+func scopeRank(scope string) int {
+	switch scope {
+	case ScopeCompile:
+		return 4
+	case ScopeRuntime:
+		return 3
+	case ScopeProvided, ScopeSystem:
+		return 2
+	case ScopeTest:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// widerScope reports whether a scope reaches more of the build than
+// another. Only Maven's own scopes compare: the scope build plugins are
+// given here is neither wider nor narrower than any.
+func widerScope(scope, than string) bool {
+	return scopeRank(than) > 0 && scopeRank(scope) > scopeRank(than)
+}
+
 // applyTransitiveManagement applies the project's dependencyManagement to
 // a dependency of one of its dependencies. There the managed version and
 // scope are not defaults but the project's decision: they replace what
 // the dependency's own POM states, which is how a project pins a version
-// across its whole tree.
+// across its whole tree. Its exclusions are added to the dependency's.
 func (dt *DependencyTree) applyTransitiveManagement(dep Dependency) Dependency { //nolint:gocritic // returns modified copy
 	managed, ok := dt.managed[dep.Key()]
 	if !ok {
@@ -359,8 +439,18 @@ func (dt *DependencyTree) applyTransitiveManagement(dep Dependency) Dependency {
 	if managed.Scope != "" {
 		dep.Scope = managed.Scope
 	}
-	if len(dep.Exclusions) == 0 && len(managed.Exclusions) > 0 {
-		dep.Exclusions = managed.Exclusions
+	// Managed exclusions add to the ones the dependency's own POM
+	// states: either is a reason to leave something out. The list is a
+	// new one, as the dependency's belongs to a POM read once and shared.
+	if len(managed.Exclusions) > 0 {
+		merged := make([]Exclusion, 0, len(dep.Exclusions)+len(managed.Exclusions))
+		merged = append(merged, dep.Exclusions...)
+		for _, exclusion := range managed.Exclusions {
+			if !slices.Contains(merged, exclusion) {
+				merged = append(merged, exclusion)
+			}
+		}
+		dep.Exclusions = merged
 	}
 
 	return dep

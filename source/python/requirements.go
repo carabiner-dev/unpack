@@ -136,9 +136,13 @@ func logicalLines(data string) []string {
 // viaNames reads the parents out of one comment line under an entry.
 // Compiled files write the annotation in two forms: "# via flask" names
 // one parent on the line, and a bare "# via" opens a list, each parent on
-// a comment line of its own below it. listing says whether such a list
-// is open, and the second return value whether it is after this line. A
-// comment that is neither names nothing.
+// a comment line of its own below it, set in from the "#" the way the
+// compilers write it: "#   flask". listing says whether such a list is
+// open, and the second return value whether it is after this line.
+//
+// A comment that is neither names nothing, and closes the list: one the
+// author wrote under it, "# pinned for the release", is told from an item
+// by sitting right after its "#".
 func viaNames(line string, listing bool) (names []string, stillListing bool) {
 	text := strings.TrimSpace(strings.TrimPrefix(line, "#"))
 	switch {
@@ -146,12 +150,16 @@ func viaNames(line string, listing bool) (names []string, stillListing bool) {
 		return nil, true
 	case strings.HasPrefix(text, "via "):
 		return []string{strings.TrimSpace(strings.TrimPrefix(text, "via "))}, false
-	case listing && text != "":
+	case listing && text != "" && strings.HasPrefix(line, viaListIndent):
 		return []string{text}, true
 	default:
-		return nil, listing
+		return nil, false
 	}
 }
+
+// viaListIndent opens an item of a via list: the comment mark and at least
+// two spaces. pip-compile and uv write three.
+const viaListIndent = "#  "
 
 // inlineComment matches the comment a line ends with. As pip reads it, a
 // "#" opens a comment only after whitespace, which leaves the fragment of

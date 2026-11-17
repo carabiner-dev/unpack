@@ -436,6 +436,251 @@ target-normal-and-dev = "1.0"
 	require.Equal(t, DepTypeNormal, deps["target-normal-and-dev"])
 }
 
+// TestRenamedDependencyTypes checks that a dependency declared under
+// another name is typed by the crate it renames, the name Cargo.lock knows
+// it by, so a renamed dev dependency is left out like any other.
+func TestRenamedDependencyTypes(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "Cargo.toml"), []byte(`
+[package]
+name = "test-pkg"
+version = "1.0.0"
+
+[dependencies]
+json = { package = "serde_json", version = "1.0" }
+
+[dev-dependencies]
+tmp = { package = "tempfile", version = "3" }
+`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "Cargo.lock"), []byte(`
+version = 4
+
+[[package]]
+name = "serde_json"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "tempfile"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "test-pkg"
+version = "1.0.0"
+dependencies = [
+  "serde_json",
+  "tempfile",
+]
+`), 0o600))
+
+	toml, err := ParseCargoToml(tmpDir)
+	require.NoError(t, err)
+	require.Equal(t, map[string]DependencyType{
+		"serde_json": DepTypeNormal,
+		"tempfile":   DepTypeDev,
+	}, toml.GetDirectDependencies())
+
+	d := New()
+	nl, err := d.Extract(&api.DecomposerOptions{WorkDir: tmpDir, Networking: api.NetworkDisabled})
+	require.NoError(t, err)
+	require.Equal(t, []string{"test-pkg -> serde_json"}, rustEdges(nl))
+
+	nl, err = d.Extract(&api.DecomposerOptions{WorkDir: tmpDir, Networking: api.NetworkDisabled, IncludeDev: true})
+	require.NoError(t, err)
+	require.Equal(t, []string{"test-pkg -> serde_json", "test-pkg -> tempfile"}, rustEdges(nl))
+}
+
+// TestMemberDependencyTypes checks that the dependencies of a workspace
+// member are typed by the member's own manifest: found through the
+// workspace's member patterns or a path dependency, with a dependency it
+// inherits from the workspace typed by the crate the workspace names.
+func TestMemberDependencyTypes(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	write := func(rel, content string) {
+		path := filepath.Join(tmpDir, filepath.FromSlash(rel))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	}
+
+	write("Cargo.toml", `
+[workspace]
+members = ["crates/*"]
+
+[workspace.dependencies]
+tmp = { package = "tempfile", version = "3" }
+`)
+	write("crates/app/Cargo.toml", `
+[package]
+name = "app"
+version = "1.0.0"
+
+[dependencies]
+helper = { path = "../../helper" }
+serde = "1"
+
+[dev-dependencies]
+tmp = { workspace = true }
+
+[build-dependencies]
+cc = "1"
+`)
+	// Not matched by the member patterns: reached by path alone.
+	write("helper/Cargo.toml", `
+[package]
+name = "helper"
+version = "0.1.0"
+
+[dev-dependencies]
+serde = "1"
+`)
+	write("Cargo.lock", `
+version = 4
+
+[[package]]
+name = "app"
+version = "1.0.0"
+dependencies = [
+  "cc",
+  "helper",
+  "serde",
+  "tempfile",
+]
+
+[[package]]
+name = "cc"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "helper"
+version = "0.1.0"
+dependencies = [
+  "serde",
+]
+
+[[package]]
+name = "serde"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "tempfile"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+`)
+
+	root, err := ParseCargoToml(tmpDir)
+	require.NoError(t, err)
+	members := ReadMemberManifests(tmpDir, root)
+	require.Len(t, members, 2)
+	require.Contains(t, members, "app")
+	require.Contains(t, members, "helper")
+
+	// By default only what each member needs at runtime: serde is a dev
+	// dependency of helper, and a normal one of app.
+	d := New()
+	nl, err := d.Extract(&api.DecomposerOptions{WorkDir: tmpDir, Networking: api.NetworkDisabled})
+	require.NoError(t, err)
+	require.Equal(t, []string{"app -> helper", "app -> serde"}, rustEdges(nl))
+
+	nl, err = d.Extract(&api.DecomposerOptions{
+		WorkDir: tmpDir, Networking: api.NetworkDisabled, IncludeDev: true, IncludeBuild: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"app -> cc", "app -> helper", "app -> serde", "app -> tempfile", "helper -> serde",
+	}, rustEdges(nl))
+}
+
+// TestWorkspacePathDependencyOutside checks that in a workspace whose
+// members' manifests are on disk, a local package that is not one of them
+// and that a member requires, a path dependency kept outside the
+// workspace, is reached as a dependency and is not a root. A local
+// package nothing requires stays one, known member or not.
+func TestWorkspacePathDependencyOutside(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	write := func(rel, content string) {
+		path := filepath.Join(tmpDir, filepath.FromSlash(rel))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	}
+
+	write("ws/Cargo.toml", `
+[workspace]
+members = ["crates/*"]
+`)
+	write("ws/crates/app/Cargo.toml", `
+[package]
+name = "app"
+version = "1.0.0"
+
+[dependencies]
+core = { path = "../core" }
+outside = { path = "../../../outside" }
+`)
+	write("ws/crates/core/Cargo.toml", `
+[package]
+name = "core"
+version = "1.0.0"
+`)
+	write("outside/Cargo.toml", `
+[package]
+name = "outside"
+version = "0.5.0"
+
+[dependencies]
+dep = "2"
+`)
+	write("ws/Cargo.lock", `
+version = 4
+
+[[package]]
+name = "app"
+version = "1.0.0"
+dependencies = [
+  "core",
+  "outside",
+]
+
+[[package]]
+name = "core"
+version = "1.0.0"
+
+[[package]]
+name = "dep"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "outside"
+version = "0.5.0"
+dependencies = [
+  "dep",
+]
+
+[[package]]
+name = "unlisted"
+version = "0.1.0"
+`)
+
+	nl, err := New().Extract(&api.DecomposerOptions{
+		WorkDir: filepath.Join(tmpDir, "ws"), Networking: api.NetworkDisabled,
+	})
+	require.NoError(t, err)
+
+	// core is a member though app requires it; outside is not one; and
+	// unlisted, which has no manifest here, is required by nothing.
+	require.Equal(t, []string{"app", "core", "unlisted"}, rustRootNames(nl))
+	require.Equal(t, []string{"app -> core", "app -> outside", "outside -> dep"}, rustEdges(nl))
+}
+
 // TestEdgeTypesOnlyFromManifestPackage checks that the kinds Cargo.toml
 // declares qualify the edges of the package it describes and no others: a
 // crate the root only uses for its tests is still part of the build when

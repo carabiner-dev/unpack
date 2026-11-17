@@ -354,7 +354,7 @@ func parseBerryInfo(t *testing.T, out string) (set, pairs []string) {
 		// name@virtual:<hash>#npm:version names the same content. The
 		// oracle states them, and the comparison holding anyway is what
 		// proves the reader collapses them onto one node each.
-		name, err := yarnSelectorName(stripVirtual(entry.Value))
+		name, _, err := yarnSelectorName(stripVirtual(entry.Value))
 		require.NoError(t, err)
 		key := name + "@" + entry.Children.Version
 		seen[key] = true

@@ -142,6 +142,13 @@ func (pb *poetryBuilder) walkRequirements(reqs []*requirement, parent *sbom.Node
 		if !holds {
 			continue
 		}
+		// A legacy table restricts a requirement to Python versions
+		// beside its marker. One that cannot be read restricts nothing.
+		if req.Python != "" {
+			if meets, known := satisfies(pb.env.PythonFullVersion, req.Python); known && !meets {
+				continue
+			}
+		}
 		if err := pb.addEdge(req.Name, req.Specifier, req.Extras, parent, edgeType); err != nil {
 			return err
 		}

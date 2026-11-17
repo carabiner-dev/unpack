@@ -641,6 +641,87 @@ content-hash = "abc"
 	}
 }
 
+// TestExtractPoetryLegacyConstraints reads a manifest in Poetry's legacy
+// table, whose constraints are its own: caret and tilde ranges, and for a
+// dependency that differs by environment a list of them, each restricted
+// to Python versions or a platform. They choose among the versions a 2.0
+// lock holds for one name.
+func TestExtractPoetryLegacyConstraints(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte(`[tool.poetry]
+name = "legacyapp"
+version = "0.1.0"
+description = ""
+authors = []
+
+[tool.poetry.dependencies]
+python = ">=3.7"
+bypython = [
+    {version = "^1.5", python = "<3.9"},
+    {version = "^2.5", python = "^3.9"},
+]
+byplatform = [
+    {version = "~1.0", platform = "linux"},
+    {version = "~2.0", platform = "win32"},
+]
+ranged = "^2.0"
+`), 0o600))
+
+	entry := func(name, version string) string {
+		return `[[package]]
+name = "` + name + `"
+version = "` + version + `"
+description = ""
+optional = false
+python-versions = ">=3.7"
+files = []
+
+`
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "poetry.lock"), []byte(
+		entry("byplatform", "1.0.3")+entry("byplatform", "2.0.1")+
+			entry("bypython", "1.5.2")+entry("bypython", "2.5.0")+
+			entry("ranged", "1.9.0")+entry("ranged", "2.3.0")+`[metadata]
+lock-version = "2.0"
+python-versions = ">=3.7"
+content-hash = "abc"
+`), 0o600))
+
+	for _, tc := range []struct {
+		name                string
+		platform, python    string
+		bypython, platform2 string
+	}{
+		{name: "linux, 3.12", platform: "linux/amd64", python: "3.12", bypython: "2.5.0", platform2: "1.0.3"},
+		{name: "linux, 3.8", platform: "linux/amd64", python: "3.8", bypython: "1.5.2", platform2: "1.0.3"},
+		{name: "windows, 3.12", platform: "windows/amd64", python: "3.12", bypython: "2.5.0", platform2: "2.0.1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			opts := &api.DecomposerOptions{WorkDir: dir, Networking: api.NetworkDisabled}
+			opts.SetDriverOptions(New(), &Options{Platform: tc.platform, PythonVersion: tc.python})
+			nl, err := New().Extract(opts)
+			require.NoError(t, err)
+
+			// nodeNamed requires one node of the name: each dependency
+			// is in the graph once, at the version meant for here.
+			root := nodeNamed(t, nl, "legacyapp")
+			for name, version := range map[string]string{
+				"bypython":   tc.bypython,
+				"byplatform": tc.platform2,
+				"ranged":     "2.3.0",
+			} {
+				node := nodeNamed(t, nl, name)
+				require.Equal(t, version, node.GetVersion(), name)
+				require.True(t, hasEdge(nl, sbom.Edge_dependsOn, root, node), name)
+			}
+			require.Len(t, nl.GetNodes(), 4)
+		})
+	}
+}
+
 // TestExtractDispatch pins which lockfile wins when a codebase has
 // several: uv.lock is the one uv keeps current.
 func TestExtractDispatch(t *testing.T) {
@@ -828,6 +909,47 @@ werkzeug==3.0.1
 	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, jinja2, markupsafe))
 	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, nodeNamed(t, nl, "werkzeug"), markupsafe))
 	require.False(t, hasEdge(nl, sbom.Edge_dependsOn, root, markupsafe))
+}
+
+// TestExtractRequirementsCommentUnderViaList reads a file where the
+// author left a comment right under a via list: it is not one more
+// parent, and neither is anything after it.
+func TestExtractRequirementsCommentUnderViaList(t *testing.T) {
+	t.Parallel()
+
+	dir := filepath.Join(t.TempDir(), "vialist")
+	require.NoError(t, os.Mkdir(dir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte(
+		`flask==3.0.0
+    # via -r requirements.in
+jinja2==3.1.2
+    # via flask
+markupsafe==2.1.3
+    # via
+    #   jinja2
+    #   werkzeug
+# requests
+#   flask
+requests==2.31.0
+    # via -r requirements.in
+werkzeug==3.0.1
+    # via flask
+`), 0o600))
+
+	opts := linuxOpts(t, "3.12")
+	opts.WorkDir = dir
+	opts.Networking = api.NetworkDisabled
+	nl, err := New().Extract(opts)
+	require.NoError(t, err)
+
+	markupsafe := nodeNamed(t, nl, "markupsafe")
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, nodeNamed(t, nl, "jinja2"), markupsafe))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, nodeNamed(t, nl, "werkzeug"), markupsafe))
+
+	// The comment names a package of the file, and the line after it is
+	// set in like an item: neither is a parent.
+	require.False(t, hasEdge(nl, sbom.Edge_dependsOn, nodeNamed(t, nl, "requests"), markupsafe))
+	require.False(t, hasEdge(nl, sbom.Edge_dependsOn, nodeNamed(t, nl, "flask"), markupsafe))
 }
 
 // TestExtractRequirementsViaKinds reads a compiled file whose annotations
