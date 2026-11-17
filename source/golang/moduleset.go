@@ -5,11 +5,13 @@ package golang
 
 import (
 	"fmt"
+	goversion "go/version"
 	"sort"
 	"strings"
 
 	"github.com/protobom/protobom/pkg/sbom"
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/semver"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 )
@@ -169,10 +171,17 @@ func attachUnreached(trees map[string][]string, rootKey string, modules []Module
 
 // moduleSetFromGoMod reduces a parsed go.mod and the go.sum beside it to a
 // module set: the requirements with replace directives applied and excludes
-// dropped, split into the direct ones and those marked "// indirect", plus
-// every module go.sum knows about, which is how transitive modules enter
-// the set. A missing or unreadable go.sum leaves the set with the
-// requirements alone.
+// dropped, split into the direct ones and those marked "// indirect".
+//
+// From Go 1.17 on, go.mod lists every module the build needs, each at the
+// version the build selected, so the requirements are the whole set and
+// go.sum only contributes checksums. go.sum also records every other
+// version whose go.mod was read while resolving the graph, and modules
+// only the tests of a dependency need; none of those are in the build.
+//
+// An older go.mod lists little more than the direct requirements, so there
+// the transitive modules are taken from go.sum (see selectFromGoSum). A
+// missing or unreadable go.sum leaves the set with the requirements alone.
 func (d *Decomposer) moduleSetFromGoMod(root *modfile.File, goModPath string) *ModuleSet {
 	set := &ModuleSet{
 		Main:     Module{Path: root.Module.Mod.Path},
@@ -226,26 +235,69 @@ func (d *Decomposer) moduleSetFromGoMod(root *modfile.File, goModPath string) *M
 		}
 	}
 
-	// Sorted for a deterministic module order.
-	keys := make([]string, 0, len(sums))
-	for key := range sums {
-		keys = append(keys, key)
+	if listsWholeBuild(set.GoVersion) {
+		return set
 	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		if _, dup := seen[key]; dup {
-			continue
-		}
+
+	required := make(map[string]struct{}, len(set.Modules))
+	for _, m := range set.Modules {
+		required[m.Path] = struct{}{}
+	}
+	set.Modules = append(set.Modules, selectFromGoSum(sums, required, excludes)...)
+
+	return set
+}
+
+// completeGoModVersion is the Go release from which go.mod lists every
+// module needed to build the main module, not only the ones it imports
+// (module graph pruning).
+const completeGoModVersion = "go1.17"
+
+// listsWholeBuild reports whether a go.mod declaring this Go version lists
+// the whole build. A missing or unparseable version is treated as old.
+func listsWholeBuild(goVersion string) bool {
+	return goversion.Compare("go"+goVersion, completeGoModVersion) >= 0
+}
+
+// selectFromGoSum picks, from a go.sum, the modules of a build whose go.mod
+// does not list them, sorted by path.
+//
+// The go command builds one version of each module, the highest that
+// anything in the module graph requires, and a tidy go.sum has an entry
+// for every version in that graph. So the highest version go.sum records
+// for a path is the one selected. Of an entry's two possible lines, the
+// module's own checksum is only there when its source was downloaded, so a
+// selected version that go.sum knows only by its go.mod took part in
+// resolving the graph but is not in the build, and is left out.
+//
+// Paths in required are skipped: go.mod already says which version of
+// those is built. Excluded versions are not candidates.
+func selectFromGoSum(sums map[string][]string, required, excludes map[string]struct{}) []Module {
+	selected := make(map[string]string)
+	for key := range sums {
 		if _, excluded := excludes[key]; excluded {
 			continue
 		}
-		modPath, version, ok := strings.Cut(key, "@")
+		modPath, modVersion, ok := strings.Cut(key, "@")
 		if !ok {
 			continue
 		}
-		seen[key] = struct{}{}
-		set.Modules = append(set.Modules, Module{Path: modPath, Version: version, Sums: sums[key]})
+		if _, ok := required[modPath]; ok {
+			continue
+		}
+		if current, ok := selected[modPath]; !ok || semver.Compare(modVersion, current) > 0 {
+			selected[modPath] = modVersion
+		}
 	}
 
-	return set
+	modules := make([]Module, 0, len(selected))
+	for modPath, modVersion := range selected {
+		m := Module{Path: modPath, Version: modVersion}
+		if m.Sums = sums[m.Key()]; len(m.Sums) == 0 {
+			continue
+		}
+		modules = append(modules, m)
+	}
+	sort.Slice(modules, func(i, j int) bool { return modules[i].Path < modules[j].Path })
+	return modules
 }
