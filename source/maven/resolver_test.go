@@ -156,12 +156,20 @@ func TestMergeParent(t *testing.T) {
 				{GroupID: "g", ArtifactID: "only-parent", Version: "2.0"},
 			},
 		},
+		Dependencies: []Dependency{
+			{GroupID: "g", ArtifactID: "declared", Version: "1.0"},
+			{GroupID: "g", ArtifactID: "inherited", Version: "2.0"},
+		},
 		Licenses: []License{{Name: "Apache-2.0"}},
 	}
 
 	child := &POM{
 		ArtifactID: "child",
 		Properties: Properties{"child.prop": "cval", "shared": "child"},
+		Dependencies: []Dependency{
+			{GroupID: "g", ArtifactID: "own", Version: "3.0"},
+			{GroupID: "g", ArtifactID: "declared", Version: "5.0"},
+		},
 		DependencyManagement: &DependencyManagement{
 			Dependencies: []Dependency{
 				{GroupID: "g", ArtifactID: "managed", Version: "2.0"},
@@ -180,6 +188,20 @@ func TestMergeParent(t *testing.T) {
 	require.Equal(t, "child", merged.Properties["shared"])
 
 	// DependencyManagement: child's "managed" wins, parent's "only-parent" inherited
+	require.Len(t, merged.DependencyManagement.Dependencies, 2)
+
+	// Dependencies: the child's own first and as it declares them, then
+	// what only the parent declares.
+	require.Equal(t, []Dependency{
+		{GroupID: "g", ArtifactID: "own", Version: "3.0"},
+		{GroupID: "g", ArtifactID: "declared", Version: "5.0"},
+		{GroupID: "g", ArtifactID: "inherited", Version: "2.0"},
+	}, merged.Dependencies)
+
+	// Merging again adds nothing: a POM is fetched once and may be
+	// resolved more than once.
+	merged = MergeParent(merged, parent)
+	require.Len(t, merged.Dependencies, 3)
 	require.Len(t, merged.DependencyManagement.Dependencies, 2)
 
 	// Licenses inherited

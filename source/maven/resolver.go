@@ -485,6 +485,25 @@ func MergeParent(child, parent *POM) *POM {
 		}
 	}
 
+	// Inherit dependencies: a project depends on what its parent declares
+	// as much as on what it declares itself. The child's own declaration
+	// of a dependency stands, and the parent's others follow the child's,
+	// the order Maven merges them in, which decides between two versions
+	// at the same depth.
+	if len(parent.Dependencies) > 0 {
+		declared := make(map[string]struct{}, len(child.Dependencies))
+		for i := range child.Dependencies {
+			declared[child.Dependencies[i].Key()] = struct{}{}
+		}
+		for i := range parent.Dependencies {
+			d := parent.Dependencies[i]
+			if _, exists := declared[d.Key()]; !exists {
+				declared[d.Key()] = struct{}{}
+				child.Dependencies = append(child.Dependencies, d)
+			}
+		}
+	}
+
 	// Inherit licenses if child has none
 	if len(child.Licenses) == 0 {
 		child.Licenses = parent.Licenses

@@ -289,6 +289,63 @@ func TestBuildTreeManagementOverridesTransitive(t *testing.T) {
 	require.NotContains(t, dt.resolved, "com.dep:testonly")
 }
 
+// TestBuildTreeInheritsParentDependencies checks that what a parent POM
+// declares is a dependency of the POMs that inherit from it: of the
+// project, and of a dependency with a parent of its own.
+func TestBuildTreeInheritsParentDependencies(t *testing.T) {
+	t.Parallel()
+
+	const header = `<?xml version="1.0"?><project>`
+	dep := func(artifact, version string) string {
+		return "<dependency><groupId>com.dep</groupId><artifactId>" + artifact + "</artifactId><version>" + version + "</version></dependency>"
+	}
+	url := func(artifact, version string) string {
+		return "https://repo.test/com/dep/" + artifact + "/" + version + "/" + artifact + "-" + version + ".pom"
+	}
+
+	resolver := newTestResolver(map[string]string{
+		// The project's parent brings in a logging library, with its
+		// version in a property the project overrides.
+		url("app-parent", "1.0"): header + `<groupId>com.dep</groupId><artifactId>app-parent</artifactId><version>1.0</version>
+<packaging>pom</packaging>
+<properties><logging.version>1.0</logging.version></properties>
+<dependencies>` + dep("logging", "${logging.version}") + `</dependencies></project>`,
+		// A dependency whose own parent brings something in too.
+		url("lib", "1.0"): header + `<artifactId>lib</artifactId>
+<parent><groupId>com.dep</groupId><artifactId>lib-parent</artifactId><version>1.0</version></parent></project>`,
+		url("lib-parent", "1.0"): header + `<groupId>com.dep</groupId><artifactId>lib-parent</artifactId><version>1.0</version>
+<packaging>pom</packaging>
+<dependencies>` + dep("annotations", "4.0") + `</dependencies></project>`,
+		url("logging", "2.0"):     header + `<groupId>com.dep</groupId><artifactId>logging</artifactId><version>2.0</version></project>`,
+		url("annotations", "4.0"): header + `<groupId>com.dep</groupId><artifactId>annotations</artifactId><version>4.0</version></project>`,
+	})
+
+	pom, err := resolver.ResolveEffectivePOM(&POM{
+		GroupID:    "com.example",
+		ArtifactID: "app",
+		Version:    "1.0.0",
+		Parent:     &Parent{GroupID: "com.dep", ArtifactID: "app-parent", Version: "1.0"},
+		Properties: Properties{"logging.version": "2.0"},
+		Dependencies: []Dependency{
+			{GroupID: "com.dep", ArtifactID: "lib", Version: "1.0"},
+		},
+	})
+	require.NoError(t, err)
+
+	dt := NewDependencyTree(pom, resolver, &defaultOptions)
+	require.NoError(t, dt.Build())
+
+	// From the project's parent, under the root, at the version the
+	// project's own property gives it.
+	require.Equal(t, "2.0", dt.resolved["com.dep:logging"].Coordinate.Version)
+	require.Equal(t,
+		[]string{"com.dep:lib:1.0", "com.dep:logging:2.0"},
+		dt.edges["com.example:app:1.0.0"])
+
+	// From the dependency's parent, under the dependency.
+	require.Equal(t, []string{"com.dep:annotations:4.0"}, dt.edges["com.dep:lib:1.0"])
+}
+
 func TestToNodeList(t *testing.T) {
 	t.Parallel()
 	pom := &POM{
