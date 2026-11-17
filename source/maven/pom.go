@@ -64,6 +64,70 @@ type Parent struct {
 	ArtifactID   string `xml:"artifactId"`
 	Version      string `xml:"version"`
 	RelativePath string `xml:"relativePath"`
+
+	// noLocalLookup is set when the element states an empty relativePath,
+	// which is how a POM says its parent is not in the source tree and is
+	// to be read from the repository. Leaving the element out means the
+	// default place, ../pom.xml.
+	noLocalLookup bool
+}
+
+// UnmarshalXML reads a parent reference, telling a relativePath that is
+// stated empty from one that is not stated.
+func (p *Parent) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	var raw struct {
+		GroupID      string  `xml:"groupId"`
+		ArtifactID   string  `xml:"artifactId"`
+		Version      string  `xml:"version"`
+		RelativePath *string `xml:"relativePath"`
+	}
+	if err := d.DecodeElement(&raw, &start); err != nil {
+		return err
+	}
+	p.GroupID, p.ArtifactID, p.Version = raw.GroupID, raw.ArtifactID, raw.Version
+	if raw.RelativePath != nil {
+		p.RelativePath = strings.TrimSpace(*raw.RelativePath)
+		p.noLocalLookup = p.RelativePath == ""
+	}
+	return nil
+}
+
+// defaultParentPath is where a parent POM is looked for when the reference
+// to it states no relativePath.
+const defaultParentPath = "../pom.xml"
+
+// readLocalParent reads the parent of a POM found in dir from the source
+// tree: the file its relativePath names, a directory standing for the
+// pom.xml in it. It is the parent only when it is the artifact the POM
+// names as such; anything else there is not, and the parent is to be had
+// from the repository.
+func readLocalParent(pom *POM, dir string) (parent *POM, parentDir string) {
+	if pom.Parent == nil || dir == "" || pom.Parent.noLocalLookup {
+		return nil, ""
+	}
+	rel := pom.Parent.RelativePath
+	if rel == "" {
+		rel = defaultParentPath
+	}
+	path := filepath.Join(dir, filepath.FromSlash(rel))
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		path = filepath.Join(path, "pom.xml")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, ""
+	}
+	candidate, err := ParsePomXMLData(data)
+	if err != nil {
+		return nil, ""
+	}
+	if candidate.ArtifactID != pom.Parent.ArtifactID ||
+		candidate.EffectiveGroupID() != pom.Parent.GroupID ||
+		candidate.EffectiveVersion() != pom.Parent.Version {
+		return nil, ""
+	}
+	return candidate, filepath.Dir(path)
 }
 
 // Dependency represents a Maven dependency declaration.

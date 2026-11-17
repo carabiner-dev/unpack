@@ -79,18 +79,24 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	}
 
 	// 3. Resolve effective POM (parent chain + BOM imports + interpolation)
-	effective := pom
+	// A parent is read from the source tree when it is there, as in a
+	// multi-module project, and from the repository otherwise.
+	pomDir := opts.WorkDir
+	if pomDir == "" {
+		pomDir = "."
+	}
+	var effective *POM
 	if resolver != nil {
-		resolved, err := resolver.ResolveEffectivePOM(pom)
-		if err != nil {
-			return nil, fmt.Errorf("resolving effective POM: %w", err)
-		}
-		effective = resolved
+		effective, err = resolver.ResolveEffectivePOMIn(pom, pomDir)
 	} else {
-		// Without the network there is no parent or BOM to read, but
-		// what the POM states itself still stands: its own properties
-		// and its own dependency management.
-		InterpolatePOM(effective)
+		// Without the network there is no repository to read a parent
+		// or a BOM from, but what the source tree states still stands:
+		// the POM's own properties and dependency management, and those
+		// of the parents beside it.
+		effective, err = ResolveLocalEffectivePOM(pom, pomDir)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("resolving effective POM: %w", err)
 	}
 
 	// 4. Build dependency tree. Without a resolver it stops at what the

@@ -8,9 +8,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/require"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
@@ -137,6 +140,165 @@ func TestDecomposerExtractNetworkingDisabled(t *testing.T) {
 	require.Len(t, nl.GetEdges(), 1)
 	require.Equal(t, root.GetId(), nl.GetEdges()[0].GetFrom())
 	require.Len(t, nl.GetEdges()[0].GetTo(), 2)
+}
+
+// writeMultiModule lays out a multi-module project in a temp dir: a root
+// POM that is the parent of a parent kept in a directory of its own, which
+// a module names by relativePath. Neither parent is in any repository. It
+// returns the module's directory.
+func writeMultiModule(t *testing.T, moduleParent string) string {
+	t.Helper()
+	root := t.TempDir()
+	write := func(rel, content string) {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	}
+
+	write("pom.xml", `<?xml version="1.0"?>
+<project>
+    <groupId>com.example</groupId>
+    <artifactId>reactor</artifactId>
+    <version>2.0.0</version>
+    <packaging>pom</packaging>
+    <properties><managed.version>3.1.0</managed.version></properties>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.dep</groupId>
+                <artifactId>managed</artifactId>
+                <version>${managed.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>`)
+	write("build/parent/pom.xml", `<?xml version="1.0"?>
+<project>
+    <parent>
+        <groupId>com.example</groupId>
+        <artifactId>reactor</artifactId>
+        <version>2.0.0</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+    <artifactId>module-parent</artifactId>
+    <packaging>pom</packaging>
+    <dependencies>
+        <dependency>
+            <groupId>com.dep</groupId>
+            <artifactId>inherited</artifactId>
+            <version>1.5.0</version>
+        </dependency>
+    </dependencies>
+</project>`)
+	write("module/pom.xml", `<?xml version="1.0"?>
+<project>
+    `+moduleParent+`
+    <artifactId>module</artifactId>
+    <dependencies>
+        <dependency>
+            <groupId>com.dep</groupId>
+            <artifactId>managed</artifactId>
+        </dependency>
+    </dependencies>
+</project>`)
+	return filepath.Join(root, "module")
+}
+
+// TestDecomposerExtractLocalParent verifies that a module's parent is read
+// from the source tree, where a multi-module project keeps it, and that
+// parent's own parent from there in turn: the module gets the version its
+// reactor manages and the dependency its parent declares, with or without
+// a repository to ask.
+func TestDecomposerExtractLocalParent(t *testing.T) {
+	t.Parallel()
+
+	const parentRef = `<parent>
+        <groupId>com.example</groupId>
+        <artifactId>module-parent</artifactId>
+        <version>2.0.0</version>
+        <relativePath>../build/parent</relativePath>
+    </parent>`
+
+	purls := func(t *testing.T, nl *sbom.NodeList) []string {
+		t.Helper()
+		// Without the qualifier naming the repository, which a resolver
+		// pointed at a repository of its own adds.
+		out := make([]string, 0, len(nl.GetNodes()))
+		for _, n := range nl.GetNodes() {
+			purl, _, _ := strings.Cut(n.GetIdentifiers()[int32(1)], "?")
+			out = append(out, purl)
+		}
+		return out
+	}
+	want := []string{
+		"pkg:maven/com.example/module@2.0.0",
+		"pkg:maven/com.dep/managed@3.1.0",
+		"pkg:maven/com.dep/inherited@1.5.0",
+	}
+
+	t.Run("without a repository", func(t *testing.T) {
+		t.Parallel()
+		nl, err := New().Extract(&api.DecomposerOptions{
+			WorkDir:    writeMultiModule(t, parentRef),
+			Networking: api.NetworkDisabled,
+		})
+		require.NoError(t, err)
+		require.ElementsMatch(t, want, purls(t, nl))
+	})
+
+	t.Run("with a repository that has neither parent", func(t *testing.T) {
+		t.Parallel()
+		dir := writeMultiModule(t, parentRef)
+		pom, err := ParsePomXML(dir)
+		require.NoError(t, err)
+
+		resolver := NewResolver(&Options{RepoURL: "https://unused.test", Concurrency: 1})
+		resolver.Agent = resolver.Agent.WithRetries(0)
+		resolver.Agent.SetImplementation(&failingAgentImpl{})
+
+		effective, err := resolver.ResolveEffectivePOMIn(pom, dir)
+		require.NoError(t, err)
+		dt := NewDependencyTree(effective, resolver, &defaultOptions)
+		require.NoError(t, dt.Build())
+		nl, err := dt.ToNodeList(nil)
+		require.NoError(t, err)
+		require.ElementsMatch(t, want, purls(t, nl))
+	})
+
+	// What is at the path is the parent only when it is the artifact the
+	// module names, and a relativePath stated empty says not to look.
+	for name, ref := range map[string]string{
+		"another artifact at the path": `<parent>
+        <groupId>com.example</groupId>
+        <artifactId>some-other-parent</artifactId>
+        <version>2.0.0</version>
+        <relativePath>../build/parent</relativePath>
+    </parent>`,
+		"another version at the path": `<parent>
+        <groupId>com.example</groupId>
+        <artifactId>module-parent</artifactId>
+        <version>9.9.9</version>
+        <relativePath>../build/parent</relativePath>
+    </parent>`,
+		"an empty relativePath": `<parent>
+        <groupId>com.example</groupId>
+        <artifactId>module-parent</artifactId>
+        <version>2.0.0</version>
+        <relativePath/>
+    </parent>`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			nl, err := New().Extract(&api.DecomposerOptions{
+				WorkDir:    writeMultiModule(t, ref),
+				Networking: api.NetworkDisabled,
+			})
+			require.NoError(t, err)
+			for _, p := range purls(t, nl) {
+				require.NotContains(t, p, "inherited", "the local POM was merged though it is not the parent")
+			}
+		})
+	}
 }
 
 // TestDecomposerExtractTransientFails verifies that a transient fetch failure
