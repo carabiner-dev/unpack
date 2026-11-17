@@ -172,14 +172,21 @@ func (pb *pnpmBuilder) addEdge(importerDir, name, ref string, parent *sbom.Node,
 
 	// The package's own edges: runtime and optional, the latter kept as
 	// information — filtering transitives is the caller's business.
-	for _, dep := range sortedDepNames(pkg.Dependencies) {
-		if err := pb.addEdge(importerDir, dep, pkg.Dependencies[dep], node, sbom.Edge_dependsOn); err != nil {
-			return err
+	// A name lists more than one version when the package is installed
+	// against different sets of peers and they resolve it differently:
+	// the node stands for all of them and gets an edge to each.
+	for _, dep := range sortedKeys(pkg.DependencyVersions) {
+		for _, ref := range pkg.DependencyVersions[dep] {
+			if err := pb.addEdge(importerDir, dep, ref, node, sbom.Edge_dependsOn); err != nil {
+				return err
+			}
 		}
 	}
-	for _, dep := range sortedDepNames(pkg.OptionalDependencies) {
-		if err := pb.addEdge(importerDir, dep, pkg.OptionalDependencies[dep], node, sbom.Edge_optionalDependency); err != nil {
-			return err
+	for _, dep := range sortedKeys(pkg.OptionalDependencyVersions) {
+		for _, ref := range pkg.OptionalDependencyVersions[dep] {
+			if err := pb.addEdge(importerDir, dep, ref, node, sbom.Edge_optionalDependency); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

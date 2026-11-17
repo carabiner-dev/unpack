@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -51,9 +52,59 @@ type PnpmPackage struct {
 	Tarball   string
 
 	// Dependencies and OptionalDependencies are the package's edges,
-	// name to resolved version.
+	// name to resolved version. When the package's peer variants (see
+	// DependencyVersions) resolve a name differently, the version here
+	// is the one of the variant whose key sorts first.
 	Dependencies         map[string]string
 	OptionalDependencies map[string]string
+
+	// DependencyVersions and OptionalDependencyVersions are the same
+	// edges, with every version a name resolves to, sorted.
+	//
+	// pnpm installs a package once per set of peers it is resolved
+	// against, and the lock holds an entry for each, its key suffixed
+	// with the peers: plug@1.0.0(host@1.0.0) and plug@1.0.0(host@2.0.0).
+	// They are one package at one version and so one entry here, whose
+	// edges are the union of its variants': a name the variants resolve
+	// differently lists each version.
+	DependencyVersions         map[string][]string
+	OptionalDependencyVersions map[string][]string
+}
+
+// addEdges merges the edges of one lock entry into the package.
+func (p *PnpmPackage) addEdges(dependencies, optional map[string]string) {
+	p.Dependencies, p.DependencyVersions = mergePnpmRefs(
+		p.Dependencies, p.DependencyVersions, pnpmVersionRefs(dependencies))
+	p.OptionalDependencies, p.OptionalDependencyVersions = mergePnpmRefs(
+		p.OptionalDependencies, p.OptionalDependencyVersions, pnpmVersionRefs(optional))
+}
+
+// mergePnpmRefs adds one entry's name-to-version references to the edges
+// merged so far: the first version seen for a name stands in the single
+// map, and every distinct one is kept, sorted, in the other.
+func mergePnpmRefs(
+	single map[string]string, all map[string][]string, refs map[string]string,
+) (mergedSingle map[string]string, mergedAll map[string][]string) {
+	if len(refs) == 0 {
+		return single, all
+	}
+	if single == nil {
+		single = make(map[string]string, len(refs))
+		all = make(map[string][]string, len(refs))
+	}
+	for name, ref := range refs {
+		if _, ok := single[name]; !ok {
+			single[name] = ref
+		}
+		at := sort.SearchStrings(all[name], ref)
+		if at < len(all[name]) && all[name][at] == ref {
+			continue
+		}
+		all[name] = append(all[name], "")
+		copy(all[name][at+1:], all[name][at:])
+		all[name][at] = ref
+	}
+	return single, all
 }
 
 // rawPnpmLock is the file as YAML sees it, both generations at once.
@@ -132,24 +183,33 @@ func ParsePnpmLock(data []byte) (*PnpmLock, error) {
 		}
 	}
 
-	for key, entry := range raw.Packages {
+	// Keys are taken in order so that entries which fold into one
+	// package, its peer variants, merge the same way every run.
+	//
+	// Version 6 writes an entry per variant here, edges included.
+	for _, key := range sortedKeys(raw.Packages) {
+		entry := raw.Packages[key]
 		name, version, err := pnpmKeyParts(key)
 		if err != nil {
 			return nil, err
 		}
-		pkg := &PnpmPackage{
-			Name:                 name,
-			Version:              version,
-			Integrity:            entry.Resolution.Integrity,
-			Tarball:              entry.Resolution.Tarball,
-			Dependencies:         pnpmVersionRefs(entry.Dependencies),
-			OptionalDependencies: pnpmVersionRefs(entry.OptionalDependencies),
+		pkg, ok := lock.Packages[name+"@"+version]
+		if !ok {
+			pkg = &PnpmPackage{
+				Name:      name,
+				Version:   version,
+				Integrity: entry.Resolution.Integrity,
+				Tarball:   entry.Resolution.Tarball,
+			}
+			lock.Packages[name+"@"+version] = pkg
 		}
-		lock.Packages[name+"@"+version] = pkg
+		pkg.addEdges(entry.Dependencies, entry.OptionalDependencies)
 	}
 
-	// Version 9 keeps the edges in snapshots; fold them onto the packages.
-	for key, snapshot := range raw.Snapshots {
+	// Version 9 keeps the edges in snapshots, one per variant; fold them
+	// onto the packages.
+	for _, key := range sortedKeys(raw.Snapshots) {
+		snapshot := raw.Snapshots[key]
 		name, version, err := pnpmKeyParts(key)
 		if err != nil {
 			return nil, err
@@ -158,8 +218,7 @@ func ParsePnpmLock(data []byte) (*PnpmLock, error) {
 		if !ok {
 			continue
 		}
-		pkg.Dependencies = pnpmVersionRefs(snapshot.Dependencies)
-		pkg.OptionalDependencies = pnpmVersionRefs(snapshot.OptionalDependencies)
+		pkg.addEdges(snapshot.Dependencies, snapshot.OptionalDependencies)
 	}
 
 	return lock, nil
@@ -186,6 +245,16 @@ func pnpmKeyParts(key string) (name, version string, err error) {
 		return "", "", fmt.Errorf("unparseable pnpm package key %q", key)
 	}
 	return key[:at], key[at+1:], nil
+}
+
+// sortedKeys returns a table's keys in order.
+func sortedKeys[V any](table map[string]V) []string {
+	keys := make([]string, 0, len(table))
+	for key := range table {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // stripPeerSuffix drops the parenthesized peer qualifiers pnpm appends to
