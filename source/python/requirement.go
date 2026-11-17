@@ -43,6 +43,11 @@ type requirement struct {
 	// URL is set for a direct reference: "name @ https://..." or a git+
 	// URL.
 	URL string
+
+	// Python restricts the requirement to the Python versions meeting a
+	// constraint, the way a Poetry dependency table states it
+	// (python = ">=3.9"), outside the marker.
+	Python string
 }
 
 // exactPin matches a specifier that names exactly one version: == or ===

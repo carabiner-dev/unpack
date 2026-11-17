@@ -49,8 +49,36 @@ func TestSatisfies(t *testing.T) {
 		{"3.12.0", ">=3.9", true, true},
 		{"3.8.0", ">=3.9", false, true},
 
+		// Poetry's caret: what does not change the leftmost non-zero
+		// component.
+		{"1.5", "^1.2", true, true},
+		{"2.0", "^1.2", false, true},
+		{"1.1", "^1.2", false, true},
+		{"1.9.9", "^1.2.3", true, true},
+		{"0.2.9", "^0.2.3", true, true},
+		{"0.3.0", "^0.2.3", false, true},
+		{"0.0.3", "^0.0.3", true, true},
+		{"0.0.4", "^0.0.3", false, true},
+		{"0.9", "^0", true, true},
+		{"1.0", "^0", false, true},
+		{"1.9", "^1", true, true},
+
+		// Its tilde: the last component written may grow, the minor one
+		// at most. Not PEP 440's ~=, read above.
+		{"1.2.9", "~1.2.3", true, true},
+		{"1.3.0", "~1.2.3", false, true},
+		{"1.2.9", "~1.2", true, true},
+		{"1.3", "~1.2", false, true},
+		{"1.9", "~1", true, true},
+		{"2.0", "~1", false, true},
+
+		// Mixed with the rest, as a Python restriction may be.
+		{"3.12.0", "^3.9", true, true},
+		{"3.8.0", "^3.9 || ~3.7", false, true},
+		{"3.7.4", "^3.9 || ~3.7", true, true},
+
 		// What cannot be read says nothing.
-		{"1.5", "^1.2", false, false},
+		{"1.5", "^not.a.version", false, false},
 		{"not a version", ">=2", false, false},
 	} {
 		holds, known := satisfies(tc.version, tc.constraint)
