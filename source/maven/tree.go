@@ -6,6 +6,7 @@ package maven
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -125,11 +126,6 @@ func (dt *DependencyTree) Build() error {
 		dep := entry.dep
 		key := dep.Key()
 
-		// Skip if already resolved (nearest definition wins)
-		if _, exists := dt.resolved[key]; exists {
-			continue
-		}
-
 		// Skip excluded dependencies
 		if dt.isExcluded(dep.GroupID, dep.ArtifactID, entry.exclusions) {
 			continue
@@ -151,6 +147,15 @@ func (dt *DependencyTree) Build() error {
 
 		// Skip optional dependencies unless configured to include them
 		if dep.IsOptional() && !dt.opts.IncludeOptional {
+			continue
+		}
+
+		// Already resolved: the nearest definition won, and this one
+		// neither changes its version nor is walked again. The parent
+		// depends on the artifact all the same, so it gets its edge, to
+		// the version that was chosen.
+		if winner, exists := dt.resolved[key]; exists {
+			dt.addEdge(entry.parentCoord, winner.Coordinate.String())
 			continue
 		}
 
@@ -240,7 +245,7 @@ func (dt *DependencyTree) Build() error {
 		}
 
 		// Record edge
-		dt.edges[entry.parentCoord] = append(dt.edges[entry.parentCoord], coord.String())
+		dt.addEdge(entry.parentCoord, coord.String())
 
 		// Enqueue transitive dependencies
 		// Accumulate exclusions from this dependency
@@ -326,6 +331,15 @@ func (dt *DependencyTree) AddBuildPlugins() {
 
 		dt.edges[rootCoord.String()] = append(dt.edges[rootCoord.String()], coord.String())
 	}
+}
+
+// addEdge records that one coordinate depends on another, once, and never
+// on itself.
+func (dt *DependencyTree) addEdge(parentCoord, childCoord string) {
+	if parentCoord == childCoord || slices.Contains(dt.edges[parentCoord], childCoord) {
+		return
+	}
+	dt.edges[parentCoord] = append(dt.edges[parentCoord], childCoord)
 }
 
 // applyTransitiveManagement applies the project's dependencyManagement to
