@@ -213,6 +213,82 @@ func TestBuildTreeDependencyManagement(t *testing.T) {
 	require.Equal(t, "5.0.0", dt.resolved["com.dep:managed"].Coordinate.Version)
 }
 
+// TestBuildTreeManagementOverridesTransitive checks that the project's
+// dependencyManagement decides the version and scope of what its
+// dependencies bring in, and only fills in what its own declarations
+// leave out.
+func TestBuildTreeManagementOverridesTransitive(t *testing.T) {
+	t.Parallel()
+
+	pomFor := func(artifact, version, deps string) string {
+		return `<?xml version="1.0"?>
+<project>
+    <groupId>com.dep</groupId>
+    <artifactId>` + artifact + `</artifactId>
+    <version>` + version + `</version>
+    <dependencies>` + deps + `</dependencies>
+</project>`
+	}
+	dep := func(artifact, version, scope string) string {
+		s := "<dependency><groupId>com.dep</groupId><artifactId>" + artifact + "</artifactId><version>" + version + "</version>"
+		if scope != "" {
+			s += "<scope>" + scope + "</scope>"
+		}
+		return s + "</dependency>"
+	}
+	url := func(artifact, version string) string {
+		return "https://repo.test/com/dep/" + artifact + "/" + version + "/" + artifact + "-" + version + ".pom"
+	}
+
+	resolver := newTestResolver(map[string]string{
+		url("lib", "1.0"): pomFor("lib", "1.0",
+			dep("pinned", "1.0", "")+dep("scoped", "1.0", "")+dep("unmanaged", "1.0", "")+dep("testonly", "1.0", "test")),
+		url("pinned", "3.0"):    pomFor("pinned", "3.0", ""),
+		url("scoped", "1.0"):    pomFor("scoped", "1.0", ""),
+		url("unmanaged", "1.0"): pomFor("unmanaged", "1.0", ""),
+		url("direct", "1.0"):    pomFor("direct", "1.0", ""),
+	})
+
+	pom := &POM{
+		GroupID:    "com.example",
+		ArtifactID: "app",
+		Version:    "1.0.0",
+		DependencyManagement: &DependencyManagement{
+			Dependencies: []Dependency{
+				{GroupID: "com.dep", ArtifactID: "pinned", Version: "3.0"},
+				{GroupID: "com.dep", ArtifactID: "scoped", Scope: ScopeRuntime},
+				{GroupID: "com.dep", ArtifactID: "direct", Version: "2.0"},
+				{GroupID: "com.dep", ArtifactID: "testonly", Version: "2.0", Scope: ScopeCompile},
+			},
+		},
+		Dependencies: []Dependency{
+			{GroupID: "com.dep", ArtifactID: "lib", Version: "1.0"},
+			{GroupID: "com.dep", ArtifactID: "direct", Version: "1.0"},
+		},
+	}
+
+	dt := NewDependencyTree(pom, resolver, &defaultOptions)
+	require.NoError(t, dt.Build())
+
+	// The managed version replaces the one lib's POM states.
+	require.Equal(t, "3.0", dt.resolved["com.dep:pinned"].Coordinate.Version)
+	require.Contains(t, dt.edges["com.dep:lib:1.0"], dt.resolved["com.dep:pinned"].Coordinate.String())
+
+	// And so does the managed scope, the version left as stated.
+	require.Equal(t, "1.0", dt.resolved["com.dep:scoped"].Coordinate.Version)
+	require.Equal(t, ScopeRuntime, dt.resolved["com.dep:scoped"].Scope)
+
+	// What management does not name is untouched.
+	require.Equal(t, "1.0", dt.resolved["com.dep:unmanaged"].Coordinate.Version)
+
+	// A version the project declares itself stands.
+	require.Equal(t, "1.0", dt.resolved["com.dep:direct"].Coordinate.Version)
+
+	// A dependency that is not transitive as declared stays out, whatever
+	// scope the project manages it to.
+	require.NotContains(t, dt.resolved, "com.dep:testonly")
+}
+
 func TestToNodeList(t *testing.T) {
 	t.Parallel()
 	pom := &POM{

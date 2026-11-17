@@ -247,13 +247,14 @@ func (dt *DependencyTree) Build() error {
 		allExclusions := append(entry.exclusions, dep.Exclusions...) //nolint:gocritic
 
 		for i := range transitiveDeps {
-			tdep := dt.applyManagement(transitiveDeps[i])
-			tScope := tdep.EffectiveScope()
-
-			// Only compile and runtime deps are transitive
+			// Only compile and runtime deps are transitive. Maven decides
+			// that on the scope the dependency is declared with, before
+			// the project's management has its say.
+			tScope := transitiveDeps[i].EffectiveScope()
 			if tScope != ScopeCompile && tScope != ScopeRuntime {
 				continue
 			}
+			tdep := dt.applyTransitiveManagement(transitiveDeps[i])
 
 			queue = append(queue, queueEntry{
 				dep:         tdep,
@@ -327,7 +328,33 @@ func (dt *DependencyTree) AddBuildPlugins() {
 	}
 }
 
-// applyManagement applies dependencyManagement overrides to a dependency.
+// applyTransitiveManagement applies the project's dependencyManagement to
+// a dependency of one of its dependencies. There the managed version and
+// scope are not defaults but the project's decision: they replace what
+// the dependency's own POM states, which is how a project pins a version
+// across its whole tree.
+func (dt *DependencyTree) applyTransitiveManagement(dep Dependency) Dependency { //nolint:gocritic // returns modified copy
+	managed, ok := dt.managed[dep.Key()]
+	if !ok {
+		return dep
+	}
+
+	if managed.Version != "" {
+		dep.Version = managed.Version
+	}
+	if managed.Scope != "" {
+		dep.Scope = managed.Scope
+	}
+	if len(dep.Exclusions) == 0 && len(managed.Exclusions) > 0 {
+		dep.Exclusions = managed.Exclusions
+	}
+
+	return dep
+}
+
+// applyManagement applies dependencyManagement to a dependency the project
+// declares itself: what the declaration states stands, and management
+// fills in what it leaves out.
 func (dt *DependencyTree) applyManagement(dep Dependency) Dependency { //nolint:gocritic // returns modified copy
 	managed, ok := dt.managed[dep.Key()]
 	if !ok {
