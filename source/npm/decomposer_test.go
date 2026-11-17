@@ -471,6 +471,62 @@ func TestDependencyTypes(t *testing.T) {
 	require.Equal(t, DepTypeOptional, deps["fsevents"])
 }
 
+// TestDirectDependencyTypePrecedence checks the type of a package declared
+// in more than one table: a runtime dependency that is also a dev
+// dependency is a runtime one, and so in the graph without asking for dev.
+func TestDirectDependencyTypePrecedence(t *testing.T) {
+	t.Parallel()
+
+	pkg, err := ParsePackageJSONData([]byte(`{
+		"name": "both-app",
+		"version": "1.0.0",
+		"dependencies": {
+			"both": "^1.0.0"
+		},
+		"devDependencies": {
+			"both": "^1.0.0",
+			"devonly": "^1.0.0"
+		}
+	}`))
+	require.NoError(t, err)
+
+	deps := pkg.GetDirectDependencies()
+	require.Equal(t, DepTypeNormal, deps["both"])
+	require.Equal(t, DepTypeDev, deps["devonly"])
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{
+		"name": "both-app",
+		"version": "1.0.0",
+		"dependencies": {"both": "^1.0.0"},
+		"devDependencies": {"both": "^1.0.0", "devonly": "^1.0.0"}
+	}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package-lock.json"), []byte(`{
+		"name": "both-app",
+		"version": "1.0.0",
+		"lockfileVersion": 3,
+		"packages": {
+			"": {
+				"name": "both-app",
+				"version": "1.0.0",
+				"dependencies": {"both": "^1.0.0"},
+				"devDependencies": {"devonly": "^1.0.0"}
+			},
+			"node_modules/both": {"version": "1.0.0"},
+			"node_modules/devonly": {"version": "1.0.0", "dev": true}
+		}
+	}`), 0o600))
+
+	nl, err := New().Extract(&api.DecomposerOptions{WorkDir: dir, Networking: api.NetworkDisabled})
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(nl.GetNodes()))
+	for _, n := range nl.GetNodes() {
+		names = append(names, n.GetName())
+	}
+	require.ElementsMatch(t, []string{"both-app", "both"}, names)
+}
+
 // TestDevDependencyEdges verifies that dev dependencies get the correct edge type.
 func TestDevDependencyEdges(t *testing.T) {
 	t.Parallel()
