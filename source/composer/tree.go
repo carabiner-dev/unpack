@@ -5,6 +5,8 @@ package composer
 
 import (
 	"fmt"
+	"log/slog"
+	"slices"
 	"sort"
 
 	"github.com/google/uuid"
@@ -19,7 +21,8 @@ import (
 // direct and which of those are dev; the lock supplies everything else. A
 // package appears once per lock, so resolution is by name, and platform
 // requirements — php itself, extensions — are constraints on the runtime,
-// not packages, and become nothing.
+// not packages, and become nothing. A name the lock holds no package for
+// resolves to the packages that replace or provide it.
 
 type composerBuilder struct {
 	manifest *ComposerJSON
@@ -28,6 +31,45 @@ type composerBuilder struct {
 	nl     *sbom.NodeList
 	byName map[string]*ComposerPackage
 	nodes  map[string]*sbom.Node
+
+	// standIns lists, for a name, the locked packages that replace or
+	// provide it, sorted by name. devStandIns does for the packages only
+	// development needs, which are looked at when no other stands in.
+	standIns    map[string][]*ComposerPackage
+	devStandIns map[string][]*ComposerPackage
+}
+
+// indexStandIns maps each name the packages replace or provide to the
+// packages that do, sorted by name.
+func indexStandIns(packages []*ComposerPackage) map[string][]*ComposerPackage {
+	index := map[string][]*ComposerPackage{}
+	for _, pkg := range packages {
+		for _, table := range []map[string]string{pkg.Replace, pkg.Provide} {
+			for name := range table {
+				if !slices.Contains(index[name], pkg) {
+					index[name] = append(index[name], pkg)
+				}
+			}
+		}
+	}
+	for _, standIns := range index {
+		sort.Slice(standIns, func(i, j int) bool { return standIns[i].Name < standIns[j].Name })
+	}
+	return index
+}
+
+// resolve finds the packages a requirement is met by: the package of that
+// name, or else the ones standing in for it. Composer asks for one, and
+// the lock does not record which it took, so when several stand in the
+// requirement is met by each.
+func (cb *composerBuilder) resolve(name string) []*ComposerPackage {
+	if pkg, ok := cb.byName[name]; ok {
+		return []*ComposerPackage{pkg}
+	}
+	if standIns := cb.standIns[name]; len(standIns) > 0 {
+		return standIns
+	}
+	return cb.devStandIns[name]
 }
 
 func buildComposerTree(lock *ComposerLock, manifest *ComposerJSON, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
@@ -48,6 +90,8 @@ func buildComposerTree(lock *ComposerLock, manifest *ComposerJSON, opts *api.Dec
 	for _, pkg := range lock.PackagesDev {
 		cb.byName[pkg.Name] = pkg
 	}
+	cb.standIns = indexStandIns(lock.Packages)
+	cb.devStandIns = indexStandIns(lock.PackagesDev)
 
 	root := cb.rootNode()
 	cb.nl.AddRootNode(root)
@@ -106,26 +150,38 @@ func (cb *composerBuilder) walkRequirements(requirements map[string]string, pare
 	sort.Strings(names)
 
 	for _, name := range names {
-		pkg, ok := cb.byName[name]
-		if !ok {
-			return fmt.Errorf("the lock has no package for the requirement on %s", name)
-		}
-
-		node, known := cb.nodes[pkg.Name]
-		if !known {
-			node = cb.packageNode(pkg)
-			cb.nodes[pkg.Name] = node
-			cb.nl.AddNode(node)
-		}
-		if err := cb.nl.RelateNodeAtID(node, parent.GetId(), edgeType); err != nil {
-			return err
-		}
-		if known {
+		targets := cb.resolve(name)
+		if len(targets) == 0 {
+			// Nothing in the lock meets it: a dev requirement of a lock
+			// made without them, or a lock out of step with its
+			// manifest. The rest of the graph still stands.
+			slog.Debug("composer: the lock has no package for a requirement",
+				"requirement", name, "required_by", parent.GetName())
 			continue
 		}
 
-		if err := cb.walkRequirements(pkg.Require, node, sbom.Edge_dependsOn); err != nil {
-			return err
+		for _, pkg := range targets {
+			node, known := cb.nodes[pkg.Name]
+			if !known {
+				node = cb.packageNode(pkg)
+				cb.nodes[pkg.Name] = node
+				cb.nl.AddNode(node)
+			}
+			// A package requiring a name it stands in for itself needs
+			// nothing else.
+			if node.GetId() == parent.GetId() {
+				continue
+			}
+			if err := cb.nl.RelateNodeAtID(node, parent.GetId(), edgeType); err != nil {
+				return err
+			}
+			if known {
+				continue
+			}
+
+			if err := cb.walkRequirements(pkg.Require, node, sbom.Edge_dependsOn); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

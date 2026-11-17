@@ -4,6 +4,8 @@
 package ruby
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/protobom/protobom/pkg/sbom"
@@ -144,6 +146,57 @@ func TestExtractRubyGit(t *testing.T) {
 	require.Len(t, rake.GetExternalReferences(), 1)
 	require.Equal(t, sbom.ExternalReference_VCS, rake.GetExternalReferences()[0].GetType())
 	require.Empty(t, rake.GetHashes())
+}
+
+// TestExtractRubyMissingSpecs reads a lock that names gems it holds no
+// spec for, as sound locks do: a gem depending on bundler, which Bundler
+// never locks, and a direct dependency declared for another platform.
+func TestExtractRubyMissingSpecs(t *testing.T) {
+	t.Parallel()
+
+	dir := filepath.Join(t.TempDir(), "railsapp")
+	require.NoError(t, os.Mkdir(dir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Gemfile.lock"), []byte(`GEM
+  remote: https://rubygems.org/
+  specs:
+    rack (3.2.7)
+    railties (8.0.2)
+      rack (>= 3.0.0)
+    rails (8.0.2)
+      bundler (>= 1.15.0)
+      railties (= 8.0.2)
+
+PLATFORMS
+  x86_64-linux
+
+DEPENDENCIES
+  rails (~> 8.0)
+  tzinfo-data
+
+BUNDLED WITH
+   2.6.9
+`), 0o600))
+
+	nl, err := New().Extract(&api.DecomposerOptions{
+		WorkDir:    dir,
+		Platform:   "linux/amd64",
+		Networking: api.NetworkDisabled,
+	})
+	require.NoError(t, err)
+
+	// What the lock does hold is all there, related as it states.
+	root := nodeNamed(t, nl, "railsapp")
+	rails := nodeNamed(t, nl, "rails")
+	railties := nodeNamed(t, nl, "railties")
+	require.True(t, hasEdge(nl, root, rails))
+	require.True(t, hasEdge(nl, rails, railties))
+	require.True(t, hasEdge(nl, railties, nodeNamed(t, nl, "rack")))
+
+	// And what it does not hold is not invented.
+	require.Len(t, nl.GetNodes(), 4)
+	for _, n := range nl.GetNodes() {
+		require.NotContains(t, []string{"bundler", "tzinfo-data"}, n.GetName())
+	}
 }
 
 func TestGemPlatforms(t *testing.T) {

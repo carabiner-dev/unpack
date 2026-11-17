@@ -4,6 +4,8 @@
 package composer
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/protobom/protobom/pkg/sbom"
@@ -101,6 +103,80 @@ func TestExtractComposerDev(t *testing.T) {
 	root := nodeNamed(t, nl, "carabiner/phpdemo")
 	container := nodeNamed(t, nl, "psr/container")
 	require.True(t, hasEdge(nl, sbom.Edge_devDependency, root, container))
+}
+
+// TestExtractComposerStandIns reads a lock where requirements name what
+// has no package of its own: components a framework replaces, a virtual
+// package two packages provide, and a requirement nothing meets.
+func TestExtractComposerStandIns(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "composer.json"), []byte(`{
+    "name": "acme/app",
+    "require": {
+        "acme/component": "^5.0",
+        "acme/framework": "^5.0",
+        "acme/plugin": "^1.0"
+    },
+    "require-dev": {
+        "acme/never-locked": "^1.0"
+    }
+}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "composer.lock"), []byte(`{
+    "content-hash": "abc",
+    "packages": [
+        {
+            "name": "acme/framework",
+            "version": "5.1.0",
+            "require": {"php": ">=8.1", "acme/console": "self.version"},
+            "replace": {"acme/component": "self.version", "acme/console": "self.version"}
+        },
+        {
+            "name": "acme/logger-a",
+            "version": "1.0.0",
+            "provide": {"psr/log-implementation": "3.0.0"}
+        },
+        {
+            "name": "acme/logger-b",
+            "version": "2.0.0",
+            "provide": {"psr/log-implementation": "3.0.0"}
+        },
+        {
+            "name": "acme/plugin",
+            "version": "1.2.0",
+            "require": {"acme/component": "^5.0", "psr/log-implementation": "^3.0"}
+        }
+    ],
+    "packages-dev": []
+}`), 0o600))
+
+	nl, err := New().Extract(&api.DecomposerOptions{
+		WorkDir:    dir,
+		IncludeDev: true,
+		Networking: api.NetworkDisabled,
+	})
+	require.NoError(t, err)
+
+	root := nodeNamed(t, nl, "acme/app")
+	framework := nodeNamed(t, nl, "acme/framework")
+	plugin := nodeNamed(t, nl, "acme/plugin")
+
+	// A requirement on a replaced component is met by the framework,
+	// from the root and from another package alike.
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, root, framework))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, root, plugin))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, plugin, framework))
+
+	// A virtual package is met by each package providing it.
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, plugin, nodeNamed(t, nl, "acme/logger-a")))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, plugin, nodeNamed(t, nl, "acme/logger-b")))
+
+	// The names stood in for are not packages, a package requiring what
+	// it replaces itself gets no edge to itself, and the requirement
+	// nothing meets is left out without failing the rest.
+	require.Len(t, nl.GetNodes(), 5)
+	require.False(t, hasEdge(nl, sbom.Edge_dependsOn, framework, framework))
 }
 
 func TestFindCodeBases(t *testing.T) {
