@@ -119,20 +119,23 @@ func (dt *DependencyTree) buildSubtree(nl *sbom.NodeList, pkg *LockPackage, pare
 
 		depKey := PackageKey{Name: depPkg.Name, Version: depPkg.Version}
 
-		// Get or create node for this dependency
-		depNode, exists := dt.nodeCache[depKey]
-		if !exists {
-			depNode = dt.createNode(depPkg)
-			dt.nodeCache[depKey] = depNode
-		}
-
-		// Determine the edge type and filter based on options
+		// Determine the edge type and filter based on options. This comes
+		// before the node exists: a package left out here may still be
+		// reached through another edge, and it is that edge which has to
+		// find it new, to create it and walk what it depends on.
 		edgeType := dt.determineEdgeType(pkg, depPkg)
 		if edgeType == sbom.Edge_devDependency && !dt.opts.IncludeDevDependencies {
 			continue
 		}
 		if edgeType == sbom.Edge_buildDependency && !dt.opts.IncludeBuildDependencies {
 			continue
+		}
+
+		// Get or create node for this dependency
+		depNode, exists := dt.nodeCache[depKey]
+		if !exists {
+			depNode = dt.createNode(depPkg)
+			dt.nodeCache[depKey] = depNode
 		}
 
 		// Relate the dependency to its parent
@@ -152,10 +155,17 @@ func (dt *DependencyTree) buildSubtree(nl *sbom.NodeList, pkg *LockPackage, pare
 }
 
 // determineEdgeType determines the edge type for a dependency relationship.
-// If the dependency is a direct dependency of the root, use its declared type.
-// Otherwise, inherit the type from the parent or default to dependsOn.
-func (dt *DependencyTree) determineEdgeType(_, dep *LockPackage) sbom.Edge_Type {
-	// Check if this is a direct dependency from the root
+//
+// Cargo.lock does not record what kind a dependency is; Cargo.toml does,
+// for the dependencies of the package it describes. So the declared kind
+// applies to an edge from that package and to no other: the same crate
+// required by another package is a dependency of that package's own, and
+// one this reader has no manifest to qualify, hence dependsOn.
+func (dt *DependencyTree) determineEdgeType(parent, dep *LockPackage) sbom.Edge_Type {
+	if !dt.isManifestPackage(parent) {
+		return sbom.Edge_dependsOn
+	}
+
 	//nolint:exhaustive
 	if depType, isDirect := dt.directDeps[dep.Name]; isDirect {
 		switch depType {
@@ -170,6 +180,16 @@ func (dt *DependencyTree) determineEdgeType(_, dep *LockPackage) sbom.Edge_Type 
 
 	// For transitive dependencies, use dependsOn
 	return sbom.Edge_dependsOn
+}
+
+// isManifestPackage says whether a locked package is the one Cargo.toml
+// describes: a local package, of the manifest's name when it states one.
+func (dt *DependencyTree) isManifestPackage(pkg *LockPackage) bool {
+	if pkg.Source != "" {
+		return false
+	}
+	name := dt.cargoToml.Package.Name
+	return name == "" || name == pkg.Name
 }
 
 // createNode creates a protobom Node for a Cargo package.

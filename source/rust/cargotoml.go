@@ -171,42 +171,35 @@ func ParseCargoTomlData(data []byte) (*CargoToml, error) {
 
 // GetDirectDependencies returns a map of dependency names to their types.
 // This includes dependencies from all sections and target-specific dependencies.
+//
+// A crate may be declared in more than one section, and the map holds one
+// type per name: the one that puts the crate furthest into what is built.
+// A normal dependency is part of the package whatever else it is used
+// for, and a build dependency is compiled to build it, where a dev
+// dependency only serves its tests.
 func (ct *CargoToml) GetDirectDependencies() map[string]DependencyType {
 	deps := make(map[string]DependencyType)
-
-	// Normal dependencies
-	for name := range ct.Dependencies {
-		deps[name] = DepTypeNormal
+	declare := func(section map[string]DependencySpec, depType DependencyType) {
+		for name := range section {
+			if _, exists := deps[name]; !exists {
+				deps[name] = depType
+			}
+		}
 	}
 
-	// Dev dependencies
-	for name := range ct.DevDependencies {
-		deps[name] = DepTypeDev
-	}
-
-	// Build dependencies
-	for name := range ct.BuildDependencies {
-		deps[name] = DepTypeBuild
-	}
-
-	// Target-specific dependencies
+	// Each type in turn, strongest first, across the package's own
+	// sections and the target-specific ones.
+	declare(ct.Dependencies, DepTypeNormal)
 	for _, target := range ct.Target {
-		for name := range target.Dependencies {
-			// Don't override if already set (normal deps take precedence)
-			if _, exists := deps[name]; !exists {
-				deps[name] = DepTypeNormal
-			}
-		}
-		for name := range target.DevDependencies {
-			if _, exists := deps[name]; !exists {
-				deps[name] = DepTypeDev
-			}
-		}
-		for name := range target.BuildDependencies {
-			if _, exists := deps[name]; !exists {
-				deps[name] = DepTypeBuild
-			}
-		}
+		declare(target.Dependencies, DepTypeNormal)
+	}
+	declare(ct.BuildDependencies, DepTypeBuild)
+	for _, target := range ct.Target {
+		declare(target.BuildDependencies, DepTypeBuild)
+	}
+	declare(ct.DevDependencies, DepTypeDev)
+	for _, target := range ct.Target {
+		declare(target.DevDependencies, DepTypeDev)
 	}
 
 	return deps

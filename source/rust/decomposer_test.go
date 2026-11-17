@@ -403,6 +403,154 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 	require.Len(t, nl2.GetNodes(), 2) // root + normal-dep only
 }
 
+// TestDependencyTypePrecedence checks the type a crate declared in several
+// sections is given: normal over build over dev, whichever section it is
+// in, target-specific ones included.
+func TestDependencyTypePrecedence(t *testing.T) {
+	t.Parallel()
+
+	toml, err := ParseCargoTomlData([]byte(`
+[package]
+name = "test-pkg"
+version = "1.0.0"
+
+[dependencies]
+normal-and-dev = "1.0"
+
+[dev-dependencies]
+normal-and-dev = "1.0"
+build-and-dev = "1.0"
+target-normal-and-dev = "1.0"
+
+[build-dependencies]
+build-and-dev = "1.0"
+
+[target.'cfg(unix)'.dependencies]
+target-normal-and-dev = "1.0"
+`))
+	require.NoError(t, err)
+
+	deps := toml.GetDirectDependencies()
+	require.Equal(t, DepTypeNormal, deps["normal-and-dev"])
+	require.Equal(t, DepTypeBuild, deps["build-and-dev"])
+	require.Equal(t, DepTypeNormal, deps["target-normal-and-dev"])
+}
+
+// TestEdgeTypesOnlyFromManifestPackage checks that the kinds Cargo.toml
+// declares qualify the edges of the package it describes and no others: a
+// crate the root only uses for its tests is still part of the build when
+// one of the root's dependencies requires it.
+func TestEdgeTypesOnlyFromManifestPackage(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "Cargo.toml"), []byte(`
+[package]
+name = "test-pkg"
+version = "1.0.0"
+
+[dependencies]
+zeta = "1.0"
+
+[dev-dependencies]
+rand = "0.7"
+serde = "1.0"
+testonly = "1.0"
+`), 0o600))
+
+	// The root's dev dependency on serde comes before zeta, which also
+	// requires it: the edge left out must not keep serde from being
+	// walked when zeta reaches it.
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "Cargo.lock"), []byte(`
+version = 4
+
+[[package]]
+name = "rand"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "rand"
+version = "0.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "serde"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+  "serde_derive",
+]
+
+[[package]]
+name = "serde_derive"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "test-pkg"
+version = "1.0.0"
+dependencies = [
+  "rand 0.7.3",
+  "serde",
+  "testonly",
+  "zeta",
+]
+
+[[package]]
+name = "testonly"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "zeta"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+  "rand 0.8.5",
+  "serde",
+]
+`), 0o600))
+
+	// edges lists the graph as "from -> to (type)" lines, sorted.
+	edges := func(nl *sbom.NodeList) []string {
+		label := func(id string) string {
+			n := nl.GetNodeByID(id)
+			return n.GetName() + "@" + n.GetVersion()
+		}
+		lines := []string{}
+		for _, e := range nl.GetEdges() {
+			for _, to := range e.GetTo() {
+				lines = append(lines, label(e.GetFrom())+" -> "+label(to)+" ("+e.GetType().String()+")")
+			}
+		}
+		sort.Strings(lines)
+		return lines
+	}
+
+	d := New()
+	nl, err := d.Extract(&api.DecomposerOptions{WorkDir: tmpDir, Networking: api.NetworkDisabled})
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"serde@1.0.0 -> serde_derive@1.0.0 (dependsOn)",
+		"test-pkg@1.0.0 -> zeta@1.0.0 (dependsOn)",
+		"zeta@1.0.0 -> rand@0.8.5 (dependsOn)",
+		"zeta@1.0.0 -> serde@1.0.0 (dependsOn)",
+	}, edges(nl))
+
+	nl, err = d.Extract(&api.DecomposerOptions{WorkDir: tmpDir, Networking: api.NetworkDisabled, IncludeDev: true})
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"serde@1.0.0 -> serde_derive@1.0.0 (dependsOn)",
+		"test-pkg@1.0.0 -> rand@0.7.3 (devDependency)",
+		"test-pkg@1.0.0 -> serde@1.0.0 (devDependency)",
+		"test-pkg@1.0.0 -> testonly@1.0.0 (devDependency)",
+		"test-pkg@1.0.0 -> zeta@1.0.0 (dependsOn)",
+		"zeta@1.0.0 -> rand@0.8.5 (dependsOn)",
+		"zeta@1.0.0 -> serde@1.0.0 (dependsOn)",
+	}, edges(nl))
+}
+
 // TestListDependencies tests the helper function for debugging.
 func TestListDependencies(t *testing.T) {
 	t.Parallel()
