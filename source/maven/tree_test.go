@@ -6,6 +6,7 @@ package maven
 import (
 	"testing"
 
+	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/require"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
@@ -478,6 +479,93 @@ func TestBuildTreeManagedExclusionsMerge(t *testing.T) {
 	libPOM, err := resolver.FetchPOM("com.dep", "lib", "1.0")
 	require.NoError(t, err)
 	require.Len(t, libPOM.Dependencies[0].Exclusions, 1)
+}
+
+// TestBuildTreeScopeWidens checks that a dependency first reached through
+// a test dependency, and so resolved for tests, takes the scope of a later
+// path that needs it for compilation, and passes it down to what it
+// brings in: both what was already resolved under it and what was still
+// queued. One the project declares itself keeps its declared scope.
+func TestBuildTreeScopeWidens(t *testing.T) {
+	t.Parallel()
+
+	dep := func(artifact, version string) string {
+		return "<dependency><groupId>com.dep</groupId><artifactId>" + artifact + "</artifactId><version>" + version + "</version></dependency>"
+	}
+	pomFor := func(artifact, deps string) string {
+		return `<?xml version="1.0"?><project><groupId>com.dep</groupId><artifactId>` + artifact +
+			`</artifactId><version>1.0</version><dependencies>` + deps + `</dependencies></project>`
+	}
+	url := func(artifact string) string {
+		return "https://repo.test/com/dep/" + artifact + "/1.0/" + artifact + "-1.0.pom"
+	}
+
+	resolver := newTestResolver(map[string]string{
+		// The test dependency reaches early at depth 2, late at depth 2
+		// too, and the project's own test dependency.
+		url("testlib"): pomFor("testlib", dep("early", "1.0")+dep("late", "1.0")+dep("only-tests", "1.0")),
+		// The compile dependency reaches late directly, and early one
+		// level further down, after early's own dependency was resolved.
+		url("lib"):         pomFor("lib", dep("late", "1.0")+dep("middle", "1.0")+dep("direct-test", "1.0")),
+		url("middle"):      pomFor("middle", dep("early", "1.0")),
+		url("early"):       pomFor("early", dep("early-child", "1.0")),
+		url("late"):        pomFor("late", dep("late-child", "1.0")),
+		url("early-child"): pomFor("early-child", ""),
+		url("late-child"):  pomFor("late-child", ""),
+		url("only-tests"):  pomFor("only-tests", ""),
+		url("direct-test"): pomFor("direct-test", ""),
+	})
+
+	pom := &POM{
+		GroupID:    "com.example",
+		ArtifactID: "app",
+		Version:    "1.0.0",
+		Dependencies: []Dependency{
+			{GroupID: "com.dep", ArtifactID: "testlib", Version: "1.0", Scope: ScopeTest},
+			{GroupID: "com.dep", ArtifactID: "lib", Version: "1.0"},
+			{GroupID: "com.dep", ArtifactID: "direct-test", Version: "1.0", Scope: ScopeTest},
+		},
+	}
+
+	opts := Options{IncludeTest: true}
+	dt := NewDependencyTree(pom, resolver, &opts)
+	require.NoError(t, dt.Build())
+
+	scope := func(artifact string) string {
+		rd, ok := dt.resolved["com.dep:"+artifact]
+		require.True(t, ok, "%s is not resolved", artifact)
+		return rd.Scope
+	}
+
+	// Widened after its own dependency was resolved under it.
+	require.Equal(t, ScopeCompile, scope("early"))
+	require.Equal(t, ScopeCompile, scope("early-child"))
+
+	// Widened while its own dependency was still queued.
+	require.Equal(t, ScopeCompile, scope("late"))
+	require.Equal(t, ScopeCompile, scope("late-child"))
+
+	// Nothing but tests needs these.
+	require.Equal(t, ScopeTest, scope("testlib"))
+	require.Equal(t, ScopeTest, scope("only-tests"))
+
+	// Declared for tests by the project itself: that stands, though lib
+	// would bring it in for compilation.
+	require.Equal(t, ScopeTest, scope("direct-test"))
+
+	// And in the graph, only what stayed test-scoped is a dev dependency.
+	nl, err := dt.ToNodeList(nil)
+	require.NoError(t, err)
+	dev := []string{}
+	for _, e := range nl.GetEdges() {
+		if e.GetType() != sbom.Edge_devDependency {
+			continue
+		}
+		for _, to := range e.GetTo() {
+			dev = append(dev, nl.GetNodeByID(to).GetName())
+		}
+	}
+	require.ElementsMatch(t, []string{"testlib", "only-tests", "direct-test", "direct-test"}, dev)
 }
 
 func TestToNodeList(t *testing.T) {
