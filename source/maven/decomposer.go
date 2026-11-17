@@ -5,6 +5,7 @@ package maven
 
 import (
 	"fmt"
+	"log/slog"
 	"path/filepath"
 
 	"github.com/protobom/protobom/pkg/sbom"
@@ -85,14 +86,23 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 			return nil, fmt.Errorf("resolving effective POM: %w", err)
 		}
 		effective = resolved
+	} else {
+		// Without the network there is no parent or BOM to read, but
+		// what the POM states itself still stands: its own properties
+		// and its own dependency management.
+		InterpolatePOM(effective)
 	}
 
-	// 4. Build dependency tree
+	// 4. Build dependency tree. Without a resolver it stops at what the
+	// POM declares: the dependencies of those live in POMs of their own,
+	// which only the repository has.
 	dt := NewDependencyTree(effective, resolver, dOpts)
-	if resolver != nil {
-		if err := dt.Build(); err != nil {
-			return nil, fmt.Errorf("building dependency tree: %w", err)
-		}
+	if resolver == nil {
+		slog.Debug("maven: networking is disabled, the graph holds only the dependencies pom.xml declares",
+			"pom", filepath.Join(opts.WorkDir, "pom.xml"))
+	}
+	if err := dt.Build(); err != nil {
+		return nil, fmt.Errorf("building dependency tree: %w", err)
 	}
 
 	// 5. Add build plugins if requested

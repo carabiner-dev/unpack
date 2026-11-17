@@ -106,6 +106,39 @@ func TestDecomposerExtractSimple(t *testing.T) {
 	require.GreaterOrEqual(t, len(nodes), 3) // root + guava + commons-lang3
 }
 
+// TestDecomposerExtractNetworkingDisabled verifies that with no network to
+// read other POMs from, the graph still holds what pom.xml declares itself:
+// its direct dependencies, at the versions its own properties give them.
+func TestDecomposerExtractNetworkingDisabled(t *testing.T) {
+	t.Parallel()
+
+	nl, err := New().Extract(&api.DecomposerOptions{
+		WorkDir:    "testdata/simple",
+		Networking: api.NetworkDisabled,
+	})
+	require.NoError(t, err)
+
+	require.Len(t, nl.GetRootElements(), 1)
+	root := nl.GetNodeByID(nl.GetRootElements()[0])
+	require.Equal(t, "simple-app", root.GetName())
+
+	purls := []string{}
+	for _, n := range nl.GetNodes() {
+		if n.GetId() != root.GetId() {
+			purls = append(purls, n.GetIdentifiers()[int32(1)])
+		}
+	}
+	// The test and provided dependencies stay out, as with the network.
+	require.ElementsMatch(t, []string{
+		"pkg:maven/com.google.guava/guava@33.0.0-jre",
+		"pkg:maven/org.apache.commons/commons-lang3@3.14.0",
+	}, purls)
+
+	require.Len(t, nl.GetEdges(), 1)
+	require.Equal(t, root.GetId(), nl.GetEdges()[0].GetFrom())
+	require.Len(t, nl.GetEdges()[0].GetTo(), 2)
+}
+
 // TestDecomposerExtractTransientFails verifies that a transient fetch failure
 // (after retries) fails the extraction rather than silently producing an
 // incomplete tree. This is the counterpart to TestDecomposerExtractSimple,
