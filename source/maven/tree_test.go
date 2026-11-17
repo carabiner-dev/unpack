@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	api "github.com/carabiner-dev/unpack/api/v1"
 )
 
 func TestScopeTransitivity(t *testing.T) {
@@ -243,6 +245,38 @@ func TestToNodeList(t *testing.T) {
 	require.Equal(t, "1.0.0", rootNode.GetVersion())
 	require.Contains(t, rootNode.GetIdentifiers(), int32(1)) // PURL
 	require.Equal(t, "pkg:maven/com.example/app@1.0.0", rootNode.GetIdentifiers()[int32(1)])
+}
+
+// TestToNodeListVersionOverride checks that a version given in the
+// options, as when it is read from git, renames the root and leaves its
+// dependencies attached.
+func TestToNodeListVersionOverride(t *testing.T) {
+	t.Parallel()
+	pom := &POM{
+		GroupID:    "com.example",
+		ArtifactID: "app",
+		Version:    "1.0.0",
+		Dependencies: []Dependency{
+			{GroupID: "com.dep", ArtifactID: "lib", Version: "2.0"},
+		},
+	}
+
+	dt := NewDependencyTree(pom, nil, &defaultOptions)
+	require.NoError(t, dt.Build())
+
+	nl, err := dt.ToNodeList(&api.DecomposerOptions{Version: "v2.0.0"})
+	require.NoError(t, err)
+
+	require.Len(t, nl.GetRootElements(), 1)
+	rootNode := nl.GetNodeByID(nl.GetRootElements()[0])
+	require.Equal(t, "v2.0.0", rootNode.GetVersion())
+	require.Equal(t, "pkg:maven/com.example/app@v2.0.0", rootNode.GetIdentifiers()[int32(1)])
+
+	// Root node + 1 dependency, related to the root.
+	require.Len(t, nl.GetNodes(), 2)
+	require.Len(t, nl.GetEdges(), 1)
+	require.Equal(t, rootNode.GetId(), nl.GetEdges()[0].GetFrom())
+	require.Len(t, nl.GetEdges()[0].GetTo(), 1)
 }
 
 func TestToNodeListEdgeTypes(t *testing.T) {
