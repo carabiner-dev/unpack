@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
@@ -35,7 +36,9 @@ type requirementEntry struct {
 
 	// Via lists what pulled this entry in, from the "# via" annotations
 	// compiled files carry: requirement names, or "-r file" for a direct
-	// requirement. Empty when the file has no annotations.
+	// requirement. The annotation is either on the lines below the entry
+	// or at the end of its own line, depending on how the file was
+	// compiled. Empty when the file has no annotations.
 	Via []string
 }
 
@@ -131,10 +134,42 @@ func viaNames(line string) []string {
 	return []string{text}
 }
 
-// parseRequirementLine reads one requirement with its per-line options.
+// inlineComment matches the comment a line ends with. As pip reads it, a
+// "#" opens a comment only after whitespace, which leaves the fragment of
+// a URL ("...#egg=name") alone.
+var inlineComment = regexp.MustCompile(`\s+#.*$`)
+
+// inlineVia reads the parents out of the comment a requirement line ends
+// with. pip-compile's line annotation style writes the whole annotation
+// there, parents separated by commas: "# via -r requirements.in, flask".
+// Any other comment is the author's and names nothing.
+func inlineVia(comment string) []string {
+	text := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(comment), "#"))
+	list, found := strings.CutPrefix(text, "via ")
+	if !found {
+		return nil
+	}
+	names := []string{}
+	for _, name := range strings.Split(list, ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// parseRequirementLine reads one requirement with its per-line options
+// and the comment it may end with.
 func parseRequirementLine(line string) (*requirementEntry, error) {
-	spec := line
 	entry := &requirementEntry{}
+
+	// The comment goes first: left in place it would be read as part of
+	// the version, and the entry would lose its pin.
+	if loc := inlineComment.FindStringIndex(line); loc != nil {
+		entry.Via = inlineVia(line[loc[0]:])
+		line = line[:loc[0]]
+	}
+	spec := line
 
 	if i := strings.Index(line, "--hash="); i >= 0 {
 		spec = line[:i]
