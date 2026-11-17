@@ -656,6 +656,61 @@ func TestExtractNpmTransitivePeers(t *testing.T) {
 	}, npmEdges(nl))
 }
 
+// TestExtractNpmOwnPeers reads the lock of a project whose own packages
+// declare peer dependencies: npm installs them, and the edge says the
+// project expects them provided rather than bringing them. A peer that is
+// also a dev dependency stays one.
+func TestExtractNpmOwnPeers(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{
+		"name": "own-peers",
+		"version": "1.0.0",
+		"workspaces": ["packages/*"],
+		"dependencies": {"runtime": "^1.0.0"},
+		"devDependencies": {"both": "^1.0.0"},
+		"peerDependencies": {"host": ">=3", "both": ">=1"}
+	}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package-lock.json"), []byte(`{
+		"name": "own-peers",
+		"version": "1.0.0",
+		"lockfileVersion": 3,
+		"packages": {
+			"": {
+				"name": "own-peers",
+				"version": "1.0.0",
+				"workspaces": ["packages/*"],
+				"dependencies": {"runtime": "^1.0.0"},
+				"devDependencies": {"both": "^1.0.0"},
+				"peerDependencies": {"host": ">=3", "both": ">=1"}
+			},
+			"node_modules/both": {"version": "1.0.0", "dev": true},
+			"node_modules/host": {"version": "3.0.0", "peer": true, "dependencies": {"host-dep": "^1.0.0"}},
+			"node_modules/host-dep": {"version": "1.0.0", "peer": true},
+			"node_modules/member": {"resolved": "packages/member", "link": true},
+			"node_modules/runtime": {"version": "1.0.0"},
+			"packages/member": {
+				"version": "0.1.0",
+				"peerDependencies": {"host": ">=3"}
+			}
+		}
+	}`), 0o600))
+
+	nl, err := New().Extract(&api.DecomposerOptions{WorkDir: dir, Networking: api.NetworkDisabled})
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"host -> host-dep@1.0.0 (dependsOn)",
+		"member -> host@3.0.0 (providedDependency)",
+		"own-peers -> host@3.0.0 (providedDependency)",
+		"own-peers -> runtime@1.0.0 (dependsOn)",
+	}, npmEdges(nl))
+
+	nl, err = New().Extract(&api.DecomposerOptions{WorkDir: dir, Networking: api.NetworkDisabled, IncludeDev: true})
+	require.NoError(t, err)
+	require.Contains(t, npmEdges(nl), "own-peers -> both@1.0.0 (devDependency)")
+}
+
 // TestExtractNpmPathDependency reads the lock of a project with no
 // workspaces that requires a directory of its own by path: the directory
 // is a dependency like any other, not a root, with what it requires.

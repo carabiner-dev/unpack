@@ -332,12 +332,19 @@ func (dt *DependencyTree) resolveDependencyPath(parentPath, depName string) stri
 	return ""
 }
 
-// depTypeToEdgeType converts a DependencyType to an sbom.Edge_Type.
+// depTypeToEdgeType converts the type of a dependency one of the project's
+// own packages declares to an sbom.Edge_Type.
+//
+// A peer dependency is one the package needs and leaves to whoever uses it
+// to supply. npm installs it beside the project, which is why the lock
+// holds it, but the project does not bring it: it is provided.
 func (dt *DependencyTree) depTypeToEdgeType(depType DependencyType) sbom.Edge_Type {
 	//nolint:exhaustive
 	switch depType {
 	case DepTypeDev:
 		return sbom.Edge_devDependency
+	case DepTypePeer:
+		return sbom.Edge_providedDependency
 	case DepTypeOptional:
 		return sbom.Edge_optionalDependency
 	default:
