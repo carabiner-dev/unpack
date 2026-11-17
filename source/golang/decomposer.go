@@ -475,13 +475,16 @@ func (d *Decomposer) convertTrees(
 	// Create the new NodeList
 	nl = sbom.NewNodeList()
 
+	// The version the module is known by at this commit, in Go's form.
+	version := moduleVersion(root, opts)
+
 	// Add the root package to anchor the
 	// module's dependencies
 	rootNode := &sbom.Node{
 		Id:      uuid.NewString(),
 		Type:    sbom.Node_PACKAGE,
 		Name:    root,
-		Version: opts.Version,
+		Version: version,
 		Identifiers: map[int32]string{
 			int32(sbom.SoftwareIdentifierType_PURL): goStringToPurl(root),
 		},
@@ -495,8 +498,8 @@ func (d *Decomposer) convertTrees(
 
 	// If the options specify a new version, set it here. Not before traversing
 	// the tree because recursion breaks:
-	if opts.Version != "" {
-		rootNode.Identifiers[int32(sbom.SoftwareIdentifierType_PURL)] = goStringToPurl(fmt.Sprintf("%s@%s", root, opts.Version))
+	if version != "" {
+		rootNode.Identifiers[int32(sbom.SoftwareIdentifierType_PURL)] = goStringToPurl(fmt.Sprintf("%s@%s", root, version))
 	}
 
 	// Add the Go stdlib as a dependency, using the Go version declared in go.mod

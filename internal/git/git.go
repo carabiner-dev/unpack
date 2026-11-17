@@ -6,7 +6,9 @@ package git
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -61,6 +63,100 @@ func RepoVersion(path string) (tag, commit string, err error) {
 	}
 	version := lastTag + fmt.Sprintf("%s%d+%s", sep, num, headHash[0:8])
 	return version, headHash, nil
+}
+
+// Revision describes the commit a repository is at, with what its history
+// says about it. It carries facts and no version: how they make one is up
+// to whoever names the code, and ecosystems differ (see RepoVersion for
+// the generic form).
+type Revision struct {
+	// Commit is the hash of the commit.
+	Commit string
+
+	// Time is when it was committed, in UTC.
+	Time time.Time
+
+	// Tags are the tags on the commit itself, sorted.
+	Tags []string
+
+	// AncestorTags are the tags on the commits it descends from, sorted.
+	// A tag on a commit that is not in its history, on another branch,
+	// is in neither list.
+	AncestorTags []string
+}
+
+// HeadRevision reads the commit a repository's HEAD is at.
+func HeadRevision(path string) (*Revision, error) {
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		return nil, fmt.Errorf("opening repository: %w", err)
+	}
+
+	headRef, err := repo.Head()
+	if err != nil {
+		return nil, fmt.Errorf("reading head from repo: %w", err)
+	}
+	head, err := repo.CommitObject(headRef.Hash())
+	if err != nil {
+		return nil, fmt.Errorf("reading head commit: %w", err)
+	}
+
+	revision := &Revision{
+		Commit: head.Hash.String(),
+		Time:   head.Committer.When.UTC(),
+	}
+
+	tagRefs, err := repo.Tags()
+	if err != nil {
+		return nil, fmt.Errorf("reading tags: %w", err)
+	}
+	tagged := map[plumbing.Hash][]string{}
+	err = tagRefs.ForEach(func(tagRef *plumbing.Reference) error {
+		// A tag may point at something that is not a commit, or at one
+		// the repository does not hold: it names no version of the code.
+		hash, err := repo.ResolveRevision(plumbing.Revision(tagRef.Name().String()))
+		if err != nil {
+			return nil //nolint:nilerr // deliberate: skip what does not resolve
+		}
+		tagged[*hash] = append(tagged[*hash], tagRef.Name().Short())
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("reading tags: %w", err)
+	}
+	if len(tagged) == 0 {
+		return revision, nil
+	}
+
+	revision.Tags = tagged[head.Hash]
+	delete(tagged, head.Hash)
+
+	// The history is walked once, picking up the tags as their commits
+	// come by, and no further than the last of them.
+	if len(tagged) > 0 {
+		commits, err := repo.Log(&git.LogOptions{From: head.Hash})
+		if err != nil {
+			return nil, fmt.Errorf("creating commit iterator: %w", err)
+		}
+		errDone := errors.New("every tag found")
+		err = commits.ForEach(func(c *object.Commit) error {
+			if names, ok := tagged[c.Hash]; ok {
+				revision.AncestorTags = append(revision.AncestorTags, names...)
+				delete(tagged, c.Hash)
+				if len(tagged) == 0 {
+					return errDone
+				}
+			}
+			return nil
+		})
+		if err != nil && !errors.Is(err, errDone) {
+			return nil, fmt.Errorf("iterating history: %w", err)
+		}
+	}
+
+	sort.Strings(revision.Tags)
+	sort.Strings(revision.AncestorTags)
+	return revision, nil
 }
 
 func GetLatestTag(path string) (tag, commit string, err error) {

@@ -2,6 +2,7 @@ package git
 
 import (
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/stretchr/testify/require"
@@ -61,4 +62,68 @@ func TestGetLatestTagFromRepository(t *testing.T) {
 		require.Equal(t, "v1.0.1-1+2bce182a", version)
 		require.Equal(t, "2bce182a96aa594f7f84858a9de52f7f44fdba17", hash)
 	})
+}
+
+func TestHeadRevision(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	require.NoError(t, tar.Extract("testdata/tagged-repo.tar.gz", tmp))
+
+	revision, err := HeadRevision(tmp)
+	require.NoError(t, err)
+
+	require.Equal(t, "2bce182a96aa594f7f84858a9de52f7f44fdba17", revision.Commit)
+
+	// The commit time is the committer's, in UTC whatever zone it was
+	// committed in.
+	repo, err := git.PlainOpen(tmp)
+	require.NoError(t, err)
+	head, err := repo.Head()
+	require.NoError(t, err)
+	commit, err := repo.CommitObject(head.Hash())
+	require.NoError(t, err)
+	require.False(t, revision.Time.IsZero())
+	require.True(t, revision.Time.Equal(commit.Committer.When))
+	require.Equal(t, time.UTC, revision.Time.Location())
+
+	// HEAD is one commit past v1.0.1 and three past v1.0.0: neither tag
+	// is on it, both are in its history.
+	require.Empty(t, revision.Tags)
+	require.Equal(t, []string{"v1.0.0", "v1.0.1"}, revision.AncestorTags)
+}
+
+func TestHeadRevisionAtTagAndOffBranch(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	require.NoError(t, tar.Extract("testdata/tagged-repo.tar.gz", tmp))
+
+	repo, err := git.PlainOpen(tmp)
+	require.NoError(t, err)
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+
+	// Move HEAD back onto the commit v1.0.1 tags: the tag is on the
+	// commit, the earlier one in its history, and nothing else.
+	tagged, err := repo.ResolveRevision("refs/tags/v1.0.1")
+	require.NoError(t, err)
+	require.NoError(t, worktree.Checkout(&git.CheckoutOptions{Hash: *tagged, Force: true}))
+
+	revision, err := HeadRevision(tmp)
+	require.NoError(t, err)
+	require.Equal(t, tagged.String(), revision.Commit)
+	require.Equal(t, []string{"v1.0.1"}, revision.Tags)
+	require.Equal(t, []string{"v1.0.0"}, revision.AncestorTags)
+
+	// And back onto the one v1.0.0 tags: v1.0.1 is ahead of it, not in
+	// its history.
+	first, err := repo.ResolveRevision("refs/tags/v1.0.0")
+	require.NoError(t, err)
+	require.NoError(t, worktree.Checkout(&git.CheckoutOptions{Hash: *first, Force: true}))
+
+	revision, err = HeadRevision(tmp)
+	require.NoError(t, err)
+	require.Equal(t, []string{"v1.0.0"}, revision.Tags)
+	require.Empty(t, revision.AncestorTags)
 }
