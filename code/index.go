@@ -111,7 +111,7 @@ func (i *Indexer) CatalogDirectories(path string, funcs ...optFn) (*PathIndex, e
 	}
 
 	index := PathIndex{}
-	if err := filepath.WalkDir(path, func(path string, d fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(path, func(walked string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -119,11 +119,21 @@ func (i *Indexer) CatalogDirectories(path string, funcs ...optFn) (*PathIndex, e
 			return nil
 		}
 
-		// Si if the path matches the pattern
-		if matcher != nil && matcher.Match(strings.Split(path, string(filepath.Separator)), false) {
-			return nil
+		// See if the path matches a pattern. Patterns speak of what is
+		// under the directory being cataloged, so the path is matched
+		// from there: the directories leading to it are not part of the
+		// tree, and one of them matching a pattern, as when the tree
+		// itself sits under a node_modules, would hide all of it.
+		if matcher != nil {
+			rel, err := filepath.Rel(path, walked)
+			if err != nil {
+				return fmt.Errorf("locating %q under %q: %w", walked, path, err)
+			}
+			if matcher.Match(strings.Split(rel, string(filepath.Separator)), false) {
+				return nil
+			}
 		}
-		index.Add(filepath.Dir(path), d.Name())
+		index.Add(filepath.Dir(walked), d.Name())
 		return nil
 	}); err != nil {
 		return nil, err
