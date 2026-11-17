@@ -113,6 +113,64 @@ require (
 	assert.Len(t, set.Modules, 3, "indirect requirements are part of the set")
 }
 
+// TestModuleSetGoSumExtras checks which go.sum entries join the set: none
+// when go.mod lists the whole build and, when it is too old to, the
+// highest version of each path it does not require, if it was downloaded.
+func TestModuleSetGoSumExtras(t *testing.T) {
+	t.Parallel()
+	d := Decomposer{}
+
+	const goSum = `example.com/dep v1.0.0/go.mod h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=
+example.com/dep v1.5.0 h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=
+example.com/dep v1.5.0/go.mod h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=
+example.com/dep v1.9.0/go.mod h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=
+example.com/testonly v0.1.0/go.mod h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=
+example.com/transitive v0.9.0 h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=
+example.com/transitive v0.9.0/go.mod h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=
+example.com/transitive v0.10.0 h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=
+example.com/transitive v0.10.0/go.mod h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=
+example.com/transitive v0.2.0/go.mod h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=
+example.com/another v1.0.0 h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=
+example.com/another v1.1.0/go.mod h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=
+`
+	// go.mod's version of dep stands, whatever go.sum lists. transitive
+	// is taken at its highest version, compared as versions and not as
+	// text. testonly was never downloaded, and neither was the version
+	// of another that the graph selects.
+	fromGoSum := []string{"example.com/dep@v1.5.0", "example.com/transitive@v0.10.0"}
+
+	for _, tc := range []struct {
+		name      string
+		goVersion string
+		want      []string
+	}{
+		{"complete", "go 1.17", []string{"example.com/dep@v1.5.0"}},
+		{"complete-patch", "go 1.26.0", []string{"example.com/dep@v1.5.0"}},
+		{"old", "go 1.16", fromGoSum},
+		{"undeclared", "", fromGoSum},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			goModPath := filepath.Join(dir, "go.mod")
+			goMod := "module example.com/app\n\n" + tc.goVersion + "\n\nrequire example.com/dep v1.5.0\n"
+			require.NoError(t, os.WriteFile(goModPath, []byte(goMod), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "go.sum"), []byte(goSum), 0o600))
+
+			modFile, err := d.parseLocalGoMod(goModPath)
+			require.NoError(t, err)
+			set := d.moduleSetFromGoMod(modFile, goModPath)
+
+			keys := make([]string, 0, len(set.Modules))
+			for _, m := range set.Modules {
+				keys = append(keys, m.Key())
+			}
+			assert.Equal(t, tc.want, keys)
+			assert.NotEmpty(t, set.Modules[0].Sums, "the requirement keeps its go.sum checksum")
+		})
+	}
+}
+
 func TestAttachUnreached(t *testing.T) {
 	t.Parallel()
 
