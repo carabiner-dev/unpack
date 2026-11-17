@@ -59,6 +59,12 @@ type DependencySpec struct {
 	Features []string `toml:"features"`
 	Optional bool     `toml:"optional"`
 
+	// Package is the crate's real name when the dependency is declared
+	// under another: tmp = { package = "tempfile" }. The table's key is
+	// then only what the code calls it; the lock knows the crate by this
+	// name.
+	Package string `toml:"package"`
+
 	// For simple string dependencies
 	simpleVersion string
 }
@@ -93,6 +99,9 @@ func (ds *DependencySpec) UnmarshalTOML(data any) error {
 		}
 		if opt, ok := v["optional"].(bool); ok {
 			ds.Optional = opt
+		}
+		if pkg, ok := v["package"].(string); ok {
+			ds.Package = pkg
 		}
 		if features, ok := v["features"].([]any); ok {
 			for _, f := range features {
@@ -172,6 +181,10 @@ func ParseCargoTomlData(data []byte) (*CargoToml, error) {
 // GetDirectDependencies returns a map of dependency names to their types.
 // This includes dependencies from all sections and target-specific dependencies.
 //
+// The names are the crates', which is how Cargo.lock refers to them: a
+// dependency declared under another name is listed by the crate it
+// renames.
+//
 // A crate may be declared in more than one section, and the map holds one
 // type per name: the one that puts the crate furthest into what is built.
 // A normal dependency is part of the package whatever else it is used
@@ -181,6 +194,9 @@ func (ct *CargoToml) GetDirectDependencies() map[string]DependencyType {
 	deps := make(map[string]DependencyType)
 	declare := func(section map[string]DependencySpec, depType DependencyType) {
 		for name := range section {
+			if renamed := section[name].Package; renamed != "" {
+				name = renamed
+			}
 			if _, exists := deps[name]; !exists {
 				deps[name] = depType
 			}

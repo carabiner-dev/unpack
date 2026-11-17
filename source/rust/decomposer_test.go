@@ -436,6 +436,63 @@ target-normal-and-dev = "1.0"
 	require.Equal(t, DepTypeNormal, deps["target-normal-and-dev"])
 }
 
+// TestRenamedDependencyTypes checks that a dependency declared under
+// another name is typed by the crate it renames, the name Cargo.lock knows
+// it by, so a renamed dev dependency is left out like any other.
+func TestRenamedDependencyTypes(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "Cargo.toml"), []byte(`
+[package]
+name = "test-pkg"
+version = "1.0.0"
+
+[dependencies]
+json = { package = "serde_json", version = "1.0" }
+
+[dev-dependencies]
+tmp = { package = "tempfile", version = "3" }
+`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "Cargo.lock"), []byte(`
+version = 4
+
+[[package]]
+name = "serde_json"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "tempfile"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "test-pkg"
+version = "1.0.0"
+dependencies = [
+  "serde_json",
+  "tempfile",
+]
+`), 0o600))
+
+	toml, err := ParseCargoToml(tmpDir)
+	require.NoError(t, err)
+	require.Equal(t, map[string]DependencyType{
+		"serde_json": DepTypeNormal,
+		"tempfile":   DepTypeDev,
+	}, toml.GetDirectDependencies())
+
+	d := New()
+	nl, err := d.Extract(&api.DecomposerOptions{WorkDir: tmpDir, Networking: api.NetworkDisabled})
+	require.NoError(t, err)
+	require.Equal(t, []string{"test-pkg -> serde_json"}, rustEdges(nl))
+
+	nl, err = d.Extract(&api.DecomposerOptions{WorkDir: tmpDir, Networking: api.NetworkDisabled, IncludeDev: true})
+	require.NoError(t, err)
+	require.Equal(t, []string{"test-pkg -> serde_json", "test-pkg -> tempfile"}, rustEdges(nl))
+}
+
 // TestEdgeTypesOnlyFromManifestPackage checks that the kinds Cargo.toml
 // declares qualify the edges of the package it describes and no others: a
 // crate the root only uses for its tests is still part of the build when
