@@ -752,6 +752,87 @@ werkzeug==3.0.1
 	require.False(t, hasEdge(nl, sbom.Edge_dependsOn, root, markupsafe))
 }
 
+// TestExtractRequirementsViaKinds reads a compiled file whose annotations
+// name the three things one can: the project, through its requirements
+// file or its manifest; a package of this environment; and a package the
+// file declares for another environment.
+func TestExtractRequirementsViaKinds(t *testing.T) {
+	t.Parallel()
+
+	dir := filepath.Join(t.TempDir(), "viakinds")
+	require.NoError(t, os.Mkdir(dir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte(
+		`flask==3.0.0
+    # via -r requirements.in
+jinja2==3.1.2
+    # via
+    #   -r requirements.in
+    #   flask
+click==8.1.7
+    # via
+    #   -c constraints.txt
+    #   flask
+tomli==2.0.1
+    # via viakinds (pyproject.toml)
+pywin32==306 ; sys_platform == "win32"
+    # via -r requirements.in
+pywin32-ctypes==0.2.2
+    # via pywin32
+winhelper==1.0.0
+    # via pywin32-ctypes
+shared==1.0.0
+    # via
+    #   pywin32
+    #   flask
+`), 0o600))
+
+	opts := linuxOpts(t, "3.12")
+	opts.WorkDir = dir
+	opts.Networking = api.NetworkDisabled
+	nl, err := New().Extract(opts)
+	require.NoError(t, err)
+
+	root := nodeNamed(t, nl, "viakinds")
+	flask := nodeNamed(t, nl, "flask")
+	jinja2 := nodeNamed(t, nl, "jinja2")
+	click := nodeNamed(t, nl, "click")
+	shared := nodeNamed(t, nl, "shared")
+
+	// Required by the project and by a package: an edge from each.
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, root, jinja2))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, flask, jinja2))
+
+	// A constraints file requires nothing: the package's edge is enough.
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, flask, click))
+	require.False(t, hasEdge(nl, sbom.Edge_dependsOn, root, click))
+
+	// The project's manifest is the project.
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, root, nodeNamed(t, nl, "tomli")))
+
+	// A parent for another environment gives no edge, and does not send
+	// the entry to the root when it has another.
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, flask, shared))
+	require.False(t, hasEdge(nl, sbom.Edge_dependsOn, root, shared))
+
+	// With no parent left in this environment the entry is not in it
+	// either, and neither is what only it pulls in.
+	for _, n := range nl.GetNodes() {
+		require.NotContains(t, []string{"pywin32", "pywin32-ctypes", "winhelper"}, n.GetName())
+	}
+	require.Len(t, nl.GetNodes(), 6)
+
+	// On the platform the parent is for, the chain is there.
+	opts = &api.DecomposerOptions{WorkDir: dir, Platform: "windows/amd64", Networking: api.NetworkDisabled}
+	nl, err = New().Extract(opts)
+	require.NoError(t, err)
+	pywin32 := nodeNamed(t, nl, "pywin32")
+	ctypes := nodeNamed(t, nl, "pywin32-ctypes")
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, nodeNamed(t, nl, "viakinds"), pywin32))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, pywin32, ctypes))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, ctypes, nodeNamed(t, nl, "winhelper")))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, pywin32, nodeNamed(t, nl, "shared")))
+}
+
 // TestExtractRequirementsLoose reads a hand-written file: partial pins, a
 // git reference, an include, and no via annotations.
 func TestExtractRequirementsLoose(t *testing.T) {
