@@ -132,6 +132,80 @@ func TestExtract(t *testing.T) {
 	require.Len(t, nl.GetNodes(), 7)
 }
 
+// TestExtractUnreached reads a manifest resolving modules the walk from
+// its direct dependencies never reaches: a chain whose bottom sorts before
+// its top, and a circle. Only the top of each hangs from the module.
+func TestExtractUnreached(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "snapshot.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{
+  "version": 0,
+  "sha": "`+testCommit+`",
+  "ref": "refs/heads/main",
+  "manifests": {
+    "com.example:mod_3:1.0.0": {
+      "name": "com.example:mod_3:1.0.0",
+      "resolved": {
+        "org.direct:lib:1.0": {
+          "package_url": "pkg:maven/org.direct/lib@1.0",
+          "relationship": "direct", "scope": "runtime"
+        },
+        "org.chain:a-bottom:1.0": {
+          "package_url": "pkg:maven/org.chain/a-bottom@1.0",
+          "relationship": "indirect", "scope": "runtime"
+        },
+        "org.chain:b-middle:1.0": {
+          "package_url": "pkg:maven/org.chain/b-middle@1.0",
+          "relationship": "indirect", "scope": "runtime",
+          "dependencies": ["org.chain:a-bottom:1.0"]
+        },
+        "org.chain:c-top:1.0": {
+          "package_url": "pkg:maven/org.chain/c-top@1.0",
+          "relationship": "indirect", "scope": "runtime",
+          "dependencies": ["org.chain:b-middle:1.0"]
+        },
+        "org.circle:x:1.0": {
+          "package_url": "pkg:maven/org.circle/x@1.0",
+          "relationship": "indirect", "scope": "runtime",
+          "dependencies": ["org.circle:y:1.0"]
+        },
+        "org.circle:y:1.0": {
+          "package_url": "pkg:maven/org.circle/y@1.0",
+          "relationship": "indirect", "scope": "runtime",
+          "dependencies": ["org.circle:x:1.0"]
+        }
+      }
+    }
+  }
+}`), 0o600))
+
+	nl := extractSnapshot(t, path, &api.DecomposerOptions{WorkDir: t.TempDir()})
+
+	module := nodeByPurl(t, nl, "pkg:maven/com.example/mod_3@1.0.0")
+	bottom := nodeByPurl(t, nl, "pkg:maven/org.chain/a-bottom@1.0")
+	middle := nodeByPurl(t, nl, "pkg:maven/org.chain/b-middle@1.0")
+	top := nodeByPurl(t, nl, "pkg:maven/org.chain/c-top@1.0")
+	x := nodeByPurl(t, nl, "pkg:maven/org.circle/x@1.0")
+	y := nodeByPurl(t, nl, "pkg:maven/org.circle/y@1.0")
+
+	// The chain hangs from the module by its top alone.
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, module, top))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, top, middle))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, middle, bottom))
+	require.False(t, hasEdge(nl, sbom.Edge_dependsOn, module, middle))
+	require.False(t, hasEdge(nl, sbom.Edge_dependsOn, module, bottom))
+
+	// The circle has no top: its first member stands for it.
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, module, x))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, x, y))
+	require.True(t, hasEdge(nl, sbom.Edge_dependsOn, y, x))
+	require.False(t, hasEdge(nl, sbom.Edge_dependsOn, module, y))
+
+	// Nothing is lost: the root, the module and the six resolved.
+	require.Len(t, nl.GetNodes(), 8)
+}
+
 func TestExtractIncludeDev(t *testing.T) {
 	t.Parallel()
 
