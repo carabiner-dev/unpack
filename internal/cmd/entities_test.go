@@ -292,6 +292,26 @@ func TestGenerationContext(t *testing.T) {
 		})
 	}
 
+	// Every type there is has its sentence in SPDX 2, and not only the
+	// ones unpack reads in itself: a document that is re-read keeps
+	// whichever it came with. "Other" names no context to put in words.
+	t.Run("every type has its words", func(t *testing.T) {
+		t.Parallel()
+		for value, name := range protosbom.DocumentType_SBOMType_name {
+			generation := api.GenerationContext(value)
+			var spdx2 struct {
+				Comment string `json:"comment"`
+			}
+			doc := render(t, formats.SPDX23JSON, withContexts([]api.GenerationContext{generation}))
+			require.NoError(t, json.Unmarshal([]byte(doc), &spdx2))
+			if generation == protosbom.DocumentType_OTHER {
+				require.Empty(t, spdx2.Comment)
+				continue
+			}
+			require.Contains(t, spdx2.Comment, "SBOM type: ", name)
+		}
+	})
+
 	t.Run("none", func(t *testing.T) {
 		t.Parallel()
 		var spdx2 struct {
