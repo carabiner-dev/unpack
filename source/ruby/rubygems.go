@@ -6,6 +6,7 @@ package ruby
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/protobom/protobom/pkg/sbom"
@@ -58,6 +59,40 @@ type gemVersionInfo struct {
 
 	// SHA is the sha256 of the pure-Ruby artifact.
 	SHA string `json:"sha"`
+
+	// Authors are who the gem's specification says wrote it: the names
+	// alone, joined by commas into one string.
+	Authors string `json:"authors"`
+}
+
+// companySuffixes are the words a comma sets off at the end of a company's
+// name, "Example, Inc.", compared in lower case and without the period.
+var companySuffixes = map[string]struct{}{
+	"inc": {}, "llc": {}, "ltd": {}, "gmbh": {}, "corp": {}, "co": {}, "plc": {}, "sa": {}, "ag": {},
+}
+
+// gemAuthors reads the registry's authors string into the people it names.
+//
+// The registry joins the names of a gem's specification with commas and
+// keeps nothing else of them, so a comma is taken to part two authors,
+// except before what only ever ends a company's name. Nothing says whether
+// a name is a person's or an organization's. A gem may state a link to a
+// list of contributors in place of names, which names nobody.
+func gemAuthors(authors string) []*sbom.Person {
+	people := []*sbom.Person{}
+	for _, part := range strings.Split(authors, ",") {
+		name := strings.TrimSpace(part)
+		if name == "" || strings.Contains(name, "://") {
+			continue
+		}
+		_, isSuffix := companySuffixes[strings.ToLower(strings.TrimSuffix(name, "."))]
+		if isSuffix && len(people) > 0 {
+			people[len(people)-1].Name += ", " + name
+			continue
+		}
+		people = append(people, &sbom.Person{Name: name})
+	}
+	return people
 }
 
 // FetchAll fetches metadata for the gems in parallel. Failures are
@@ -107,6 +142,11 @@ func (c *RubyGemsClient) enrichNodes(rb *rubyBuilder) {
 			if id != "" {
 				node.Licenses = append(node.Licenses, license.Normalize(id, ""))
 			}
+		}
+		// Who wrote the gem is who the registry names for it, and so who
+		// it is supplied by.
+		if suppliers := gemAuthors(info.Authors); len(suppliers) > 0 {
+			node.Suppliers = suppliers
 		}
 		if info.Info != "" {
 			node.Description = info.Info

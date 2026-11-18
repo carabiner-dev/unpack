@@ -20,6 +20,35 @@ import (
 
 // TestEnrich runs an extraction against a fake registry and checks the
 // metadata lands on the right nodes and only on them.
+// TestGemAuthors checks how the registry's authors string is read: names
+// parted by commas, except where the comma belongs to a company's name.
+func TestGemAuthors(t *testing.T) {
+	t.Parallel()
+
+	for authors, expected := range map[string][]string{
+		"Leah Neukirchen":                          {"Leah Neukirchen"},
+		"Blake Mizerany, Ryan Tomayko,Simon Rozet": {"Blake Mizerany", "Ryan Tomayko", "Simon Rozet"},
+		"Example, Inc.":                            {"Example, Inc."},
+		"Jane Doe, Example, Inc, Other":            {"Jane Doe", "Example, Inc", "Other"},
+		"Example GmbH, Acme, LLC":                  {"Example GmbH", "Acme, LLC"},
+		// Nothing before it to belong to.
+		"Inc., Jane Doe": {"Inc.", "Jane Doe"},
+		// rack-protection states a link in place of names.
+		"https://github.com/sinatra/sinatra/graphs/contributors": {},
+		"Jane Doe, https://example.com/contributors":             {"Jane Doe"},
+		" , ,": {},
+		"":     {},
+	} {
+		people := gemAuthors(authors)
+		names := make([]string, 0, len(people))
+		for _, person := range people {
+			names = append(names, person.GetName())
+			require.False(t, person.GetIsOrg())
+		}
+		require.Equal(t, expected, names, "authors %q", authors)
+	}
+}
+
 func TestEnrich(t *testing.T) {
 	t.Parallel()
 
@@ -34,7 +63,7 @@ func TestEnrich(t *testing.T) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/sinatra/versions/"):
 			//nolint:errcheck // a fake server's writes have nowhere to fail
-			fmt.Fprint(w, `{"licenses": ["MIT"], "info": "Classy web-development dressed in a DSL.", "homepage_uri": "http://sinatrarb.com/", "source_code_uri": "https://github.com/sinatra/sinatra", "sha": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}`)
+			fmt.Fprint(w, `{"licenses": ["MIT"], "authors": "Blake Mizerany, Ryan Tomayko, Simon Rozet, Konstantin Haase", "info": "Classy web-development dressed in a DSL.", "homepage_uri": "http://sinatrarb.com/", "source_code_uri": "https://github.com/sinatra/sinatra", "sha": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}`)
 		case strings.HasPrefix(r.URL.Path, "/ffi/versions/"):
 			//nolint:errcheck // a fake server's writes have nowhere to fail
 			fmt.Fprint(w, `{"licenses": null, "info": "Foreign function interface.", "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}`)
@@ -58,6 +87,13 @@ func TestEnrich(t *testing.T) {
 	sinatra := nodeNamed(t, nl, "sinatra")
 	require.Equal(t, []string{"MIT"}, sinatra.GetLicenses())
 	require.Equal(t, "Classy web-development dressed in a DSL.", sinatra.GetDescription())
+
+	// The suppliers are the authors the registry names, in its order.
+	names := make([]string, 0, len(sinatra.GetSuppliers()))
+	for _, supplier := range sinatra.GetSuppliers() {
+		names = append(names, supplier.GetName())
+	}
+	require.Equal(t, []string{"Blake Mizerany", "Ryan Tomayko", "Simon Rozet", "Konstantin Haase"}, names)
 	require.Equal(t, "http://sinatrarb.com/", sinatra.GetUrlHome())
 	require.Len(t, sinatra.GetExternalReferences(), 1)
 	require.Equal(t, sbom.ExternalReference_VCS, sinatra.GetExternalReferences()[0].GetType())
@@ -71,6 +107,7 @@ func TestEnrich(t *testing.T) {
 	// variant, so the pure-Ruby sha does not apply to it either.
 	ffi := nodeNamed(t, nl, "ffi")
 	require.Empty(t, ffi.GetLicenses())
+	require.Empty(t, ffi.GetSuppliers(), "the registry named nobody")
 	require.NotEqual(t, strings.Repeat("e", 64),
 		ffi.GetHashes()[int32(sbom.HashAlgorithm_SHA256)])
 
