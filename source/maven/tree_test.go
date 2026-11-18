@@ -568,6 +568,80 @@ func TestBuildTreeScopeWidens(t *testing.T) {
 	require.ElementsMatch(t, []string{"testlib", "only-tests", "direct-test", "direct-test"}, dev)
 }
 
+// TestBuildTreeSuppliers checks who an artifact is supplied by, as its POM
+// says: the organization the project belongs to, its developers when it
+// states none, either inherited from a parent when the POM itself is
+// silent, and nobody when nothing is stated anywhere.
+func TestBuildTreeSuppliers(t *testing.T) {
+	t.Parallel()
+
+	const header = `<?xml version="1.0"?><project>`
+	gav := func(artifact string) string {
+		return `<groupId>com.dep</groupId><artifactId>` + artifact + `</artifactId><version>1.0</version>`
+	}
+	url := func(artifact string) string {
+		return "https://repo.test/com/dep/" + artifact + "/1.0/" + artifact + "-1.0.pom"
+	}
+	parentRef := `<parent><groupId>com.dep</groupId><artifactId>parent</artifactId><version>1.0</version></parent>`
+
+	resolver := newTestResolver(map[string]string{
+		url("with-org"): header + gav("with-org") + `
+<organization><name> The Example Foundation </name><url>https://example.org</url></organization>
+<developers><developer><name>Not Used</name></developer></developers></project>`,
+		url("with-devs"): header + gav("with-devs") + `
+<developers>
+  <developer><id>jdoe</id><name>Jane Doe</name><email>jane@example.com</email><url>https://jane.example</url></developer>
+  <developer><id>onlyid</id></developer>
+  <developer><email>nameless@example.com</email></developer>
+</developers></project>`,
+		url("inherits"): header + parentRef + `<artifactId>inherits</artifactId></project>`,
+		url("overrides"): header + parentRef + `<artifactId>overrides</artifactId>
+<organization><name>Its Own Organization</name></organization></project>`,
+		url("parent"): header + gav("parent") + `<packaging>pom</packaging>
+<organization><name>The Parent Organization</name><url>https://parent.example</url></organization></project>`,
+		url("silent"): header + gav("silent") + `</project>`,
+	})
+
+	pom := &POM{
+		GroupID:      "com.example",
+		ArtifactID:   "app",
+		Version:      "1.0.0",
+		Organization: &Organization{Name: "The Project's Own"},
+	}
+	for _, artifact := range []string{"with-org", "with-devs", "inherits", "overrides", "silent"} {
+		pom.Dependencies = append(pom.Dependencies, Dependency{GroupID: "com.dep", ArtifactID: artifact, Version: "1.0"})
+	}
+
+	dt := NewDependencyTree(pom, resolver, &defaultOptions)
+	require.NoError(t, dt.Build())
+	nl, err := dt.ToNodeList(nil)
+	require.NoError(t, err)
+
+	type person struct {
+		name, email, url string
+		org              bool
+	}
+	suppliers := map[string][]person{}
+	for _, n := range nl.GetNodes() {
+		for _, s := range n.GetSuppliers() {
+			suppliers[n.GetName()] = append(suppliers[n.GetName()], person{s.GetName(), s.GetEmail(), s.GetUrl(), s.GetIsOrg()})
+		}
+	}
+
+	require.Equal(t, []person{{"The Example Foundation", "", "https://example.org", true}}, suppliers["with-org"])
+	require.Equal(t, []person{
+		{"Jane Doe", "jane@example.com", "https://jane.example", false},
+		{"onlyid", "", "", false},
+	}, suppliers["with-devs"])
+	require.Equal(t, []person{{"The Parent Organization", "", "https://parent.example", true}}, suppliers["inherits"])
+	require.Equal(t, []person{{"Its Own Organization", "", "", true}}, suppliers["overrides"])
+	require.Empty(t, suppliers["silent"])
+
+	// The project's own supplier is for whoever writes the document to
+	// state, whatever its POM says.
+	require.Empty(t, suppliers["app"])
+}
+
 func TestToNodeList(t *testing.T) {
 	t.Parallel()
 	pom := &POM{

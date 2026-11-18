@@ -561,6 +561,16 @@ func MergeParent(child, parent *POM) *POM {
 		child.Licenses = parent.Licenses
 	}
 
+	// Inherit the organization and the developers, each when the child
+	// states none of its own: a project's modules are usually told who
+	// they belong to by their parent alone.
+	if child.Organization == nil {
+		child.Organization = parent.Organization
+	}
+	if len(child.Developers) == 0 {
+		child.Developers = parent.Developers
+	}
+
 	// Inherit repositories
 	if len(child.Repositories) == 0 {
 		child.Repositories = parent.Repositories

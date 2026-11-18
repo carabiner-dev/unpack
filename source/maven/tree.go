@@ -22,6 +22,7 @@ type ResolvedDependency struct {
 	Scope      string
 	Optional   bool
 	Licenses   []License
+	Suppliers  []*sbom.Person    // who the artifact's POM says it is supplied by
 	Hashes     map[string]string // algo name -> hex digest (e.g. "SHA1" -> "abc123")
 	Depth      int
 }
@@ -203,6 +204,7 @@ func (dt *DependencyTree) Build() error {
 		// Use the coordinate's RepoURL so SNAPSHOTs hosted outside Maven
 		// Central (e.g. apache-snapshots) are fetched from the right repo.
 		var licenses []License
+		var suppliers []*sbom.Person
 		var transitiveDeps []Dependency
 		if dt.resolver != nil && version != "" {
 			// Fetching a dependency's POM is what lets us discover its
@@ -228,6 +230,7 @@ func (dt *DependencyTree) Build() error {
 					depPOM = effective
 				}
 				licenses = depPOM.Licenses
+				suppliers = depPOM.Suppliers()
 
 				// Apply the dep's own dependencyManagement to its dependencies
 				// so that version-less deps get their versions filled in.
@@ -262,6 +265,7 @@ func (dt *DependencyTree) Build() error {
 			Scope:      effectiveScope,
 			Optional:   dep.IsOptional(),
 			Licenses:   licenses,
+			Suppliers:  suppliers,
 			Depth:      entry.depth,
 		}
 
@@ -334,6 +338,7 @@ func (dt *DependencyTree) AddBuildPlugins() {
 
 		// Fetch license info if resolver is available
 		var licenses []License
+		var suppliers []*sbom.Person
 		if dt.resolver != nil {
 			depPOM, err := dt.resolver.FetchPOM(groupID, plugin.ArtifactID, plugin.Version)
 			if err == nil {
@@ -342,6 +347,7 @@ func (dt *DependencyTree) AddBuildPlugins() {
 					depPOM = effective
 				}
 				licenses = depPOM.Licenses
+				suppliers = depPOM.Suppliers()
 			}
 		}
 
@@ -349,6 +355,7 @@ func (dt *DependencyTree) AddBuildPlugins() {
 			Coordinate: coord,
 			Scope:      "build",
 			Licenses:   licenses,
+			Suppliers:  suppliers,
 			Depth:      1,
 		}
 
@@ -726,6 +733,9 @@ func (dt *DependencyTree) createDependencyNode(rd *ResolvedDependency) *sbom.Nod
 
 	for _, lic := range rd.Licenses {
 		node.Licenses = append(node.Licenses, NormalizeLicense(lic))
+	}
+	for _, supplier := range rd.Suppliers {
+		node.Suppliers = append(node.Suppliers, supplier.Copy())
 	}
 
 	return node
