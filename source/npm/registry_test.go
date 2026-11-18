@@ -128,7 +128,7 @@ func TestRegistryEnrich(t *testing.T) {
 
 	client := NewRegistryClient(2)
 	client.BaseURL = server.URL
-	client.enrichNodes(nl)
+	client.enrichNodes(nl, fromPublicRegistry)
 
 	sort.Strings(requested)
 	require.Equal(t, []string{"/@types%2Fnode/20.1.0", "/debug/4.4.3", "/unknown/1.0.0"}, requested)

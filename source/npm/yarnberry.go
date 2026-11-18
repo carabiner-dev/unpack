@@ -50,6 +50,11 @@ type BerryPackage struct {
 	// Dependencies maps names to the protocol-carrying references the
 	// entry requires.
 	Dependencies map[string]string
+
+	// FromNpm is set when the entry resolves through the npm protocol:
+	// the package as an npm registry has it, and not a patch of it, a
+	// repository or a directory.
+	FromNpm bool
 }
 
 // rawBerryEntry is one YAML entry as written.
@@ -78,7 +83,7 @@ func ParseYarnBerryLock(data []byte) (*YarnBerryLock, error) {
 
 		// The resolution names the package fetched, whatever name a
 		// selector asked for it under.
-		name, _, err := yarnSelectorName(entry.Resolution)
+		name, reference, err := yarnSelectorName(entry.Resolution)
 		if err != nil {
 			return nil, fmt.Errorf("entry %q: %w", key, err)
 		}
@@ -86,6 +91,7 @@ func ParseYarnBerryLock(data []byte) (*YarnBerryLock, error) {
 			Name:         name,
 			Version:      entry.Version,
 			Dependencies: entry.Dependencies,
+			FromNpm:      strings.HasPrefix(reference, "npm:"),
 		}
 
 		// A workspace resolution names its directory rather than a

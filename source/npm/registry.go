@@ -161,21 +161,32 @@ func (c *RegistryClient) FetchAll(packages []PackageKey) map[PackageKey]*registr
 // may be nobody else's business. A lock that does not say where a package
 // came from gets nothing looked up.
 func fromPublicRegistry(node *sbom.Node) bool {
-	location, err := url.Parse(node.GetUrlDownload())
-	if err != nil || location.Scheme != "https" {
-		return false
-	}
-	_, public := publicRegistryHosts[location.Hostname()]
-	return public
+	return isPublicRegistryURL(node.GetUrlDownload())
+}
+
+// plainVersion says whether a version is one a registry would have: a
+// reference to a file, a link or a repository holds a colon or a slash.
+func plainVersion(version string) bool {
+	return version != "" && !strings.ContainsAny(version, ":/")
 }
 
 // enrichNodes fills the graph's nodes with what the registry knows about
-// them: for each package fetched from the public registry, its supplier.
-func (c *RegistryClient) enrichNodes(nl *sbom.NodeList) {
+// them: for each package that is the public registry's to describe, its
+// supplier. public says which those are, as each kind of lock can tell.
+// The roots are the project's own packages and never asked about.
+func (c *RegistryClient) enrichNodes(nl *sbom.NodeList, public func(*sbom.Node) bool) {
+	roots := map[string]struct{}{}
+	for _, id := range nl.GetRootElements() {
+		roots[id] = struct{}{}
+	}
+
 	byKey := map[PackageKey][]*sbom.Node{}
 	keys := []PackageKey{}
 	for _, node := range nl.GetNodes() {
-		if node.GetName() == "" || node.GetVersion() == "" || !fromPublicRegistry(node) {
+		if _, isRoot := roots[node.GetId()]; isRoot {
+			continue
+		}
+		if node.GetName() == "" || !plainVersion(node.GetVersion()) || !public(node) {
 			continue
 		}
 		key := PackageKey{Name: node.GetName(), Version: node.GetVersion()}

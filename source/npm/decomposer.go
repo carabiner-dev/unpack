@@ -101,16 +101,55 @@ func (d *Decomposer) extractNpm(workDir string, opts *api.DecomposerOptions) (*s
 		return nil, fmt.Errorf("building dependency graph: %w", err)
 	}
 
-	enrichFromRegistry(nl, opts)
+	enrichFromRegistry(nl, opts, nil)
 	return nl, nil
 }
 
 // enrichFromRegistry adds what the public npm registry knows about the
-// graph's packages, when networking allows: a lock states where each was
-// fetched from, and only those fetched from there are asked about.
-func enrichFromRegistry(nl *sbom.NodeList, opts *api.DecomposerOptions) {
-	if opts.Networking >= api.NetworkEssential {
-		NewRegistryClient(0).enrichNodes(nl)
+// graph's packages, when networking allows. public says which packages
+// are the public registry's to describe; nil is for the locks that state
+// where each package was fetched from, where that settles it.
+func enrichFromRegistry(nl *sbom.NodeList, opts *api.DecomposerOptions, public func(*sbom.Node) bool) {
+	if opts.Networking < api.NetworkEssential {
+		return
+	}
+	if public == nil {
+		public = fromPublicRegistry
+	}
+	NewRegistryClient(0).enrichNodes(nl, public)
+}
+
+// pnpmPublic says which packages of a pnpm graph come from the public
+// registry. The lock records a download location only for what does not
+// come from the project's registry, a tarball or a repository, and that
+// location then settles it. For the rest it is the project's
+// configuration that says which registry that is.
+func pnpmPublic(workDir string) func(*sbom.Node) bool {
+	config := pnpmRegistryConfig(workDir)
+	return func(node *sbom.Node) bool {
+		if node.GetUrlDownload() != "" {
+			return fromPublicRegistry(node)
+		}
+		return config.public(node.GetName())
+	}
+}
+
+// berryPublic says which packages of a Yarn berry graph come from the
+// public registry: those the lock resolves through the npm protocol,
+// when the project's configuration points that at the public registry.
+// A patched package, or one from a repository or a directory, is not the
+// registry's as it stands.
+func berryPublic(lock *YarnBerryLock, workDir string) func(*sbom.Node) bool {
+	config := yarnRegistryConfig(workDir)
+	fromRegistry := map[PackageKey]struct{}{}
+	for _, pkg := range lock.Entries {
+		if pkg.FromNpm {
+			fromRegistry[PackageKey{Name: pkg.Name, Version: pkg.Version}] = struct{}{}
+		}
+	}
+	return func(node *sbom.Node) bool {
+		_, ok := fromRegistry[PackageKey{Name: node.GetName(), Version: node.GetVersion()}]
+		return ok && config.public(node.GetName())
 	}
 }
 
@@ -120,7 +159,12 @@ func (d *Decomposer) extractPnpm(workDir string, opts *api.DecomposerOptions) (*
 	if err != nil {
 		return nil, err
 	}
-	return buildPnpmTree(lock, workDir, opts)
+	nl, err := buildPnpmTree(lock, workDir, opts)
+	if err != nil {
+		return nil, err
+	}
+	enrichFromRegistry(nl, opts, pnpmPublic(workDir))
+	return nl, nil
 }
 
 // extractYarn builds the graph from a yarn.lock, whichever generation
@@ -138,7 +182,12 @@ func (d *Decomposer) extractYarn(workDir string, opts *api.DecomposerOptions) (*
 		if err != nil {
 			return nil, err
 		}
-		return buildYarnBerryTree(lock, workDir, opts)
+		nl, err := buildYarnBerryTree(lock, workDir, opts)
+		if err != nil {
+			return nil, err
+		}
+		enrichFromRegistry(nl, opts, berryPublic(lock, workDir))
+		return nl, nil
 	}
 
 	lock, err := ParseYarnLock(data)
@@ -153,7 +202,7 @@ func (d *Decomposer) extractYarn(workDir string, opts *api.DecomposerOptions) (*
 	if err != nil {
 		return nil, err
 	}
-	enrichFromRegistry(nl, opts)
+	enrichFromRegistry(nl, opts, nil)
 	return nl, nil
 }
 
