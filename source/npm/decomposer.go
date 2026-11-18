@@ -101,7 +101,17 @@ func (d *Decomposer) extractNpm(workDir string, opts *api.DecomposerOptions) (*s
 		return nil, fmt.Errorf("building dependency graph: %w", err)
 	}
 
+	enrichFromRegistry(nl, opts)
 	return nl, nil
+}
+
+// enrichFromRegistry adds what the public npm registry knows about the
+// graph's packages, when networking allows: a lock states where each was
+// fetched from, and only those fetched from there are asked about.
+func enrichFromRegistry(nl *sbom.NodeList, opts *api.DecomposerOptions) {
+	if opts.Networking >= api.NetworkEssential {
+		NewRegistryClient(0).enrichNodes(nl)
+	}
 }
 
 // extractPnpm builds the graph from pnpm-lock.yaml.
@@ -139,7 +149,12 @@ func (d *Decomposer) extractYarn(workDir string, opts *api.DecomposerOptions) (*
 	if err != nil {
 		return nil, fmt.Errorf("parsing package.json: %w", err)
 	}
-	return buildYarnTree(lock, manifest, opts)
+	nl, err := buildYarnTree(lock, manifest, opts)
+	if err != nil {
+		return nil, err
+	}
+	enrichFromRegistry(nl, opts)
+	return nl, nil
 }
 
 func fileExists(path string) bool {

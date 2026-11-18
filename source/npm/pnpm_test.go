@@ -19,9 +19,13 @@ import (
 func extractPnpmTree(t *testing.T, testdata string, opts *api.DecomposerOptions) *sbom.NodeList {
 	t.Helper()
 	if opts == nil {
-		opts = &api.DecomposerOptions{}
+		opts = &api.DecomposerOptions{Networking: api.NetworkDisabled}
 	}
 	opts.WorkDir = "testdata/" + testdata
+	// The graph tests are about the lock, not the registry: the zero
+	// networking value is NetworkEssential, which would quietly turn
+	// every test into a registry client.
+	opts.Networking = api.NetworkDisabled
 	nl, err := New().Extract(opts)
 	require.NoError(t, err)
 	return nl
@@ -97,7 +101,7 @@ func TestExtractPnpm(t *testing.T) {
 func TestExtractPnpmDevAndOptional(t *testing.T) {
 	t.Parallel()
 
-	opts := &api.DecomposerOptions{IncludeDev: true, IncludeOptional: true}
+	opts := &api.DecomposerOptions{IncludeDev: true, IncludeOptional: true, Networking: api.NetworkDisabled}
 	nl := extractPnpmTree(t, "pnpm", opts)
 
 	root := pnpmNodeNamed(t, nl, "jsdemo")
@@ -117,7 +121,7 @@ func TestExtractPnpmDevAndOptional(t *testing.T) {
 func TestExtractPnpmWorkspace(t *testing.T) {
 	t.Parallel()
 
-	opts := &api.DecomposerOptions{IncludeDev: true}
+	opts := &api.DecomposerOptions{IncludeDev: true, Networking: api.NetworkDisabled}
 	nl := extractPnpmTree(t, "pnpmws", opts)
 
 	require.Len(t, nl.GetRootElements(), 2)

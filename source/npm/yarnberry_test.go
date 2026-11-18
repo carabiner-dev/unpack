@@ -162,7 +162,7 @@ func TestParseYarnBerryNames(t *testing.T) {
 func TestExtractYarnBerryDevAndOptional(t *testing.T) {
 	t.Parallel()
 
-	opts := &api.DecomposerOptions{IncludeDev: true, IncludeOptional: true}
+	opts := &api.DecomposerOptions{IncludeDev: true, IncludeOptional: true, Networking: api.NetworkDisabled}
 	nl := extractPnpmTree(t, "yarnberry", opts)
 
 	root := pnpmNodeNamed(t, nl, "jsdemo")
@@ -176,7 +176,7 @@ func TestExtractYarnBerryDevAndOptional(t *testing.T) {
 func TestExtractYarnBerryWorkspace(t *testing.T) {
 	t.Parallel()
 
-	opts := &api.DecomposerOptions{IncludeDev: true}
+	opts := &api.DecomposerOptions{IncludeDev: true, Networking: api.NetworkDisabled}
 	nl := extractPnpmTree(t, "yarnberryws", opts)
 
 	require.Len(t, nl.GetRootElements(), 2)
