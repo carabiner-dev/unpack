@@ -66,7 +66,16 @@ type Unpacker struct {
 // decomposer that produces a NodeList contributes one entry to the result; a
 // decomposer that doesn't find its database returns (nil, nil) and is
 // skipped.
-func (u *Unpacker) Extract(_ context.Context, subject api.DecomposableSubject) ([]*sbom.NodeList, error) {
+func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject) ([]*sbom.NodeList, error) {
+	extractions, err := u.Extractions(ctx, subject)
+	return api.NodeLists(extractions), err
+}
+
+var _ api.ExtractionUnpacker = (*Unpacker)(nil)
+
+// Extractions is Extract, returning with each NodeList the context its
+// decomposer reads in.
+func (u *Unpacker) Extractions(_ context.Context, subject api.DecomposableSubject) ([]*api.Extraction, error) {
 	if subject == nil {
 		return nil, fmt.Errorf("system unpacker received a nil subject")
 	}
@@ -85,7 +94,7 @@ func (u *Unpacker) Extract(_ context.Context, subject api.DecomposableSubject) (
 	opts := &api.DecomposerOptions{
 		IncludeFiles: u.Options.IncludeFiles,
 	}
-	var nodelists []*sbom.NodeList
+	var extractions []*api.Extraction
 	var errs []error
 	for name, d := range u.decomposers {
 		nl, err := d.ExtractFromFS(src, opts)
@@ -96,12 +105,14 @@ func (u *Unpacker) Extract(_ context.Context, subject api.DecomposableSubject) (
 		if nl == nil {
 			continue
 		}
-		nodelists = append(nodelists, nl)
+		extraction := api.NewExtraction(nl)
+		extraction.AddContextOf(d)
+		extractions = append(extractions, extraction)
 	}
 	if len(errs) > 0 {
-		return nodelists, errors.Join(errs...)
+		return extractions, errors.Join(errs...)
 	}
-	return nodelists, nil
+	return extractions, nil
 }
 
 // RegisterDecomposer adds a decomposer to the unpacker. The decomposer must

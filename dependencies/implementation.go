@@ -29,8 +29,8 @@ type unpackerImplementation interface {
 	ScanPaths(context.Context, *Options, map[string]api.Decomposer, map[string]*code.PathIndex) (map[api.Decomposer][]string, error)
 
 	// ExtractCodeBases runs the found codebases throuhg the decomposers and returns
-	// the resulting nodelists.
-	ExtractCodeBases(context.Context, *Options, map[api.Decomposer][]string) ([]*sbom.NodeList, error)
+	// the resulting nodelists, each with the context its decomposer reads in.
+	ExtractCodeBases(context.Context, *Options, map[api.Decomposer][]string) ([]*api.Extraction, error)
 
 	// RelativePath computes the relative path from base to target.
 	RelativePath(base, target string) (string, error)
@@ -90,8 +90,8 @@ func (di *defaultImplementation) ScanPaths(
 
 func (di *defaultImplementation) ExtractCodeBases(
 	ctx context.Context, opts *Options, codebaseMap map[api.Decomposer][]string,
-) ([]*sbom.NodeList, error) {
-	ret := []*sbom.NodeList{}
+) ([]*api.Extraction, error) {
+	ret := []*api.Extraction{}
 	for d, codebases := range codebaseMap {
 		for _, cbPath := range codebases {
 			// If this is a git repo, compute the version from the tag data
@@ -163,7 +163,9 @@ func (di *defaultImplementation) ExtractCodeBases(
 					return nil, fmt.Errorf("adding file nodes: %w", err)
 				}
 			}
-			ret = append(ret, nl)
+			extraction := api.NewExtraction(nl)
+			extraction.AddContextOf(d)
+			ret = append(ret, extraction)
 		}
 	}
 	return ret, nil

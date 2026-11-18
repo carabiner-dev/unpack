@@ -120,6 +120,16 @@ type Unpacker struct {
 // describing the image with the system packages and the artifacts found in
 // its filesystem as descendants.
 func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject) ([]*sbom.NodeList, error) {
+	extractions, err := u.Extractions(ctx, subject)
+	return api.NodeLists(extractions), err
+}
+
+var _ api.ExtractionUnpacker = (*Unpacker)(nil)
+
+// Extractions is Extract, returning with the graph the contexts it was
+// read in: an image is something built that is taken apart, and what is
+// found in it adds the contexts of the decomposers that read it.
+func (u *Unpacker) Extractions(ctx context.Context, subject api.DecomposableSubject) ([]*api.Extraction, error) {
 	if subject == nil {
 		return nil, fmt.Errorf("image unpacker received a nil subject")
 	}
@@ -147,13 +157,13 @@ func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject)
 		return nil, fmt.Errorf("fetching %q: %w", ref.Ref, err)
 	}
 
-	var nl *sbom.NodeList
+	var extraction *api.Extraction
 	if desc.MediaType.IsIndex() {
 		idx, err := desc.ImageIndex()
 		if err != nil {
 			return nil, fmt.Errorf("reading image index %q: %w", ref.Ref, err)
 		}
-		nl, err = u.extractIndex(ctx, ref.Ref, nref, idx)
+		extraction, err = u.extractIndex(ctx, ref.Ref, nref, idx)
 		if err != nil {
 			return nil, err
 		}
@@ -162,19 +172,19 @@ func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject)
 		if err != nil {
 			return nil, fmt.Errorf("reading image %q: %w", ref.Ref, err)
 		}
-		nl, err = u.extractImage(ctx, ref.Ref, nref, img)
+		extraction, err = u.extractImage(ctx, ref.Ref, nref, img)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return []*sbom.NodeList{nl}, nil
+	return []*api.Extraction{extraction}, nil
 }
 
 // extractIndex handles a multi-arch image index: each platform image is
 // squashed and extracted concurrently, and the results are assembled under
 // a node describing the index — index node → (contains) → one node per arch
 // image → (contains) → its system packages.
-func (u *Unpacker) extractIndex(ctx context.Context, refStr string, nref name.Reference, idx v1.ImageIndex) (*sbom.NodeList, error) {
+func (u *Unpacker) extractIndex(ctx context.Context, refStr string, nref name.Reference, idx v1.ImageIndex) (*api.Extraction, error) {
 	manifest, err := idx.IndexManifest()
 	if err != nil {
 		return nil, fmt.Errorf("reading index manifest: %w", err)
@@ -197,7 +207,7 @@ func (u *Unpacker) extractIndex(ctx context.Context, refStr string, nref name.Re
 
 	// Extract every platform image in parallel. Each one is addressed by
 	// its digest-pinned reference.
-	lists := make([]*sbom.NodeList, len(members))
+	lists := make([]*api.Extraction, len(members))
 	g, gctx := errgroup.WithContext(ctx)
 	for i, m := range members {
 		g.Go(func() error {
@@ -231,12 +241,12 @@ func (u *Unpacker) extractIndex(ctx context.Context, refStr string, nref name.Re
 	node := imageNode(refStr, nref, digest, "", "")
 	node.Description = "multi-arch image index"
 	nl.AddRootNode(node)
-	for _, archList := range lists {
-		if err := nl.RelateNodeListAtID(archList, node.GetId(), sbom.Edge_contains); err != nil {
+	for _, arch := range lists {
+		if err := nl.RelateNodeListAtID(arch.NodeList, node.GetId(), sbom.Edge_contains); err != nil {
 			return nil, fmt.Errorf("relating platform image to index node: %w", err)
 		}
 	}
-	return nl, nil
+	return api.NewExtraction(nl, api.MergedContexts(lists)...), nil
 }
 
 // isRunnable reports whether an index entry is a platform image rather
@@ -321,7 +331,7 @@ func (k fallbackKeychain) Resolve(r authn.Resource) (authn.Authenticator, error)
 // at a node describing the image. The system packages and the artifacts
 // found in the filesystem are related to it as what the image contains; an
 // artifact's own dependency graph hangs below its file node.
-func (u *Unpacker) extractImage(ctx context.Context, refStr string, nref name.Reference, img v1.Image) (*sbom.NodeList, error) {
+func (u *Unpacker) extractImage(ctx context.Context, refStr string, nref name.Reference, img v1.Image) (*api.Extraction, error) {
 	digest, err := img.Digest()
 	if err != nil {
 		return nil, fmt.Errorf("reading image digest: %w", err)
@@ -350,12 +360,12 @@ func (u *Unpacker) extractImage(ctx context.Context, refStr string, nref name.Re
 	node := imageNode(refStr, nref, digest, arch, osName)
 	nl.AddRootNode(node)
 	for _, pkgs := range pkgLists {
-		if err := nl.RelateNodeListAtID(pkgs, node.GetId(), sbom.Edge_contains); err != nil {
+		if err := nl.RelateNodeListAtID(pkgs.NodeList, node.GetId(), sbom.Edge_contains); err != nil {
 			return nil, fmt.Errorf("relating packages to image node: %w", err)
 		}
 	}
 	for _, art := range artifactLists {
-		if err := nl.RelateNodeListAtID(art, node.GetId(), sbom.Edge_contains); err != nil {
+		if err := nl.RelateNodeListAtID(art.NodeList, node.GetId(), sbom.Edge_contains); err != nil {
 			return nil, fmt.Errorf("relating artifacts to image node: %w", err)
 		}
 	}
@@ -364,7 +374,13 @@ func (u *Unpacker) extractImage(ctx context.Context, refStr string, nref name.Re
 			return nil, err
 		}
 	}
-	return nl, nil
+
+	// The image is itself something built, read by taking it apart,
+	// whatever is then found in it.
+	extraction := api.NewExtraction(nl, api.ContextAnalyzed)
+	extraction.AddContexts(api.MergedContexts(pkgLists)...)
+	extraction.AddContexts(api.MergedContexts(artifactLists)...)
+	return extraction, nil
 }
 
 // recordLayers adds the image's layers to the node list as structural
@@ -400,7 +416,7 @@ func recordLayers(nl *sbom.NodeList, image *sbom.Node, img v1.Image) error {
 
 // extractSystemPackages routes the squashed filesystem to the SystemPackages
 // unpacker through the registry, passing down the files option.
-func (u *Unpacker) extractSystemPackages(ctx context.Context, fsys fs.FS) ([]*sbom.NodeList, error) {
+func (u *Unpacker) extractSystemPackages(ctx context.Context, fsys fs.FS) ([]*api.Extraction, error) {
 	subject := &system.Filesystem{FS: fsys}
 	unpacker, err := api.UnpackerFor(subject)
 	if err != nil {
@@ -410,7 +426,7 @@ func (u *Unpacker) extractSystemPackages(ctx context.Context, fsys fs.FS) ([]*sb
 		su.Options.IncludeFiles = u.Options.IncludeFiles
 	}
 
-	lists, err := unpacker.Extract(ctx, subject)
+	lists, err := api.Extractions(ctx, unpacker, subject)
 	if err != nil {
 		return nil, fmt.Errorf("extracting system packages: %w", err)
 	}
@@ -421,7 +437,7 @@ func (u *Unpacker) extractSystemPackages(ctx context.Context, fsys fs.FS) ([]*sb
 // through the registry. The unpacker runs with its own defaults for images,
 // adjusted by the options: the master switch, the per-decomposer overrides,
 // the skip list and the networking level.
-func (u *Unpacker) extractArtifacts(ctx context.Context, fsys fs.FS) ([]*sbom.NodeList, error) {
+func (u *Unpacker) extractArtifacts(ctx context.Context, fsys fs.FS) ([]*api.Extraction, error) {
 	if u.Options.SkipArtifacts {
 		return nil, nil
 	}
@@ -441,7 +457,7 @@ func (u *Unpacker) extractArtifacts(ctx context.Context, fsys fs.FS) ([]*sbom.No
 		au.Options = opts
 	}
 
-	lists, err := unpacker.Extract(ctx, subject)
+	lists, err := api.Extractions(ctx, unpacker, subject)
 	if err != nil {
 		return nil, fmt.Errorf("extracting artifacts: %w", err)
 	}

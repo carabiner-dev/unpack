@@ -4,6 +4,7 @@
 package v1_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/protobom/protobom/pkg/sbom"
@@ -61,9 +62,9 @@ func TestDecomposerContexts(t *testing.T) {
 		"system python":   {syspython.New(), api.ContextAnalyzed},
 		"system composer": {syscomposer.New(), api.ContextAnalyzed},
 	} {
-		context, ok := api.GenerationContextOf(tc.decomposer)
+		generation, ok := api.GenerationContextOf(tc.decomposer)
 		require.True(t, ok, "%s does not say in what context it reads", name)
-		require.Equal(t, tc.expected, context, name)
+		require.Equal(t, tc.expected, generation, name)
 	}
 }
 
@@ -78,4 +79,76 @@ func TestGenerationContextOfSilent(t *testing.T) {
 	t.Parallel()
 	_, ok := api.GenerationContextOf(silent{})
 	require.False(t, ok)
+}
+
+func TestExtractionContexts(t *testing.T) {
+	t.Parallel()
+
+	// Each context once, sorted, whatever order they are met in.
+	e := api.NewExtraction(sbom.NewNodeList(), api.ContextAnalyzed, api.ContextSource, api.ContextAnalyzed)
+	require.Equal(t, []api.GenerationContext{api.ContextSource, api.ContextAnalyzed}, e.Contexts)
+
+	e.AddContexts(api.ContextBuild, api.ContextSource)
+	require.Equal(t, []api.GenerationContext{api.ContextSource, api.ContextBuild, api.ContextAnalyzed}, e.Contexts)
+
+	// A decomposer that says, and one that does not.
+	said := api.NewExtraction(sbom.NewNodeList())
+	said.AddContextOf(golang.New())
+	said.AddContextOf(silent{})
+	require.Equal(t, []api.GenerationContext{api.ContextSource}, said.Contexts)
+
+	require.Empty(t, api.NewExtraction(sbom.NewNodeList()).Contexts)
+
+	merged := api.MergedContexts([]*api.Extraction{
+		api.NewExtraction(nil, api.ContextAnalyzed),
+		api.NewExtraction(nil),
+		api.NewExtraction(nil, api.ContextSource, api.ContextAnalyzed),
+	})
+	require.Equal(t, []api.GenerationContext{api.ContextSource, api.ContextAnalyzed}, merged)
+	require.Empty(t, api.MergedContexts(nil))
+}
+
+// plainUnpacker only knows how to extract node lists.
+type plainUnpacker struct{ lists []*sbom.NodeList }
+
+func (p plainUnpacker) Extract(context.Context, api.DecomposableSubject) ([]*sbom.NodeList, error) {
+	return p.lists, nil
+}
+func (plainUnpacker) RegisterDecomposer(api.Decomposer)   {}
+func (plainUnpacker) UnregisterDecomposer(api.Decomposer) {}
+
+// tellingUnpacker also says in what context it read them.
+type tellingUnpacker struct{ plainUnpacker }
+
+func (u tellingUnpacker) Extractions(context.Context, api.DecomposableSubject) ([]*api.Extraction, error) {
+	extractions := make([]*api.Extraction, 0, len(u.lists))
+	for _, nl := range u.lists {
+		extractions = append(extractions, api.NewExtraction(nl, api.ContextAnalyzed))
+	}
+	return extractions, nil
+}
+
+// TestExtractions checks an unpacker is asked for its extractions when it
+// can give them, and that one that cannot has its node lists returned with
+// nothing said of them.
+func TestExtractions(t *testing.T) {
+	t.Parallel()
+
+	lists := []*sbom.NodeList{sbom.NewNodeList(), sbom.NewNodeList()}
+
+	plain, err := api.Extractions(context.Background(), plainUnpacker{lists}, nil)
+	require.NoError(t, err)
+	require.Equal(t, lists, api.NodeLists(plain))
+	for _, e := range plain {
+		require.Empty(t, e.Contexts)
+	}
+
+	telling, err := api.Extractions(context.Background(), tellingUnpacker{plainUnpacker{lists}}, nil)
+	require.NoError(t, err)
+	require.Equal(t, lists, api.NodeLists(telling))
+	for _, e := range telling {
+		require.Equal(t, []api.GenerationContext{api.ContextAnalyzed}, e.Contexts)
+	}
+
+	require.Nil(t, api.NodeLists(nil))
 }

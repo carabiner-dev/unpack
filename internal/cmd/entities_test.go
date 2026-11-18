@@ -11,6 +11,8 @@ import (
 	"github.com/protobom/protobom/pkg/formats"
 	protosbom "github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/require"
+
+	api "github.com/carabiner-dev/unpack/api/v1"
 )
 
 func TestParseEntity(t *testing.T) {
@@ -226,10 +228,10 @@ func TestEntityFlagsOnEverySbomCommand(t *testing.T) {
 	}
 }
 
-// TestGenerationContext checks a document says in what context it was
-// made, in whatever way its format can: CycloneDX as a lifecycle phase,
-// SPDX 3 as an SBOM type, and SPDX 2, which has no field for it, in the
-// document's comment. A document given no context says nothing.
+// TestGenerationContext checks a document says in what contexts its data
+// was read, in whatever way its format can: CycloneDX as lifecycle phases,
+// SPDX 3 as SBOM types, and SPDX 2, which has no field for it, in the
+// document's comment. A document given none says nothing.
 func TestGenerationContext(t *testing.T) {
 	t.Parallel()
 
@@ -243,13 +245,21 @@ func TestGenerationContext(t *testing.T) {
 	}
 
 	for name, tc := range map[string]struct {
-		context  protosbom.DocumentType_SBOMType
-		spdxType string
-		cdxPhase string
-		comment  string
+		contexts  []api.GenerationContext
+		spdxTypes string
+		cdxPhases []string
+		comments  []string
 	}{
-		"source":   {contextSource, "source", "pre-build", "SBOM type: source."},
-		"analyzed": {contextAnalyzed, "analyzed", "post-build", "SBOM type: analyzed."},
+		"source":   {[]api.GenerationContext{api.ContextSource}, `"source"`, []string{"pre-build"}, []string{"SBOM type: source."}},
+		"build":    {[]api.GenerationContext{api.ContextBuild}, `"build"`, []string{"build"}, []string{"SBOM type: build."}},
+		"analyzed": {[]api.GenerationContext{api.ContextAnalyzed}, `"analyzed"`, []string{"post-build"}, []string{"SBOM type: analyzed."}},
+		// A graph put together from data read in more than one.
+		"several": {
+			[]api.GenerationContext{api.ContextSource, api.ContextAnalyzed},
+			`"source",\s*"analyzed"`,
+			[]string{"pre-build", "post-build"},
+			[]string{"SBOM type: source.", "SBOM type: analyzed."},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -261,19 +271,24 @@ func TestGenerationContext(t *testing.T) {
 					} `json:"lifecycles"`
 				} `json:"metadata"`
 			}
-			require.NoError(t, json.Unmarshal([]byte(render(t, formats.CDX17JSON, withContext(tc.context))), &cdx))
-			require.Len(t, cdx.Metadata.Lifecycles, 1)
-			require.Equal(t, tc.cdxPhase, cdx.Metadata.Lifecycles[0].Phase)
+			require.NoError(t, json.Unmarshal([]byte(render(t, formats.CDX17JSON, withContexts(tc.contexts))), &cdx))
+			phases := make([]string, 0, len(cdx.Metadata.Lifecycles))
+			for _, lifecycle := range cdx.Metadata.Lifecycles {
+				phases = append(phases, lifecycle.Phase)
+			}
+			require.Equal(t, tc.cdxPhases, phases)
 
 			var spdx2 struct {
 				Comment string `json:"comment"`
 			}
-			require.NoError(t, json.Unmarshal([]byte(render(t, formats.SPDX23JSON, withContext(tc.context))), &spdx2))
-			require.Contains(t, spdx2.Comment, tc.comment)
+			require.NoError(t, json.Unmarshal([]byte(render(t, formats.SPDX23JSON, withContexts(tc.contexts))), &spdx2))
+			for _, comment := range tc.comments {
+				require.Contains(t, spdx2.Comment, comment)
+			}
 
-			spdx3 := render(t, formats.SPDX3JSON, withContext(tc.context))
-			require.Regexp(t, `"software_sbomType":\s*\[\s*"`+tc.spdxType+`"\s*\]`, spdx3)
-			require.NotContains(t, spdx3, tc.comment, "SPDX 3 states the type itself")
+			spdx3 := render(t, formats.SPDX3JSON, withContexts(tc.contexts))
+			require.Regexp(t, `"software_sbomType":\s*\[\s*`+tc.spdxTypes+`\s*\]`, spdx3)
+			require.NotContains(t, spdx3, tc.comments[0], "SPDX 3 states the type itself")
 		})
 	}
 
@@ -282,8 +297,10 @@ func TestGenerationContext(t *testing.T) {
 		var spdx2 struct {
 			Comment string `json:"comment"`
 		}
-		require.NoError(t, json.Unmarshal([]byte(render(t, formats.SPDX23JSON)), &spdx2))
-		require.Empty(t, spdx2.Comment)
-		require.NotContains(t, render(t, formats.CDX17JSON), "lifecycles")
+		for _, opts := range [][]documentOption{nil, {withContexts(nil)}} {
+			require.NoError(t, json.Unmarshal([]byte(render(t, formats.SPDX23JSON, opts...)), &spdx2))
+			require.Empty(t, spdx2.Comment)
+			require.NotContains(t, render(t, formats.CDX17JSON, opts...), "lifecycles")
+		}
 	})
 }

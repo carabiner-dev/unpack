@@ -42,6 +42,15 @@ type Unpacker struct {
 // Extract reads the release the given subject points to and returns the
 // NodeLists produced by the registered decomposers.
 func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject) ([]*sbom.NodeList, error) {
+	extractions, err := u.Extractions(ctx, subject)
+	return api.NodeLists(extractions), err
+}
+
+var _ api.ExtractionUnpacker = (*Unpacker)(nil)
+
+// Extractions is Extract, returning with each NodeList the context its
+// decomposer reads in.
+func (u *Unpacker) Extractions(ctx context.Context, subject api.DecomposableSubject) ([]*api.Extraction, error) {
 	if subject == nil {
 		return nil, fmt.Errorf("release unpacker received a nil subject")
 	}
@@ -52,7 +61,7 @@ func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject)
 		)
 	}
 
-	var nodelists []*sbom.NodeList
+	var extractions []*api.Extraction
 	var errs []error
 	for name, d := range u.decomposers {
 		opts := &api.DecomposerOptions{}
@@ -72,12 +81,14 @@ func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject)
 		if nl == nil {
 			continue
 		}
-		nodelists = append(nodelists, nl)
+		extraction := api.NewExtraction(nl)
+		extraction.AddContextOf(d)
+		extractions = append(extractions, extraction)
 	}
 	if len(errs) > 0 {
-		return nodelists, errors.Join(errs...)
+		return extractions, errors.Join(errs...)
 	}
-	return nodelists, nil
+	return extractions, nil
 }
 
 // RegisterDecomposer adds a decomposer to the unpacker.

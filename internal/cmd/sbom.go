@@ -14,6 +14,7 @@ import (
 	"github.com/protobom/protobom/pkg/formats"
 	"github.com/spf13/cobra"
 
+	api "github.com/carabiner-dev/unpack/api/v1"
 	sbomunpack "github.com/carabiner-dev/unpack/sbom"
 )
 
@@ -123,10 +124,11 @@ verified: their signatures are not checked here.
 			}
 			unpacker := sbomunpack.NewUnpacker()
 
-			nodelists, err := unpacker.Extract(cmd.Context(), &sbomunpack.Subject{Path: opts.Path})
+			extractions, err := unpacker.Extractions(cmd.Context(), &sbomunpack.Subject{Path: opts.Path})
 			if err != nil {
 				return err
 			}
+			nodelists := api.NodeLists(extractions)
 
 			if len(nodelists) == 0 || nodelists[0] == nil {
 				return errors.New("no dependency data found")
@@ -167,11 +169,11 @@ verified: their signatures are not checked here.
 			switch {
 			case opts.Sign:
 				s := signer.NewSigner()
-				err = nodeListToSignedAttestation(s, os.Stdout, format, nodelist, withAuthors(opts.DocumentAuthors()))
+				err = nodeListToSignedAttestation(s, os.Stdout, format, nodelist, withAuthors(opts.DocumentAuthors()), withContexts(api.MergedContexts(extractions)))
 			case opts.Attest:
-				err = nodeListToAttestation(os.Stdout, format, nodelist, withAuthors(opts.DocumentAuthors()))
+				err = nodeListToAttestation(os.Stdout, format, nodelist, withAuthors(opts.DocumentAuthors()), withContexts(api.MergedContexts(extractions)))
 			default:
-				err = nodeListToSbom(os.Stdout, format, nodelist, withAuthors(opts.DocumentAuthors()))
+				err = nodeListToSbom(os.Stdout, format, nodelist, withAuthors(opts.DocumentAuthors()), withContexts(api.MergedContexts(extractions)))
 			}
 
 			if err != nil {

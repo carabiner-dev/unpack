@@ -340,7 +340,7 @@ func handleCodeBase(ctx context.Context, opts *extractOptions, s *signer.Signer,
 	// Set the codebase filter to target this specific codebase and
 	// extract using the base path (not the codebase ID).
 	unpacker.Options.CodebaseFilter = id
-	nodelist, err := unpacker.ExtractCodebaseWithContext(ctx, opts.Path)
+	extraction, err := unpacker.CodebaseExtraction(ctx, opts.Path)
 	if err != nil {
 		// .. if it failed because there is more than one codebase,
 		//  show the users the found codebases
@@ -355,9 +355,10 @@ func handleCodeBase(ctx context.Context, opts *extractOptions, s *signer.Signer,
 		return err
 	}
 
-	if nodelist == nil {
+	if extraction == nil || extraction.NodeList == nil {
 		return errors.New("no dependency data found")
 	}
+	nodelist := extraction.NodeList
 	if err := opts.Stitch(nodelist); err != nil {
 		return fmt.Errorf("stitching supplemental SBOMs: %w", err)
 	}
@@ -394,8 +395,8 @@ func handleCodeBase(ctx context.Context, opts *extractOptions, s *signer.Signer,
 		wr = os.Stdout
 	}
 
-	// A codebase is read as it stands in its source tree.
-	authors, generation := withAuthors(opts.DocumentAuthors()), withContext(contextSource)
+	// In what context the codebase was read is its decomposer's to say.
+	authors, generation := withAuthors(opts.DocumentAuthors()), withContexts(extraction.Contexts)
 	switch {
 	case opts.Sign:
 		err = nodeListToSignedAttestation(s, wr, format, nodelist, authors, generation)

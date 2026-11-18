@@ -497,3 +497,18 @@ func TestRegistry(t *testing.T) {
 	require.NoError(t, err)
 	assert.IsType(t, &Unpacker{}, u)
 }
+
+// TestExtractionsGoBinary checks an artifact comes back with the context
+// of the decomposer that claimed it.
+func TestExtractionsGoBinary(t *testing.T) {
+	t.Parallel()
+	exe, _ := testbin.Build(t)
+
+	u := NewUnpacker()
+	u.Options.Networking = api.NetworkDisabled
+	extractions, err := u.Extractions(t.Context(), &File{Path: exe})
+	require.NoError(t, err)
+	require.Len(t, extractions, 1)
+	require.Equal(t, []api.GenerationContext{api.ContextAnalyzed}, extractions[0].Contexts)
+	require.Len(t, extractions[0].NodeList.GetRootElements(), 1)
+}
