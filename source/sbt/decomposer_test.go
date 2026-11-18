@@ -130,6 +130,25 @@ func TestExtract(t *testing.T) {
 	require.False(t, hasNodePurl(nl, "pkg:maven/junit/junit@4.13.2"))
 
 	require.Len(t, nl.GetNodes(), 7)
+
+	// A library is supplied by the organization its coordinate opens
+	// with. The build's own modules and the root are not named one, not
+	// even a module another module depends on.
+	supplierOf := func(n *sbom.Node) string {
+		if len(n.GetSuppliers()) == 0 {
+			return ""
+		}
+		require.Len(t, n.GetSuppliers(), 1)
+		require.True(t, n.GetSuppliers()[0].GetIsOrg())
+		return n.GetSuppliers()[0].GetName()
+	}
+	require.Equal(t, "org.scala-lang", supplierOf(lib3))
+	require.Equal(t, "org.scala-lang", supplierOf(lib2))
+	require.Equal(t, "org.jline", supplierOf(jline))
+	require.Equal(t, "org.example", supplierOf(stray))
+	require.Empty(t, supplierOf(core))
+	require.Empty(t, supplierOf(app))
+	require.Empty(t, supplierOf(root))
 }
 
 // TestExtractUnreached reads a manifest resolving modules the walk from
