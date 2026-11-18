@@ -517,6 +517,7 @@ func (d *Decomposer) convertTrees(
 			PrimaryPurpose: []sbom.Purpose{
 				sbom.Purpose_LIBRARY,
 			},
+			Suppliers: []*sbom.Person{stdlibSupplier()},
 		}
 		if err := nl.RelateNodeAtID(stdlibNode, rootNode.GetId(), sbom.Edge_dependsOn); err != nil {
 			return nil, fmt.Errorf("relating stdlib node: %w", err)
@@ -589,6 +590,9 @@ func (d *Decomposer) convertTree(
 					PrimaryPurpose: []sbom.Purpose{
 						sbom.Purpose_LIBRARY,
 					},
+					// Who controls the module's path, which is all a
+					// module says of who it is from.
+					Suppliers: moduleSuppliers(name),
 				}
 			}
 

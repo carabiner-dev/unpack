@@ -156,19 +156,19 @@ func TestCompareWithPnpmLs(t *testing.T) {
 			testdata: "pnpm",
 			oracle:   pnpmOracleVersion,
 			lsArgs:   []string{"ls", "--prod", "--no-optional", "--depth", "Infinity", "--json"},
-			opts:     &api.DecomposerOptions{},
+			opts:     &api.DecomposerOptions{Networking: api.NetworkDisabled},
 		},
 		"everything": {
 			testdata: "pnpm",
 			oracle:   pnpmOracleVersion,
 			lsArgs:   []string{"ls", "--depth", "Infinity", "--json"},
-			opts:     &api.DecomposerOptions{IncludeDev: true, IncludeOptional: true},
+			opts:     &api.DecomposerOptions{IncludeDev: true, IncludeOptional: true, Networking: api.NetworkDisabled},
 		},
 		"a workspace": {
 			testdata: "pnpmws",
 			oracle:   pnpmOracleVersion,
 			lsArgs:   []string{"-r", "ls", "--depth", "Infinity", "--json"},
-			opts:     &api.DecomposerOptions{IncludeDev: true, IncludeOptional: true},
+			opts:     &api.DecomposerOptions{IncludeDev: true, IncludeOptional: true, Networking: api.NetworkDisabled},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -249,11 +249,11 @@ func TestCompareWithYarnList(t *testing.T) {
 		// yarn list --prod keeps the optional dependencies: installs do.
 		"production": {
 			listArgs: []string{"list", "--prod", "--json", "--no-progress"},
-			opts:     &api.DecomposerOptions{IncludeOptional: true},
+			opts:     &api.DecomposerOptions{IncludeOptional: true, Networking: api.NetworkDisabled},
 		},
 		"everything": {
 			listArgs: []string{"list", "--json", "--no-progress"},
-			opts:     &api.DecomposerOptions{IncludeDev: true, IncludeOptional: true},
+			opts:     &api.DecomposerOptions{IncludeDev: true, IncludeOptional: true, Networking: api.NetworkDisabled},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -318,7 +318,7 @@ func TestCompareWithYarnBerryInfo(t *testing.T) {
 			t.Cleanup(func() { os.RemoveAll("testdata/" + testdata + "/.yarn") }) //nolint:errcheck,gosec // best-effort fixture cleanup
 			out := runOracle(t, testdata,
 				"corepack@latest", berryOracleName, "info", "--all", "--json")
-			opts := &api.DecomposerOptions{IncludeDev: true, IncludeOptional: true}
+			opts := &api.DecomposerOptions{IncludeDev: true, IncludeOptional: true, Networking: api.NetworkDisabled}
 			oracleSet, oraclePairs := parseBerryInfo(t, out)
 			set, pairs := extractedGraph(t, testdata, opts)
 			require.ElementsMatch(t, oracleSet, set, "the packages disagree with yarn info")

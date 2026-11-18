@@ -56,7 +56,7 @@ func predicateTypeFor(format formats.Format) (string, error) {
 }
 
 // nodeLlistToAttestation writes the nodelist to an attestation
-func nodeListToAttestation(wr io.WriteCloser, format formats.Format, nl *sbom.NodeList) error {
+func nodeListToAttestation(wr io.WriteCloser, format formats.Format, nl *sbom.NodeList, opts ...documentOption) error {
 	predicateType, err := predicateTypeFor(format)
 	if err != nil {
 		return err
@@ -103,7 +103,7 @@ func nodeListToAttestation(wr io.WriteCloser, format formats.Format, nl *sbom.No
 		Buffer: bytes.Buffer{},
 	}
 
-	if err := nodeListToSbom(&bc, format, nl); err != nil {
+	if err := nodeListToSbom(&bc, format, nl, opts...); err != nil {
 		return fmt.Errorf("rendering SBOM to predicate: %w", err)
 	}
 
@@ -124,10 +124,10 @@ func nodeListToAttestation(wr io.WriteCloser, format formats.Format, nl *sbom.No
 
 // nodeListToSignedAttestation creates an in-toto attestation from the nodelist
 // and signs it into a sigstore bundle using the provided signer.
-func nodeListToSignedAttestation(s *signer.Signer, wr io.WriteCloser, format formats.Format, nl *sbom.NodeList) error {
+func nodeListToSignedAttestation(s *signer.Signer, wr io.WriteCloser, format formats.Format, nl *sbom.NodeList, opts ...documentOption) error {
 	// First, render the attestation to a buffer
 	buf := &bcloser{Buffer: bytes.Buffer{}}
-	if err := nodeListToAttestation(buf, format, nl); err != nil {
+	if err := nodeListToAttestation(buf, format, nl, opts...); err != nil {
 		return fmt.Errorf("rendering attestation: %w", err)
 	}
 
@@ -145,7 +145,18 @@ func nodeListToSignedAttestation(s *signer.Signer, wr io.WriteCloser, format for
 	return nil
 }
 
-func nodeListToSbom(wr io.WriteCloser, format formats.Format, nl *sbom.NodeList) error {
+// documentOption sets something on the document a node list is written
+// as, beyond what every document gets.
+type documentOption func(*sbom.Document)
+
+// withAuthors names the authors of the document.
+func withAuthors(authors []*sbom.Person) documentOption {
+	return func(doc *sbom.Document) {
+		doc.Metadata.Authors = append(doc.Metadata.Authors, authors...)
+	}
+}
+
+func nodeListToSbom(wr io.WriteCloser, format formats.Format, nl *sbom.NodeList, opts ...documentOption) error {
 	doc := &sbom.Document{
 		Metadata: &sbom.Metadata{
 			Id:   uuid.NewString(),
@@ -159,6 +170,9 @@ func nodeListToSbom(wr io.WriteCloser, format formats.Format, nl *sbom.NodeList)
 			},
 		},
 		NodeList: nl,
+	}
+	for _, opt := range opts {
+		opt(doc)
 	}
 
 	w := writer.New(writer.WithFormat(format))

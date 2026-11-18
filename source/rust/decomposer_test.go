@@ -12,7 +12,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/require"
@@ -75,6 +78,10 @@ func TestDecomposerExtract(t *testing.T) {
 	d := New()
 	opts := &api.DecomposerOptions{
 		WorkDir: "testdata/simple",
+		// The graph is what is under test, not the registry: the zero
+		// networking value is NetworkEssential, which would make this a
+		// crates.io client, and a slow one at the registry's pace.
+		Networking: api.NetworkDisabled,
 	}
 
 	nl, err := d.Extract(opts)
@@ -95,7 +102,8 @@ func TestDecomposerExtractLarger(t *testing.T) {
 
 	d := New()
 	opts := &api.DecomposerOptions{
-		WorkDir: "testdata/larger",
+		WorkDir:    "testdata/larger",
+		Networking: api.NetworkDisabled,
 	}
 
 	nl, err := d.Extract(opts)
@@ -156,7 +164,8 @@ func TestCompareWithCargoTree(t *testing.T) {
 			// Extract using our implementation
 			d := New()
 			opts := &api.DecomposerOptions{
-				WorkDir: tc.workDir,
+				WorkDir:    tc.workDir,
+				Networking: api.NetworkDisabled,
 			}
 			nl, err := d.Extract(opts)
 			require.NoError(t, err)
@@ -379,6 +388,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 		WorkDir:      tmpDir,
 		IncludeDev:   true,
 		IncludeBuild: true,
+		Networking:   api.NetworkDisabled,
 	}
 
 	nl, err := d.Extract(opts)
@@ -396,7 +406,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 	// Without dev/build, only the normal dep should be included
 	optsNoDevBuild := &api.DecomposerOptions{
-		WorkDir: tmpDir,
+		WorkDir:    tmpDir,
+		Networking: api.NetworkDisabled,
 	}
 	nl2, err := d.Extract(optsNoDevBuild)
 	require.NoError(t, err)
@@ -975,9 +986,9 @@ func TestEnrich(t *testing.T) {
 		// Respond to any /crates/{name}/{version} request
 		switch r.URL.Path {
 		case "/crates/anyhow/1.0.98":
-			w.Write([]byte(`{"version":{"license":"MIT OR Apache-2.0","description":"Flexible error type","homepage":"https://anyhow.rs","documentation":"https://docs.rs/anyhow","repository":"https://github.com/dtolnay/anyhow","checksum":"abc123","crate_size":42000,"rust_version":"1.39","yanked":false}}`)) //nolint:errcheck,gosec
+			w.Write([]byte(`{"version":{"license":"MIT OR Apache-2.0","description":"Flexible error type","homepage":"https://anyhow.rs","documentation":"https://docs.rs/anyhow","repository":"https://github.com/dtolnay/anyhow","checksum":"abc123","crate_size":42000,"rust_version":"1.39","yanked":false,"published_by":{"id":3618,"login":"dtolnay","name":"David Tolnay","url":"https://github.com/dtolnay"}}}`)) //nolint:errcheck,gosec
 		case "/crates/libc/0.2.173":
-			w.Write([]byte(`{"version":{"license":"MIT OR Apache-2.0","description":"Raw bindings to platform APIs","homepage":"","documentation":"https://docs.rs/libc","repository":"https://github.com/rust-lang/libc","checksum":"def456","crate_size":800000,"rust_version":"1.63","yanked":false}}`)) //nolint:errcheck,gosec
+			w.Write([]byte(`{"version":{"license":"MIT OR Apache-2.0","description":"Raw bindings to platform APIs","homepage":"","documentation":"https://docs.rs/libc","repository":"https://github.com/rust-lang/libc","checksum":"def456","crate_size":800000,"rust_version":"1.63","yanked":false,"published_by":null}}`)) //nolint:errcheck,gosec
 		default:
 			http.NotFound(w, r)
 		}
@@ -997,6 +1008,7 @@ func TestEnrich(t *testing.T) {
 	// Create client pointing at fake server
 	client := NewCratesIOClient(2)
 	client.BaseURL = server.URL
+	client.RequestInterval = 0
 
 	// Enrich
 	tree.Enrich(client)
@@ -1008,6 +1020,14 @@ func TestEnrich(t *testing.T) {
 
 	require.Contains(t, anyhow.GetLicenses(), "MIT OR Apache-2.0")
 	require.Equal(t, "Flexible error type", anyhow.GetDescription())
+
+	// The supplier is the account that published the version: a person,
+	// by name, with the account's page.
+	require.Len(t, anyhow.GetSuppliers(), 1)
+	require.Equal(t, "David Tolnay", anyhow.GetSuppliers()[0].GetName())
+	require.Equal(t, "https://github.com/dtolnay", anyhow.GetSuppliers()[0].GetUrl())
+	require.False(t, anyhow.GetSuppliers()[0].GetIsOrg())
+
 	require.Equal(t, "https://anyhow.rs", anyhow.GetUrlHome())
 
 	// Check external references
@@ -1043,6 +1063,10 @@ func TestEnrich(t *testing.T) {
 
 	require.Contains(t, libc.GetLicenses(), "MIT OR Apache-2.0")
 	require.Equal(t, "Raw bindings to platform APIs", libc.GetDescription())
+
+	// The registry names no publisher for this version, so it has no
+	// supplier: none is made up.
+	require.Empty(t, libc.GetSuppliers())
 	// homepage is empty, so UrlHome should remain empty
 	require.Empty(t, libc.GetUrlHome())
 
@@ -1051,4 +1075,92 @@ func TestEnrich(t *testing.T) {
 	require.Len(t, rootNodes, 1)
 	// Root should have no description from crates.io
 	require.Empty(t, rootNodes[0].GetDescription())
+}
+
+// TestCratePublisherSupplier checks how a crates.io account is named as a
+// supplier: by its name, by its login when it states none, and not at all
+// when the registry names no account.
+func TestCratePublisherSupplier(t *testing.T) {
+	t.Parallel()
+
+	require.Nil(t, (*cratePublisher)(nil).supplier())
+	require.Nil(t, (&cratePublisher{}).supplier())
+
+	named := (&cratePublisher{Login: "jdoe", Name: "Jane Doe", URL: "https://github.com/jdoe"}).supplier()
+	require.Equal(t, "Jane Doe", named.GetName())
+	require.Equal(t, "https://github.com/jdoe", named.GetUrl())
+
+	unnamed := (&cratePublisher{Login: "jdoe"}).supplier()
+	require.Equal(t, "jdoe", unnamed.GetName())
+}
+
+// TestCratesIOPacing checks that crates.io is asked one crate at a time,
+// the requests no closer together than the interval, and that after a few
+// failures in a row the rest are not sent.
+func TestCratesIOPacing(t *testing.T) {
+	t.Parallel()
+
+	packages := make([]PackageKey, 0, 8)
+	for _, name := range []string{"a", "b", "c", "d", "e", "f", "g", "h"} {
+		packages = append(packages, PackageKey{Name: name, Version: "1.0.0"})
+	}
+
+	t.Run("paced and one at a time", func(t *testing.T) {
+		t.Parallel()
+
+		var mu sync.Mutex
+		var starts []time.Time
+		inFlight, mostInFlight := 0, 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			mu.Lock()
+			starts = append(starts, time.Now())
+			inFlight++
+			mostInFlight = max(mostInFlight, inFlight)
+			mu.Unlock()
+			time.Sleep(5 * time.Millisecond)
+			mu.Lock()
+			inFlight--
+			mu.Unlock()
+			w.Write([]byte(`{"version":{"license":"MIT"}}`)) //nolint:errcheck,gosec
+		}))
+		defer server.Close()
+
+		const interval = 40 * time.Millisecond
+		client := NewCratesIOClient(10)
+		client.BaseURL = server.URL
+		client.RequestInterval = interval
+
+		began := time.Now()
+		result := client.FetchAll(packages[:4])
+		elapsed := time.Since(began)
+		require.Len(t, result, 4)
+
+		require.Len(t, starts, 4)
+		require.Equal(t, 1, mostInFlight)
+
+		// The pace is the client's: each request is sent no sooner than
+		// an interval after the one before, so four take three intervals
+		// at least. When each reaches the server is not measured, as that
+		// moves with how long the request spent on its way.
+		require.GreaterOrEqual(t, elapsed, 3*interval)
+	})
+
+	t.Run("gives up on a registry that keeps refusing", func(t *testing.T) {
+		t.Parallel()
+
+		var requests atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			requests.Add(1)
+			http.Error(w, "too many requests", http.StatusTooManyRequests)
+		}))
+		defer server.Close()
+
+		client := NewCratesIOClient(10)
+		client.BaseURL = server.URL
+		client.RequestInterval = 0
+		client.Agent = client.Agent.WithRetries(0)
+
+		require.Empty(t, client.FetchAll(packages))
+		require.Equal(t, int32(cratesIOGiveUpAfter), requests.Load())
+	})
 }

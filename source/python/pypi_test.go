@@ -95,6 +95,74 @@ func TestPyPIProjectURLs(t *testing.T) {
 
 // TestEnrich runs an extraction against a fake PyPI and checks the metadata
 // lands on the right nodes and only on them.
+// TestPyPISuppliers checks who a package's metadata names as its supplier,
+// over the ways packages on the index fill those fields in. The cases are
+// what PyPI states for the packages named.
+func TestPyPISuppliers(t *testing.T) {
+	t.Parallel()
+
+	type person struct{ name, email string }
+	for name, tc := range map[string]struct {
+		info     pypiInfo
+		expected []person
+	}{
+		// requests: one name and its bare address.
+		"a name and a bare address": {
+			pypiInfo{Author: "Kenneth Reitz", AuthorEmail: "me@kennethreitz.org"},
+			[]person{{"Kenneth Reitz", "me@kennethreitz.org"}},
+		},
+		// idna: the name is in the address field alone.
+		"a named address": {
+			pypiInfo{AuthorEmail: "Kim Davies <kim+pypi@gumleaf.org>"},
+			[]person{{"Kim Davies", "kim+pypi@gumleaf.org"}},
+		},
+		// click: no author, a maintainer.
+		"only a maintainer": {
+			pypiInfo{Maintainer: "Pallets", MaintainerEmail: "contact@palletsprojects.com"},
+			[]person{{"Pallets", "contact@palletsprojects.com"}},
+		},
+		// urllib3: an author and several maintainers, who supply it.
+		"maintainers over the author": {
+			pypiInfo{
+				AuthorEmail:     "Andrey Petrov <andrey.petrov@shazow.net>",
+				MaintainerEmail: "Seth Michael Larson <sethmichaellarson@gmail.com>, Quentin Pradet <quentin@pradet.me>, Illia Volochii <illia.volochii@gmail.com>",
+			},
+			[]person{
+				{"Seth Michael Larson", "sethmichaellarson@gmail.com"},
+				{"Quentin Pradet", "quentin@pradet.me"},
+				{"Illia Volochii", "illia.volochii@gmail.com"},
+			},
+		},
+		// numpy: an author with no address, a maintainer with one.
+		"a maintainer named in its address": {
+			pypiInfo{Author: "Travis E. Oliphant et al.", MaintainerEmail: "NumPy Developers <numpy-discussion@python.org>"},
+			[]person{{"NumPy Developers", "numpy-discussion@python.org"}},
+		},
+		"a name without an address, beside named ones": {
+			pypiInfo{Author: "The Project", AuthorEmail: "Jane Doe <jane@example.com>"},
+			[]person{{"The Project", ""}, {"Jane Doe", "jane@example.com"}},
+		},
+		"an address nobody is named for": {
+			pypiInfo{AuthorEmail: "someone@example.com"},
+			nil,
+		},
+		"an address field that is not one": {
+			pypiInfo{Author: "Jane Doe", AuthorEmail: "not an address"},
+			[]person{{"Jane Doe", ""}},
+		},
+		"nothing": {pypiInfo{}, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var got []person
+			for _, p := range pypiSuppliers(&tc.info) {
+				got = append(got, person{p.GetName(), p.GetEmail()})
+			}
+			require.Equal(t, tc.expected, got)
+		})
+	}
+}
+
 func TestEnrich(t *testing.T) {
 	t.Parallel()
 
@@ -108,7 +176,7 @@ func TestEnrich(t *testing.T) {
 		mu.Unlock()
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/requests/"):
-			fmt.Fprint(w, `{"info": {"license": "Apache-2.0", "summary": "Python HTTP for Humans.", "project_urls": {"Homepage": "https://requests.readthedocs.io", "Source": "https://github.com/psf/requests"}}}`) //nolint:errcheck // a fake server's writes have nowhere to fail
+			fmt.Fprint(w, `{"info": {"license": "Apache-2.0", "summary": "Python HTTP for Humans.", "author": "Kenneth Reitz", "author_email": "me@kennethreitz.org", "maintainer": null, "maintainer_email": null, "project_urls": {"Homepage": "https://requests.readthedocs.io", "Source": "https://github.com/psf/requests"}}}`) //nolint:errcheck // a fake server's writes have nowhere to fail
 		case strings.HasPrefix(r.URL.Path, "/click/"):
 			fmt.Fprint(w, `{"info": {"license_expression": "BSD-3-Clause", "summary": "Composable command line interface toolkit"}}`) //nolint:errcheck // a fake server's writes have nowhere to fail
 		default:
@@ -139,8 +207,14 @@ func TestEnrich(t *testing.T) {
 	require.Equal(t, sbom.ExternalReference_VCS, requests.GetExternalReferences()[0].GetType())
 	require.Equal(t, "https://github.com/psf/requests", requests.GetExternalReferences()[0].GetUrl())
 
+	// The supplier is who the index says the package is by.
+	require.Len(t, requests.GetSuppliers(), 1)
+	require.Equal(t, "Kenneth Reitz", requests.GetSuppliers()[0].GetName())
+	require.Equal(t, "me@kennethreitz.org", requests.GetSuppliers()[0].GetEmail())
+
 	click := nodeNamed(t, nl, "click")
 	require.Equal(t, []string{"BSD-3-Clause"}, click.GetLicenses())
+	require.Empty(t, click.GetSuppliers(), "the index named nobody")
 
 	// A package the index knows nothing about keeps what the lock said.
 	idna := nodeNamed(t, nl, "idna")

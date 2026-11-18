@@ -51,7 +51,7 @@ func TestExtractYarn(t *testing.T) {
 func TestExtractYarnDevAndOptional(t *testing.T) {
 	t.Parallel()
 
-	opts := &api.DecomposerOptions{IncludeDev: true, IncludeOptional: true}
+	opts := &api.DecomposerOptions{IncludeDev: true, IncludeOptional: true, Networking: api.NetworkDisabled}
 	nl := extractPnpmTree(t, "yarn", opts)
 
 	root := pnpmNodeNamed(t, nl, "jsdemo")
@@ -156,13 +156,13 @@ func TestExtractDispatchOrder(t *testing.T) {
 	write(t, dir, "pnpm-lock.yaml", read(t, "testdata/pnpm/pnpm-lock.yaml"))
 	write(t, dir, "yarn.lock", []byte("__metadata:\n  version: 8\n"))
 
-	opts := &api.DecomposerOptions{WorkDir: dir}
+	opts := &api.DecomposerOptions{WorkDir: dir, Networking: api.NetworkDisabled}
 	nl, err := New().Extract(opts)
 	require.NoError(t, err, "the berry yarn.lock must not have been chosen")
 	require.NotEmpty(t, nl.GetNodes())
 
 	// A directory with no lockfile at all is not a codebase.
-	opts = &api.DecomposerOptions{WorkDir: t.TempDir()}
+	opts = &api.DecomposerOptions{WorkDir: t.TempDir(), Networking: api.NetworkDisabled}
 	_, err = New().Extract(opts)
 	require.ErrorContains(t, err, "no supported JavaScript lockfile")
 }

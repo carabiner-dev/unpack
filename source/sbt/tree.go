@@ -36,6 +36,9 @@ type snapshotBuilder struct {
 
 	nl    *sbom.NodeList
 	nodes map[string]*sbom.Node
+
+	// modules are the nodes of the build's own modules, by node id.
+	modules map[string]struct{}
 }
 
 func newSnapshotBuilder(snapshot *Snapshot, workDir string, opts *api.DecomposerOptions) *snapshotBuilder {
@@ -45,6 +48,7 @@ func newSnapshotBuilder(snapshot *Snapshot, workDir string, opts *api.Decomposer
 		opts:     opts,
 		nl:       sbom.NewNodeList(),
 		nodes:    map[string]*sbom.Node{},
+		modules:  map[string]struct{}{},
 	}
 }
 
@@ -66,7 +70,49 @@ func (sb *snapshotBuilder) build() (*sbom.NodeList, error) {
 			return nil, fmt.Errorf("manifest %s: %w", name, err)
 		}
 	}
+	sb.nameSuppliers()
 	return sb.nl, nil
+}
+
+// nameSuppliers names who each resolved library is supplied by.
+//
+// A snapshot says nothing of who is behind a library. What it states is
+// the library's coordinate, and the organization that opens it is who
+// publishes under it: a group on Maven Central is granted to whoever
+// shows they hold the domain or the account it is named after. So the
+// organization stands for the supplier. It is an identifier, not the name
+// an entity goes by.
+//
+// The build's own modules are left alone, with the root: who supplies
+// those is for whoever writes the document to state. This runs once every
+// manifest is in, as a module another depends on is first met as a
+// library.
+func (sb *snapshotBuilder) nameSuppliers() {
+	for key, node := range sb.nodes {
+		if _, isModule := sb.modules[node.GetId()]; isModule {
+			continue
+		}
+		if organization := organizationOf(key, node); organization != "" {
+			node.Suppliers = []*sbom.Person{{Name: organization, IsOrg: true}}
+		}
+	}
+}
+
+// organizationOf reads the organization out of a node's coordinate: the
+// namespace of its purl, or, for a node known by its sbt reference alone,
+// what that reference opens with.
+func organizationOf(key string, node *sbom.Node) string {
+	if p := string(node.Purl()); p != "" {
+		if parsed, err := purl.FromString(p); err == nil {
+			return parsed.Namespace
+		}
+		return ""
+	}
+	organization, _, _, ok := parseModuleRef(key)
+	if !ok {
+		return ""
+	}
+	return organization
 }
 
 // addManifest relates a module of the build to the root and walks what it
@@ -77,6 +123,7 @@ func (sb *snapshotBuilder) addManifest(root *sbom.Node, key string, m *Manifest)
 		name = key
 	}
 	module := sb.moduleNode(name)
+	sb.modules[module.GetId()] = struct{}{}
 	if err := sb.nl.RelateNodeAtID(module, root.GetId(), sbom.Edge_dependsOn); err != nil {
 		return err
 	}

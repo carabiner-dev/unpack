@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/protobom/protobom/pkg/sbom"
 	"golang.org/x/text/encoding/ianaindex"
 )
 
@@ -28,6 +29,8 @@ type POM struct {
 	Description          string                `xml:"description"`
 	URL                  string                `xml:"url"`
 	Licenses             []License             `xml:"licenses>license"`
+	Organization         *Organization         `xml:"organization"`
+	Developers           []Developer           `xml:"developers>developer"`
 	Properties           Properties            `xml:"properties"`
 	DependencyManagement *DependencyManagement `xml:"dependencyManagement"`
 	Dependencies         []Dependency          `xml:"dependencies>dependency"`
@@ -195,6 +198,53 @@ func (e *Exclusion) Matches(groupID, artifactID string) bool {
 	gMatch := e.GroupID == "*" || e.GroupID == groupID
 	aMatch := e.ArtifactID == "*" || e.ArtifactID == artifactID
 	return gMatch && aMatch
+}
+
+// Organization is the organization a POM says the project belongs to.
+type Organization struct {
+	Name string `xml:"name"`
+	URL  string `xml:"url"`
+}
+
+// Developer is one of the people a POM lists as the project's developers.
+type Developer struct {
+	ID           string `xml:"id"`
+	Name         string `xml:"name"`
+	Email        string `xml:"email"`
+	URL          string `xml:"url"`
+	Organization string `xml:"organization"`
+}
+
+// Suppliers names who the POM says the artifact is supplied by: the
+// organization the project belongs to, or, when it states none, its
+// developers, each by name, or by id when the POM gives no name. A POM
+// naming neither names nobody.
+func (p *POM) Suppliers() []*sbom.Person {
+	if p.Organization != nil && strings.TrimSpace(p.Organization.Name) != "" {
+		return []*sbom.Person{{
+			Name:  strings.TrimSpace(p.Organization.Name),
+			Url:   strings.TrimSpace(p.Organization.URL),
+			IsOrg: true,
+		}}
+	}
+
+	people := make([]*sbom.Person, 0, len(p.Developers))
+	for i := range p.Developers {
+		developer := &p.Developers[i]
+		name := strings.TrimSpace(developer.Name)
+		if name == "" {
+			name = strings.TrimSpace(developer.ID)
+		}
+		if name == "" {
+			continue
+		}
+		people = append(people, &sbom.Person{
+			Name:  name,
+			Email: strings.TrimSpace(developer.Email),
+			Url:   strings.TrimSpace(developer.URL),
+		})
+	}
+	return people
 }
 
 // License represents a license declaration in a POM.

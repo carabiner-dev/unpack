@@ -6,6 +6,7 @@ package python
 import (
 	"encoding/json"
 	"fmt"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -61,6 +62,14 @@ type pypiInfo struct {
 	Summary     string            `json:"summary"`
 	HomePage    string            `json:"home_page"`
 	ProjectURLs map[string]string `json:"project_urls"`
+
+	// Who the package says it is by, and who it says maintains it. Each
+	// comes as a name and as a list of addresses, and packages fill in
+	// either or both (see metadataPeople).
+	Author          string `json:"author"`
+	AuthorEmail     string `json:"author_email"`
+	Maintainer      string `json:"maintainer"`
+	MaintainerEmail string `json:"maintainer_email"`
 }
 
 // FetchAll fetches metadata for the packages in parallel. Failures are
@@ -113,6 +122,9 @@ func (c *PyPIClient) enrichNodes(nodes map[packageKey]*sbom.Node, enrichable map
 		if licenses := pypiLicenses(info); len(licenses) > 0 {
 			node.Licenses = licenses
 		}
+		if suppliers := pypiSuppliers(info); len(suppliers) > 0 {
+			node.Suppliers = suppliers
+		}
 		if info.Summary != "" {
 			node.Description = info.Summary
 		}
@@ -132,6 +144,48 @@ func (c *PyPIClient) enrichNodes(nodes map[packageKey]*sbom.Node, enrichable map
 			})
 		}
 	}
+}
+
+// pypiSuppliers names who a package is supplied by: its maintainers, the
+// ones putting its releases out, and its authors when it names no
+// maintainer, as most packages do not.
+func pypiSuppliers(info *pypiInfo) []*sbom.Person {
+	if maintainers := metadataPeople(info.Maintainer, info.MaintainerEmail); len(maintainers) > 0 {
+		return maintainers
+	}
+	return metadataPeople(info.Author, info.AuthorEmail)
+}
+
+// metadataPeople reads the people a pair of core metadata fields names:
+// Author and Author-email, or Maintainer and Maintainer-email.
+//
+// The address field is a list of mailboxes, and how a package uses the
+// pair has changed. Older metadata puts one name in the first field and
+// its bare address in the second. Metadata written from a pyproject.toml
+// puts each person that has an address in the second, as "Name <address>",
+// and only those without one in the first. So a mailbox carrying a name
+// is a person of its own, and a bare address belongs to the name field.
+// An address with no name anywhere names nobody.
+func metadataPeople(name, addresses string) []*sbom.Person {
+	name = strings.TrimSpace(name)
+
+	people := []*sbom.Person{}
+	bare := ""
+	if list, err := mail.ParseAddressList(addresses); err == nil {
+		for _, mailbox := range list {
+			switch {
+			case mailbox.Name != "":
+				people = append(people, &sbom.Person{Name: mailbox.Name, Email: mailbox.Address})
+			case bare == "":
+				bare = mailbox.Address
+			}
+		}
+	}
+
+	if name != "" {
+		people = append([]*sbom.Person{{Name: name, Email: bare}}, people...)
+	}
+	return people
 }
 
 // pypiLicenses reads the licence out of the three places PyPI may state

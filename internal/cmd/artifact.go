@@ -25,6 +25,7 @@ type artifactCmdOptions struct {
 	artifactOptions
 	stitchOptions
 	extRefOptions
+	entityOptions
 	Output output.Options
 
 	// Path is the artifact to unpack, or a directory to scan for
@@ -50,6 +51,7 @@ func (ao *artifactCmdOptions) Validate() error {
 		ao.artifactOptions.Validate(),
 		ao.stitchOptions.Validate(),
 		ao.ValidateFor(ao.Format),
+		ao.ValidateEntitiesFor(ao.Format),
 		ao.Output.Validate(),
 	)
 	return errors.Join(errs...)
@@ -64,6 +66,7 @@ func (ao *artifactCmdOptions) AddFlags(cmd *cobra.Command) {
 	ao.AddScanFlags(cmd)
 	ao.stitchOptions.AddFlags(cmd)
 	ao.extRefOptions.AddFlags(cmd)
+	ao.entityOptions.AddFlags(cmd)
 	ao.Output.AddFlags(cmd)
 	cmd.PersistentFlags().StringVar(
 		&ao.Networking, "networking", networkEssential,
@@ -164,6 +167,7 @@ Usage patterns:
 			}
 			opts.ReportUnused()
 			opts.Apply(nodelist)
+			opts.ApplySupplier(nodelist)
 
 			format, isSbom := opts.ProtobomFormat()
 			if !isSbom {
@@ -180,11 +184,11 @@ Usage patterns:
 
 			switch {
 			case opts.Sign:
-				err = nodeListToSignedAttestation(signer.NewSigner(), wr, format, nodelist)
+				err = nodeListToSignedAttestation(signer.NewSigner(), wr, format, nodelist, withAuthors(opts.DocumentAuthors()))
 			case opts.Attest:
-				err = nodeListToAttestation(wr, format, nodelist)
+				err = nodeListToAttestation(wr, format, nodelist, withAuthors(opts.DocumentAuthors()))
 			default:
-				err = nodeListToSbom(wr, format, nodelist)
+				err = nodeListToSbom(wr, format, nodelist, withAuthors(opts.DocumentAuthors()))
 			}
 			if err != nil {
 				return fmt.Errorf("rendering SBOM: %w", err)

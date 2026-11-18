@@ -251,6 +251,7 @@ func TestDecomposerExtract(t *testing.T) {
 				WorkDir:         tc.workDir,
 				IncludeDev:      true,
 				IncludeOptional: true,
+				Networking:      api.NetworkDisabled,
 			}
 
 			nl, err := d.Extract(opts)
@@ -284,8 +285,9 @@ func TestDecomposerExtractWithVersion(t *testing.T) {
 
 	d := New()
 	opts := &api.DecomposerOptions{
-		WorkDir: "testdata/k8s.io",
-		Version: "2.0.0",
+		WorkDir:    "testdata/k8s.io",
+		Version:    "2.0.0",
+		Networking: api.NetworkDisabled,
 	}
 
 	nl, err := d.Extract(opts)
@@ -315,6 +317,7 @@ func TestDecomposerExtractWithCommitHash(t *testing.T) {
 	opts := &api.DecomposerOptions{
 		WorkDir:    "testdata/k8s.io",
 		CommitHash: "abc123def456",
+		Networking: api.NetworkDisabled,
 	}
 
 	nl, err := d.Extract(opts)
@@ -411,6 +414,7 @@ func TestCompareWithNpmLs(t *testing.T) {
 				WorkDir:         tc.workDir,
 				IncludeDev:      true,
 				IncludeOptional: true,
+				Networking:      api.NetworkDisabled,
 			}
 			nl, err := d.Extract(opts)
 			require.NoError(t, err)
@@ -756,6 +760,7 @@ func TestDevDependencyEdges(t *testing.T) {
 	opts := &api.DecomposerOptions{
 		WorkDir:    "testdata/k8s.io",
 		IncludeDev: true,
+		Networking: api.NetworkDisabled,
 	}
 
 	nl, err := d.Extract(opts)
@@ -793,7 +798,8 @@ func TestNormalDependencyEdges(t *testing.T) {
 
 	d := New()
 	opts := &api.DecomposerOptions{
-		WorkDir: "testdata/demorepo",
+		WorkDir:    "testdata/demorepo",
+		Networking: api.NetworkDisabled,
 	}
 
 	nl, err := d.Extract(opts)
