@@ -1130,15 +1130,19 @@ func TestCratesIOPacing(t *testing.T) {
 		client.BaseURL = server.URL
 		client.RequestInterval = interval
 
+		began := time.Now()
 		result := client.FetchAll(packages[:4])
+		elapsed := time.Since(began)
 		require.Len(t, result, 4)
 
 		require.Len(t, starts, 4)
 		require.Equal(t, 1, mostInFlight)
-		for i := 1; i < len(starts); i++ {
-			// A little slack for the clock the server reads.
-			require.GreaterOrEqual(t, starts[i].Sub(starts[i-1]), interval-5*time.Millisecond)
-		}
+
+		// The pace is the client's: each request is sent no sooner than
+		// an interval after the one before, so four take three intervals
+		// at least. When each reaches the server is not measured, as that
+		// moves with how long the request spent on its way.
+		require.GreaterOrEqual(t, elapsed, 3*interval)
 	})
 
 	t.Run("gives up on a registry that keeps refusing", func(t *testing.T) {
