@@ -94,6 +94,60 @@ func TestExtractComposer(t *testing.T) {
 	}
 }
 
+// TestExtractComposerSuppliers checks a package is supplied by the authors
+// its lock entry lists, in order, each with what the lock says of it. An
+// entry without a name names nobody, and a package listing no authors has
+// no supplier.
+func TestExtractComposerSuppliers(t *testing.T) {
+	t.Parallel()
+
+	// The fixture's own lock, written by Composer.
+	nl := extractComposer(t, "simple", nil)
+	monolog := nodeNamed(t, nl, "monolog/monolog")
+	require.Len(t, monolog.GetSuppliers(), 1)
+	require.Equal(t, "Jordi Boggiano", monolog.GetSuppliers()[0].GetName())
+	require.Equal(t, "j.boggiano@seld.be", monolog.GetSuppliers()[0].GetEmail())
+	require.Equal(t, "https://seld.be", monolog.GetSuppliers()[0].GetUrl())
+
+	psrLog := nodeNamed(t, nl, "psr/log")
+	require.Len(t, psrLog.GetSuppliers(), 1)
+	require.Equal(t, "PHP-FIG", psrLog.GetSuppliers()[0].GetName())
+	require.Empty(t, psrLog.GetSuppliers()[0].GetEmail())
+
+	// The project is not a package of the lock: its supplier is for
+	// whoever produces the document to state.
+	require.Empty(t, nodeNamed(t, nl, "carabiner/phpdemo").GetSuppliers())
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "composer.json"), []byte(
+		`{"name": "acme/app", "require": {"acme/several": "^1.0", "acme/none": "^1.0"}}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "composer.lock"), []byte(`{
+    "content-hash": "abc",
+    "packages": [
+        {"name": "acme/none", "version": "1.0.0"},
+        {
+            "name": "acme/several",
+            "version": "1.0.0",
+            "authors": [
+                {"name": "First Author", "email": "first@example.com"},
+                {"email": "nameless@example.com"},
+                {"name": "Second Author"}
+            ]
+        }
+    ],
+    "packages-dev": []
+}`), 0o600))
+
+	nl, err := New().Extract(&api.DecomposerOptions{WorkDir: dir, Networking: api.NetworkDisabled})
+	require.NoError(t, err)
+
+	several := nodeNamed(t, nl, "acme/several").GetSuppliers()
+	require.Len(t, several, 2)
+	require.Equal(t, "First Author", several[0].GetName())
+	require.Equal(t, "Second Author", several[1].GetName())
+	require.Empty(t, nodeNamed(t, nl, "acme/none").GetSuppliers())
+}
+
 func TestExtractComposerDev(t *testing.T) {
 	t.Parallel()
 

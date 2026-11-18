@@ -208,6 +208,20 @@ func (cb *composerBuilder) packageNode(pkg *ComposerPackage) *sbom.Node {
 		node.Licenses = append(node.Licenses, license.Normalize(id, ""))
 	}
 
+	// The authors, in the order the package lists them. Whether one is a
+	// person or an organization the lock does not say; an entry with no
+	// name names nobody.
+	for _, author := range pkg.Authors {
+		if author.Name == "" {
+			continue
+		}
+		node.Suppliers = append(node.Suppliers, &sbom.Person{
+			Name:  author.Name,
+			Email: author.Email,
+			Url:   author.Homepage,
+		})
+	}
+
 	if pkg.Source.URL != "" {
 		url := pkg.Source.URL
 		if pkg.Source.Reference != "" {

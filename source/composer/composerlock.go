@@ -53,6 +53,19 @@ type ComposerPackage struct {
 	License     []string `json:"license"`
 	Description string   `json:"description"`
 	Homepage    string   `json:"homepage"`
+
+	// Authors are who the package says wrote it, as its composer.json
+	// lists them and the lock copies them: people, or the project or
+	// company itself. The lock names nobody else for a package, so they
+	// are who it is supplied by.
+	Authors []ComposerAuthor `json:"authors"`
+}
+
+// ComposerAuthor is one author of a package.
+type ComposerAuthor struct {
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Homepage string `json:"homepage"`
 }
 
 // ComposerSource points at a package's code.
