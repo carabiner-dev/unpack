@@ -150,3 +150,11 @@ func CanDecompose(dir string) bool {
 	_, err := ParsePomXML(filepath.Clean(dir))
 	return err == nil
 }
+
+var _ api.ContextReporter = (*Decomposer)(nil)
+
+// GenerationContext says in what context the decomposer's data is read:
+// pom.xml, as it stands in the source tree, and the POMs it leads to.
+func (d *Decomposer) GenerationContext() api.GenerationContext {
+	return api.ContextSource
+}

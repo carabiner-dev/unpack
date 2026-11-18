@@ -64,3 +64,11 @@ func (d *Decomposer) ExtractFromFS(source fs.FS, opts *api.DecomposerOptions) (*
 	}
 	return python.InstalledNodeList(dists, opts != nil && opts.IncludeFiles)
 }
+
+var _ api.ContextReporter = (*Decomposer)(nil)
+
+// GenerationContext says in what context the decomposer's data is read:
+// the distributions installed in a filesystem already put together.
+func (d *Decomposer) GenerationContext() api.GenerationContext {
+	return api.ContextAnalyzed
+}

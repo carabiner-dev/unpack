@@ -110,3 +110,11 @@ func (d *Decomposer) getOptions(opts *api.DecomposerOptions) *Options {
 func (d *Decomposer) FindCodeBases(index *code.PathIndex) ([]string, error) {
 	return index.FindFileLocations("Cargo.lock")
 }
+
+var _ api.ContextReporter = (*Decomposer)(nil)
+
+// GenerationContext says in what context the decomposer's data is read:
+// Cargo.lock and Cargo.toml, as they stand in the source tree.
+func (d *Decomposer) GenerationContext() api.GenerationContext {
+	return api.ContextSource
+}

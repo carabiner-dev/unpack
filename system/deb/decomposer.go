@@ -379,3 +379,11 @@ func (d *Decomposer) getOptions(opts *api.DecomposerOptions) *Options {
 	}
 	return &defaultOptions
 }
+
+var _ api.ContextReporter = (*Decomposer)(nil)
+
+// GenerationContext says in what context the decomposer's data is read:
+// the package database of a filesystem already put together.
+func (d *Decomposer) GenerationContext() api.GenerationContext {
+	return api.ContextAnalyzed
+}

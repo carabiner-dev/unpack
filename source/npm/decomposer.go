@@ -245,3 +245,11 @@ func insideNodeModules(dir string) bool {
 	}
 	return false
 }
+
+var _ api.ContextReporter = (*Decomposer)(nil)
+
+// GenerationContext says in what context the decomposer's data is read:
+// a lock file and its manifests, as they stand in the source tree.
+func (d *Decomposer) GenerationContext() api.GenerationContext {
+	return api.ContextSource
+}
