@@ -394,14 +394,15 @@ func handleCodeBase(ctx context.Context, opts *extractOptions, s *signer.Signer,
 		wr = os.Stdout
 	}
 
-	authors := withAuthors(opts.DocumentAuthors())
+	// A codebase is read as it stands in its source tree.
+	authors, generation := withAuthors(opts.DocumentAuthors()), withContext(contextSource)
 	switch {
 	case opts.Sign:
-		err = nodeListToSignedAttestation(s, wr, format, nodelist, authors)
+		err = nodeListToSignedAttestation(s, wr, format, nodelist, authors, generation)
 	case opts.Attest:
-		err = nodeListToAttestation(wr, format, nodelist, authors)
+		err = nodeListToAttestation(wr, format, nodelist, authors, generation)
 	default:
-		err = nodeListToSbom(wr, format, nodelist, authors)
+		err = nodeListToSbom(wr, format, nodelist, authors, generation)
 	}
 
 	if err != nil {

@@ -225,3 +225,65 @@ func TestEntityFlagsOnEverySbomCommand(t *testing.T) {
 		require.Equal(t, "stringArray", author.Value.Type())
 	}
 }
+
+// TestGenerationContext checks a document says in what context it was
+// made, in whatever way its format can: CycloneDX as a lifecycle phase,
+// SPDX 3 as an SBOM type, and SPDX 2, which has no field for it, in the
+// document's comment. A document given no context says nothing.
+func TestGenerationContext(t *testing.T) {
+	t.Parallel()
+
+	render := func(t *testing.T, format formats.Format, opts ...documentOption) string {
+		t.Helper()
+		nl := protosbom.NewNodeList()
+		nl.AddRootNode(&protosbom.Node{Id: "root", Type: protosbom.Node_PACKAGE, Name: "app", Version: "1.0.0"})
+		buf := &bcloser{Buffer: bytes.Buffer{}}
+		require.NoError(t, nodeListToSbom(buf, format, nl, opts...))
+		return buf.Buffer.String()
+	}
+
+	for name, tc := range map[string]struct {
+		context  protosbom.DocumentType_SBOMType
+		spdxType string
+		cdxPhase string
+		comment  string
+	}{
+		"source":   {contextSource, "source", "pre-build", "SBOM type: source."},
+		"analyzed": {contextAnalyzed, "analyzed", "post-build", "SBOM type: analyzed."},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var cdx struct {
+				Metadata struct {
+					Lifecycles []struct {
+						Phase string `json:"phase"`
+					} `json:"lifecycles"`
+				} `json:"metadata"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(render(t, formats.CDX17JSON, withContext(tc.context))), &cdx))
+			require.Len(t, cdx.Metadata.Lifecycles, 1)
+			require.Equal(t, tc.cdxPhase, cdx.Metadata.Lifecycles[0].Phase)
+
+			var spdx2 struct {
+				Comment string `json:"comment"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(render(t, formats.SPDX23JSON, withContext(tc.context))), &spdx2))
+			require.Contains(t, spdx2.Comment, tc.comment)
+
+			spdx3 := render(t, formats.SPDX3JSON, withContext(tc.context))
+			require.Regexp(t, `"software_sbomType":\s*\[\s*"`+tc.spdxType+`"\s*\]`, spdx3)
+			require.NotContains(t, spdx3, tc.comment, "SPDX 3 states the type itself")
+		})
+	}
+
+	t.Run("none", func(t *testing.T) {
+		t.Parallel()
+		var spdx2 struct {
+			Comment string `json:"comment"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(render(t, formats.SPDX23JSON)), &spdx2))
+		require.Empty(t, spdx2.Comment)
+		require.NotContains(t, render(t, formats.CDX17JSON), "lifecycles")
+	})
+}

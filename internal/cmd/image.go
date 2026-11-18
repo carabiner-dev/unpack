@@ -159,11 +159,11 @@ Usage patterns:
 
 			switch {
 			case opts.Sign:
-				err = nodeListToSignedAttestation(signer.NewSigner(), wr, format, nodelist, withAuthors(opts.DocumentAuthors()))
+				err = nodeListToSignedAttestation(signer.NewSigner(), wr, format, nodelist, withAuthors(opts.DocumentAuthors()), withContext(contextAnalyzed))
 			case opts.Attest:
-				err = nodeListToAttestation(wr, format, nodelist, withAuthors(opts.DocumentAuthors()))
+				err = nodeListToAttestation(wr, format, nodelist, withAuthors(opts.DocumentAuthors()), withContext(contextAnalyzed))
 			default:
-				err = nodeListToSbom(wr, format, nodelist, withAuthors(opts.DocumentAuthors()))
+				err = nodeListToSbom(wr, format, nodelist, withAuthors(opts.DocumentAuthors()), withContext(contextAnalyzed))
 			}
 			if err != nil {
 				return fmt.Errorf("rendering SBOM: %w", err)
