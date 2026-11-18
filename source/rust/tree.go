@@ -427,6 +427,14 @@ func EnrichNodes(client *CratesIOClient, nodes map[PackageKey]*sbom.Node) {
 			node.Licenses = []string{license.Normalize(meta.License, "")}
 		}
 
+		// Supplier: whoever published the version to the registry, which
+		// is who the crate was had from. A crate's owners, the accounts
+		// that may publish it, would take a request more for each crate
+		// and say who could have, not who did.
+		if supplier := meta.PublishedBy.supplier(); supplier != nil {
+			node.Suppliers = []*sbom.Person{supplier}
+		}
+
 		// Description
 		if meta.Description != "" {
 			node.Description = meta.Description

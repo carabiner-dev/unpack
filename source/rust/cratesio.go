@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/protobom/protobom/pkg/sbom"
 	khttp "sigs.k8s.io/release-utils/http"
 )
 
@@ -60,6 +61,37 @@ type crateVersion struct {
 	CrateSize     int    `json:"crate_size"`
 	RustVersion   string `json:"rust_version"`
 	Yanked        bool   `json:"yanked"`
+
+	// PublishedBy is the crates.io account that published the version.
+	// The registry leaves it out for versions published before it kept
+	// track, and for those a pipeline published with no account behind
+	// it.
+	PublishedBy *cratePublisher `json:"published_by"`
+}
+
+// cratePublisher is a crates.io account, as a version names its publisher.
+type cratePublisher struct {
+	Login string `json:"login"`
+	Name  string `json:"name"`
+	URL   string `json:"url"`
+}
+
+// supplier names the publisher as the supplier of what it published: the
+// account's name, or its login when it states none, with its page. It is
+// an account, which is a person's as far as the registry can tell, and
+// nil when there is nothing to name.
+func (p *cratePublisher) supplier() *sbom.Person {
+	if p == nil {
+		return nil
+	}
+	name := p.Name
+	if name == "" {
+		name = p.Login
+	}
+	if name == "" {
+		return nil
+	}
+	return &sbom.Person{Name: name, Url: p.URL}
 }
 
 // NewCratesIOClient creates a new client for the crates.io API.

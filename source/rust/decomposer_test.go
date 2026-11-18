@@ -975,9 +975,9 @@ func TestEnrich(t *testing.T) {
 		// Respond to any /crates/{name}/{version} request
 		switch r.URL.Path {
 		case "/crates/anyhow/1.0.98":
-			w.Write([]byte(`{"version":{"license":"MIT OR Apache-2.0","description":"Flexible error type","homepage":"https://anyhow.rs","documentation":"https://docs.rs/anyhow","repository":"https://github.com/dtolnay/anyhow","checksum":"abc123","crate_size":42000,"rust_version":"1.39","yanked":false}}`)) //nolint:errcheck,gosec
+			w.Write([]byte(`{"version":{"license":"MIT OR Apache-2.0","description":"Flexible error type","homepage":"https://anyhow.rs","documentation":"https://docs.rs/anyhow","repository":"https://github.com/dtolnay/anyhow","checksum":"abc123","crate_size":42000,"rust_version":"1.39","yanked":false,"published_by":{"id":3618,"login":"dtolnay","name":"David Tolnay","url":"https://github.com/dtolnay"}}}`)) //nolint:errcheck,gosec
 		case "/crates/libc/0.2.173":
-			w.Write([]byte(`{"version":{"license":"MIT OR Apache-2.0","description":"Raw bindings to platform APIs","homepage":"","documentation":"https://docs.rs/libc","repository":"https://github.com/rust-lang/libc","checksum":"def456","crate_size":800000,"rust_version":"1.63","yanked":false}}`)) //nolint:errcheck,gosec
+			w.Write([]byte(`{"version":{"license":"MIT OR Apache-2.0","description":"Raw bindings to platform APIs","homepage":"","documentation":"https://docs.rs/libc","repository":"https://github.com/rust-lang/libc","checksum":"def456","crate_size":800000,"rust_version":"1.63","yanked":false,"published_by":null}}`)) //nolint:errcheck,gosec
 		default:
 			http.NotFound(w, r)
 		}
@@ -1008,6 +1008,14 @@ func TestEnrich(t *testing.T) {
 
 	require.Contains(t, anyhow.GetLicenses(), "MIT OR Apache-2.0")
 	require.Equal(t, "Flexible error type", anyhow.GetDescription())
+
+	// The supplier is the account that published the version: a person,
+	// by name, with the account's page.
+	require.Len(t, anyhow.GetSuppliers(), 1)
+	require.Equal(t, "David Tolnay", anyhow.GetSuppliers()[0].GetName())
+	require.Equal(t, "https://github.com/dtolnay", anyhow.GetSuppliers()[0].GetUrl())
+	require.False(t, anyhow.GetSuppliers()[0].GetIsOrg())
+
 	require.Equal(t, "https://anyhow.rs", anyhow.GetUrlHome())
 
 	// Check external references
@@ -1043,6 +1051,10 @@ func TestEnrich(t *testing.T) {
 
 	require.Contains(t, libc.GetLicenses(), "MIT OR Apache-2.0")
 	require.Equal(t, "Raw bindings to platform APIs", libc.GetDescription())
+
+	// The registry names no publisher for this version, so it has no
+	// supplier: none is made up.
+	require.Empty(t, libc.GetSuppliers())
 	// homepage is empty, so UrlHome should remain empty
 	require.Empty(t, libc.GetUrlHome())
 
@@ -1051,4 +1063,21 @@ func TestEnrich(t *testing.T) {
 	require.Len(t, rootNodes, 1)
 	// Root should have no description from crates.io
 	require.Empty(t, rootNodes[0].GetDescription())
+}
+
+// TestCratePublisherSupplier checks how a crates.io account is named as a
+// supplier: by its name, by its login when it states none, and not at all
+// when the registry names no account.
+func TestCratePublisherSupplier(t *testing.T) {
+	t.Parallel()
+
+	require.Nil(t, (*cratePublisher)(nil).supplier())
+	require.Nil(t, (&cratePublisher{}).supplier())
+
+	named := (&cratePublisher{Login: "jdoe", Name: "Jane Doe", URL: "https://github.com/jdoe"}).supplier()
+	require.Equal(t, "Jane Doe", named.GetName())
+	require.Equal(t, "https://github.com/jdoe", named.GetUrl())
+
+	unnamed := (&cratePublisher{Login: "jdoe"}).supplier()
+	require.Equal(t, "jdoe", unnamed.GetName())
 }
