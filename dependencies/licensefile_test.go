@@ -4,10 +4,13 @@
 package dependencies
 
 import (
+	"bytes"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/require"
 
@@ -120,4 +123,35 @@ func TestExtractReadsLicenseFile(t *testing.T) {
 	require.Equal(t, []string{"Apache-2.0"}, extract(&licensedDecomposer{}, true))
 	require.Equal(t, []string{"MIT"}, extract(&licensedDecomposer{license: "MIT"}, true))
 	require.Empty(t, extract(&licensedDecomposer{}, false))
+}
+
+// TestMultipleCodebasesWarning checks that taking the first of several
+// codebases is said to the caller's logger, and to nobody when the caller
+// wired none: the unpacker has no logger of its own.
+func TestMultipleCodebasesWarning(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "composer.lock"), []byte(`{"packages": []}`))
+	write(t, filepath.Join(dir, "composer.json"), []byte(`{"name": "example/app"}`))
+	write(t, filepath.Join(dir, "Gemfile.lock"), []byte("GEM\n  remote: https://rubygems.org/\n  specs:\n\nPLATFORMS\n  ruby\n\nDEPENDENCIES\n"))
+
+	unpacker := NewUnpacker()
+	unpacker.Options.FailOnSingleMulti = false
+	unpacker.Options.ReadGitVersion = false
+	unpacker.Options.Networking = api.NetworkDisabled
+
+	var out bytes.Buffer
+	ctx := clog.WithLogger(t.Context(), clog.New(slog.NewTextHandler(&out, nil)))
+	extraction, err := unpacker.CodebaseExtraction(ctx, dir)
+	require.NoError(t, err)
+	require.NotNil(t, extraction)
+	require.Contains(t, out.String(), "level=WARN")
+	require.Contains(t, out.String(), "2 codebases found, only returning the first")
+
+	// With FailOnSingleMulti, the default, it is an error and no log.
+	out.Reset()
+	unpacker.Options.FailOnSingleMulti = true
+	_, err = unpacker.CodebaseExtraction(ctx, dir)
+	require.ErrorIs(t, err, ErrMultipleCodebases)
+	require.Empty(t, out.String())
 }

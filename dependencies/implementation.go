@@ -16,6 +16,7 @@ import (
 	"github.com/carabiner-dev/unpack/code"
 	"github.com/carabiner-dev/unpack/filesystem"
 	"github.com/carabiner-dev/unpack/internal/git"
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 type unpackerImplementation interface {
@@ -149,7 +150,8 @@ func (di *defaultImplementation) ExtractCodeBases(
 
 			// Index the source files if the options is set
 			if opts.IndexFiles {
-				opts.logger.Debug(fmt.Sprintf("indexing all files in %s", cbPath))
+				log := logging.FromContext(ctx)
+				log.Debugf("indexing all files in %s", cbPath)
 				fsd, err := filesystem.New()
 				if err != nil {
 					return nil, fmt.Errorf("creating fs decomposer: %w", err)
@@ -162,7 +164,7 @@ func (di *defaultImplementation) ExtractCodeBases(
 					return nil, fmt.Errorf("indexing filesystem: %w", err)
 				}
 
-				opts.logger.Debug(fmt.Sprintf("read data from %d files", len(nlFiles.GetRootElements())))
+				log.Debugf("read data from %d files", len(nlFiles.GetRootElements()))
 
 				// Mix the resulting nodes into the code nodelist
 				err = nl.RelateNodeListAtID(nlFiles, nl.GetRootElements()[0], sbom.Edge_contains)
