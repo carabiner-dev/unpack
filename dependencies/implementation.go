@@ -141,6 +141,12 @@ func (di *defaultImplementation) ExtractCodeBases(
 				return nil, fmt.Errorf("no root element found on resulting nodelist")
 			}
 
+			// What the manifest did not say of the license, the license
+			// file may.
+			if opts.ReadLicenseFile {
+				applyLicenseFile(ctx, nl, cbPath)
+			}
+
 			// Index the source files if the options is set
 			if opts.IndexFiles {
 				opts.logger.Debug(fmt.Sprintf("indexing all files in %s", cbPath))

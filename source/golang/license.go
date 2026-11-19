@@ -8,54 +8,23 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/chainguard-dev/clog"
-	classifier "github.com/google/licenseclassifier/v2"
-	"github.com/google/licenseclassifier/v2/assets"
 	"golang.org/x/mod/module"
 	khttp "sigs.k8s.io/release-utils/http"
 
 	"github.com/carabiner-dev/unpack/internal/logging"
 	"github.com/carabiner-dev/unpack/license"
+	"github.com/carabiner-dev/unpack/license/detect"
 )
 
 const (
 	defaultLicenseTimeout = 30 * time.Second
 	depsDevBaseURL        = "https://api.deps.dev/v3"
 )
-
-// licenseFile names we look for inside module zips, in priority order.
-var licenseFileNames = []string{
-	"LICENSE",
-	"LICENSE.md",
-	"LICENSE.txt",
-	"LICENCE",
-	"LICENCE.md",
-	"LICENCE.txt",
-	"COPYING",
-	"COPYING.md",
-	"COPYING.txt",
-}
-
-var (
-	defaultClassifier     *classifier.Classifier
-	defaultClassifierOnce sync.Once
-)
-
-// getClassifier returns a shared license classifier instance,
-// initialized lazily on first use.
-func getClassifier() *classifier.Classifier {
-	defaultClassifierOnce.Do(func() {
-		c, err := assets.DefaultClassifier()
-		if err == nil {
-			defaultClassifier = c
-		}
-	})
-	return defaultClassifier
-}
 
 // depsDevVersionResponse is the JSON response from the deps.dev version API.
 type depsDevVersionResponse struct {
@@ -265,12 +234,6 @@ func extractLicenseFromZip(data []byte) string {
 		return ""
 	}
 
-	// Build a set of license file basenames for fast lookup
-	licenseNames := make(map[string]struct{}, len(licenseFileNames))
-	for _, name := range licenseFileNames {
-		licenseNames[strings.ToUpper(name)] = struct{}{}
-	}
-
 	// Find the module root prefix from the first entry
 	var modulePrefix string
 	if len(r.File) > 0 {
@@ -291,7 +254,7 @@ func extractLicenseFromZip(data []byte) string {
 			continue
 		}
 
-		if _, ok := licenseNames[strings.ToUpper(rel)]; !ok {
+		if !detect.IsFileName(rel) {
 			continue
 		}
 
@@ -301,33 +264,15 @@ func extractLicenseFromZip(data []byte) string {
 		}
 
 		buf := make([]byte, min(f.UncompressedSize64, 64*1024))
-		n, _ := rc.Read(buf) //nolint:errcheck
-		rc.Close()           //nolint:errcheck,gosec
+		// One Read of a compressed file may stop short of the buffer.
+		n, _ := io.ReadFull(rc, buf) //nolint:errcheck // a short file is read whole
+		rc.Close()                   //nolint:errcheck,gosec
 		if n == 0 {
 			continue
 		}
 
-		if lic := classifyLicenseText(buf[:n]); lic != "" {
+		if lic := detect.Text(buf[:n]); lic != "" {
 			return lic
-		}
-	}
-
-	return ""
-}
-
-// classifyLicenseText uses the Google license classifier to identify
-// a license from its full text.
-func classifyLicenseText(content []byte) string {
-	c := getClassifier()
-	if c == nil {
-		return ""
-	}
-
-	results := c.Match(content)
-
-	for _, m := range results.Matches {
-		if m.MatchType == "License" {
-			return license.Normalize(m.Name, "")
 		}
 	}
 
