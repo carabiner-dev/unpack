@@ -14,6 +14,7 @@ import (
 	"github.com/policylabs/signer"
 	"github.com/spf13/cobra"
 
+	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/image"
 )
 
@@ -129,10 +130,11 @@ Usage patterns:
 			unpacker.Options.ScanSystemDirs = opts.ScanSystemDirs
 			unpacker.Options.Networking = networkLevel(opts.Networking)
 
-			lists, err := unpacker.Extract(cmd.Context(), &image.Reference{Ref: opts.Reference})
+			extractions, err := unpacker.Extractions(cmd.Context(), &image.Reference{Ref: opts.Reference})
 			if err != nil {
 				return fmt.Errorf("extracting image: %w", err)
 			}
+			lists := api.NodeLists(extractions)
 			if len(lists) == 0 || lists[0] == nil {
 				return errors.New("no dependency data found in image")
 			}
@@ -159,11 +161,11 @@ Usage patterns:
 
 			switch {
 			case opts.Sign:
-				err = nodeListToSignedAttestation(signer.NewSigner(), wr, format, nodelist, withAuthors(opts.DocumentAuthors()))
+				err = nodeListToSignedAttestation(signer.NewSigner(), wr, format, nodelist, withAuthors(opts.DocumentAuthors()), withContexts(api.MergedContexts(extractions)))
 			case opts.Attest:
-				err = nodeListToAttestation(wr, format, nodelist, withAuthors(opts.DocumentAuthors()))
+				err = nodeListToAttestation(wr, format, nodelist, withAuthors(opts.DocumentAuthors()), withContexts(api.MergedContexts(extractions)))
 			default:
-				err = nodeListToSbom(wr, format, nodelist, withAuthors(opts.DocumentAuthors()))
+				err = nodeListToSbom(wr, format, nodelist, withAuthors(opts.DocumentAuthors()), withContexts(api.MergedContexts(extractions)))
 			}
 			if err != nil {
 				return fmt.Errorf("rendering SBOM: %w", err)

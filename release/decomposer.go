@@ -222,3 +222,11 @@ func vcsReference(ref *Reference, md *Metadata) *sbom.ExternalReference {
 		},
 	}
 }
+
+var _ api.ContextReporter = (*Decomposer)(nil)
+
+// GenerationContext says in what context the decomposer's data is read:
+// a release as it was published, and the artifacts it holds.
+func (d *Decomposer) GenerationContext() api.GenerationContext {
+	return api.ContextAnalyzed
+}

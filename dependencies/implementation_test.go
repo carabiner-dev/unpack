@@ -82,3 +82,44 @@ func TestScanPathsHonorsIgnorePatterns(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, found[php])
 }
+
+// TestExtractionsCarryTheDecomposersContext checks a codebase comes back
+// with the context its decomposer reads in, and that the plain methods
+// return the same node lists as before.
+func TestExtractionsCarryTheDecomposersContext(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	for name, content := range map[string]string{
+		"composer.json": `{"name": "acme/app"}`,
+		"composer.lock": `{"packages": []}`,
+	} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600))
+	}
+
+	unpacker := NewUnpacker()
+	unpacker.Options.Networking = api.NetworkDisabled
+	unpacker.Options.ReadGitVersion = false
+
+	extractions, err := unpacker.Extractions(context.Background(), &Codebase{Path: dir})
+	require.NoError(t, err)
+	require.Len(t, extractions, 1)
+	require.Equal(t, []api.GenerationContext{api.ContextSource}, extractions[0].Contexts)
+
+	lists, err := unpacker.Extract(context.Background(), &Codebase{Path: dir})
+	require.NoError(t, err)
+	require.Len(t, lists, 1)
+	require.Len(t, lists[0].GetNodes(), len(extractions[0].NodeList.GetNodes()))
+
+	one, err := unpacker.CodebaseExtraction(context.Background(), dir)
+	require.NoError(t, err)
+	require.NotNil(t, one)
+	require.Equal(t, []api.GenerationContext{api.ContextSource}, one.Contexts)
+
+	// A directory holding no codebase is no extraction, and no error.
+	none, err := unpacker.CodebaseExtraction(context.Background(), t.TempDir())
+	require.NoError(t, err)
+	require.Nil(t, none)
+	nl, err := unpacker.ExtractCodebaseWithContext(context.Background(), t.TempDir())
+	require.NoError(t, err)
+	require.Nil(t, nl)
+}

@@ -148,10 +148,11 @@ Usage patterns:
 			unpacker.Options.IncludeBuild = opts.IncludeBuild
 			unpacker.Options.Networking = networkLevel(opts.Networking)
 
-			lists, err := unpacker.Extract(cmd.Context(), subject)
+			extractions, err := unpacker.Extractions(cmd.Context(), subject)
 			if err != nil {
 				return fmt.Errorf("extracting artifact data: %w", err)
 			}
+			lists := api.NodeLists(extractions)
 			if len(lists) == 0 {
 				return fmt.Errorf("no dependency data found in %s: not a recognized artifact", opts.Path)
 			}
@@ -184,11 +185,11 @@ Usage patterns:
 
 			switch {
 			case opts.Sign:
-				err = nodeListToSignedAttestation(signer.NewSigner(), wr, format, nodelist, withAuthors(opts.DocumentAuthors()))
+				err = nodeListToSignedAttestation(signer.NewSigner(), wr, format, nodelist, withAuthors(opts.DocumentAuthors()), withContexts(api.MergedContexts(extractions)))
 			case opts.Attest:
-				err = nodeListToAttestation(wr, format, nodelist, withAuthors(opts.DocumentAuthors()))
+				err = nodeListToAttestation(wr, format, nodelist, withAuthors(opts.DocumentAuthors()), withContexts(api.MergedContexts(extractions)))
 			default:
-				err = nodeListToSbom(wr, format, nodelist, withAuthors(opts.DocumentAuthors()))
+				err = nodeListToSbom(wr, format, nodelist, withAuthors(opts.DocumentAuthors()), withContexts(api.MergedContexts(extractions)))
 			}
 			if err != nil {
 				return fmt.Errorf("rendering SBOM: %w", err)

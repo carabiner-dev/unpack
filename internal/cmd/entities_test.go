@@ -11,6 +11,8 @@ import (
 	"github.com/protobom/protobom/pkg/formats"
 	protosbom "github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/require"
+
+	api "github.com/carabiner-dev/unpack/api/v1"
 )
 
 func TestParseEntity(t *testing.T) {
@@ -224,4 +226,101 @@ func TestEntityFlagsOnEverySbomCommand(t *testing.T) {
 		require.NotNil(t, author, "%s has no --author", name)
 		require.Equal(t, "stringArray", author.Value.Type())
 	}
+}
+
+// TestGenerationContext checks a document says in what contexts its data
+// was read, in whatever way its format can: CycloneDX as lifecycle phases,
+// SPDX 3 as SBOM types, and SPDX 2, which has no field for it, in the
+// document's comment. A document given none says nothing.
+func TestGenerationContext(t *testing.T) {
+	t.Parallel()
+
+	render := func(t *testing.T, format formats.Format, opts ...documentOption) string {
+		t.Helper()
+		nl := protosbom.NewNodeList()
+		nl.AddRootNode(&protosbom.Node{Id: "root", Type: protosbom.Node_PACKAGE, Name: "app", Version: "1.0.0"})
+		buf := &bcloser{Buffer: bytes.Buffer{}}
+		require.NoError(t, nodeListToSbom(buf, format, nl, opts...))
+		return buf.Buffer.String()
+	}
+
+	for name, tc := range map[string]struct {
+		contexts  []api.GenerationContext
+		spdxTypes string
+		cdxPhases []string
+		comments  []string
+	}{
+		"source":   {[]api.GenerationContext{api.ContextSource}, `"source"`, []string{"pre-build"}, []string{"SBOM type: source."}},
+		"build":    {[]api.GenerationContext{api.ContextBuild}, `"build"`, []string{"build"}, []string{"SBOM type: build."}},
+		"analyzed": {[]api.GenerationContext{api.ContextAnalyzed}, `"analyzed"`, []string{"post-build"}, []string{"SBOM type: analyzed."}},
+		// A graph put together from data read in more than one.
+		"several": {
+			[]api.GenerationContext{api.ContextSource, api.ContextAnalyzed},
+			`"source",\s*"analyzed"`,
+			[]string{"pre-build", "post-build"},
+			[]string{"SBOM type: source.", "SBOM type: analyzed."},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var cdx struct {
+				Metadata struct {
+					Lifecycles []struct {
+						Phase string `json:"phase"`
+					} `json:"lifecycles"`
+				} `json:"metadata"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(render(t, formats.CDX17JSON, withContexts(tc.contexts))), &cdx))
+			phases := make([]string, 0, len(cdx.Metadata.Lifecycles))
+			for _, lifecycle := range cdx.Metadata.Lifecycles {
+				phases = append(phases, lifecycle.Phase)
+			}
+			require.Equal(t, tc.cdxPhases, phases)
+
+			var spdx2 struct {
+				Comment string `json:"comment"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(render(t, formats.SPDX23JSON, withContexts(tc.contexts))), &spdx2))
+			for _, comment := range tc.comments {
+				require.Contains(t, spdx2.Comment, comment)
+			}
+
+			spdx3 := render(t, formats.SPDX3JSON, withContexts(tc.contexts))
+			require.Regexp(t, `"software_sbomType":\s*\[\s*`+tc.spdxTypes+`\s*\]`, spdx3)
+			require.NotContains(t, spdx3, tc.comments[0], "SPDX 3 states the type itself")
+		})
+	}
+
+	// Every type there is has its sentence in SPDX 2, and not only the
+	// ones unpack reads in itself: a document that is re-read keeps
+	// whichever it came with. "Other" names no context to put in words.
+	t.Run("every type has its words", func(t *testing.T) {
+		t.Parallel()
+		for value, name := range protosbom.DocumentType_SBOMType_name {
+			generation := api.GenerationContext(value)
+			var spdx2 struct {
+				Comment string `json:"comment"`
+			}
+			doc := render(t, formats.SPDX23JSON, withContexts([]api.GenerationContext{generation}))
+			require.NoError(t, json.Unmarshal([]byte(doc), &spdx2))
+			if generation == protosbom.DocumentType_OTHER {
+				require.Empty(t, spdx2.Comment)
+				continue
+			}
+			require.Contains(t, spdx2.Comment, "SBOM type: ", name)
+		}
+	})
+
+	t.Run("none", func(t *testing.T) {
+		t.Parallel()
+		var spdx2 struct {
+			Comment string `json:"comment"`
+		}
+		for _, opts := range [][]documentOption{nil, {withContexts(nil)}} {
+			require.NoError(t, json.Unmarshal([]byte(render(t, formats.SPDX23JSON, opts...)), &spdx2))
+			require.Empty(t, spdx2.Comment)
+			require.NotContains(t, render(t, formats.CDX17JSON, opts...), "lifecycles")
+		}
+	})
 }

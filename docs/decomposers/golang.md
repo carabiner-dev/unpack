@@ -52,6 +52,13 @@ dependencies in `go.mod`. All three common flags (`--include-dev`,
 `--include-build`, `--include-optional`) are no-ops for the Go decomposer.
 All declared dependencies are always included.
 
+## Generation context
+
+`source`. The decomposer reads `go.mod` and `go.sum` as they stand in the
+source tree, before anything is built, so a document made from its data
+is a source SBOM: CycloneDX lifecycle `pre-build`, SPDX 3 type `source`. See
+[Generation context](README.md#generation-context).
+
 ## Strengths
 
 - No external tooling needed -- does not shell out to `go`.

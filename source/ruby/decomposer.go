@@ -84,3 +84,11 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	}
 	return nl, nil
 }
+
+var _ api.ContextReporter = (*Decomposer)(nil)
+
+// GenerationContext says in what context the decomposer's data is read:
+// Gemfile.lock, as it stands in the source tree.
+func (d *Decomposer) GenerationContext() api.GenerationContext {
+	return api.ContextSource
+}

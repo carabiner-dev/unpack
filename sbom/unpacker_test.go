@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	api "github.com/carabiner-dev/unpack/api/v1"
 )
 
 // spdxDocument is a minimal SPDX 2.3 document describing one package. It
@@ -157,6 +159,48 @@ func TestExtractErrors(t *testing.T) {
 				t.Context(), &Subject{Reader: bytes.NewReader(tc.data)},
 			)
 			require.ErrorContains(t, err, tc.mustSay)
+		})
+	}
+}
+
+// TestExtractionsCarryTheDocumentsContext checks a document's own word on
+// how it was generated comes back with its node list, and that a document
+// saying nothing leaves it unknown.
+func TestExtractionsCarryTheDocumentsContext(t *testing.T) {
+	t.Parallel()
+
+	const cdx = `{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "metadata": {%s
+    "component": {"bom-ref": "root", "type": "application", "name": "hello", "version": "1.0.0"}
+  },
+  "components": []
+}`
+	for name, tc := range map[string]struct {
+		lifecycles string
+		expected   []api.GenerationContext
+	}{
+		"a source document": {
+			`"lifecycles": [{"phase": "pre-build"}],`,
+			[]api.GenerationContext{api.ContextSource},
+		},
+		"a document made in two": {
+			`"lifecycles": [{"phase": "post-build"}, {"phase": "build"}],`,
+			[]api.GenerationContext{api.ContextBuild, api.ContextAnalyzed},
+		},
+		"a document that does not say": {"", nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			extractions, err := NewUnpacker().Extractions(
+				t.Context(), &Subject{Reader: bytes.NewReader([]byte(fmt.Sprintf(cdx, tc.lifecycles)))},
+			)
+			require.NoError(t, err)
+			require.Len(t, extractions, 1)
+			require.Equal(t, tc.expected, extractions[0].Contexts)
+			require.NotEmpty(t, extractions[0].NodeList.GetNodes())
 		})
 	}
 }

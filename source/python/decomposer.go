@@ -275,3 +275,11 @@ func pythonFloor(constraint string) string {
 	}
 	return ""
 }
+
+var _ api.ContextReporter = (*Decomposer)(nil)
+
+// GenerationContext says in what context the decomposer's data is read:
+// a lock file or a requirements file, as it stands in the source tree.
+func (d *Decomposer) GenerationContext() api.GenerationContext {
+	return api.ContextSource
+}

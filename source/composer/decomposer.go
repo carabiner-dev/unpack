@@ -53,3 +53,12 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	}
 	return buildComposerTree(lock, manifest, opts)
 }
+
+var _ api.ContextReporter = (*Decomposer)(nil)
+
+// GenerationContext says in what context the decomposer's data is read:
+// a composer.lock or a vendor directory's installed.json, read as
+// they stand in the source tree.
+func (d *Decomposer) GenerationContext() api.GenerationContext {
+	return api.ContextSource
+}

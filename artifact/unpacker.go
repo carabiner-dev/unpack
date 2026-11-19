@@ -167,6 +167,15 @@ func (u *Unpacker) active() []Decomposer {
 // an error reading one artifact does not stop the others and is returned,
 // joined with the rest, alongside the lists that succeeded.
 func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject) ([]*sbom.NodeList, error) {
+	extractions, err := u.Extractions(ctx, subject)
+	return api.NodeLists(extractions), err
+}
+
+var _ api.ExtractionUnpacker = (*Unpacker)(nil)
+
+// Extractions is Extract, returning with each NodeList the context the
+// decomposer that claimed the artifact reads in.
+func (u *Unpacker) Extractions(ctx context.Context, subject api.DecomposableSubject) ([]*api.Extraction, error) {
 	if subject == nil {
 		return nil, fmt.Errorf("artifact unpacker received a nil subject")
 	}
@@ -200,7 +209,7 @@ func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject)
 	}
 
 	// Probe the files concurrently, keeping results in path order.
-	results := make([]*sbom.NodeList, len(paths))
+	results := make([]*api.Extraction, len(paths))
 	errs := make([]error, len(paths))
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(max(u.Options.Concurrency, 1))
@@ -217,18 +226,19 @@ func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject)
 		return nil, err
 	}
 
-	var lists []*sbom.NodeList
-	for _, nl := range results {
-		if nl != nil {
-			lists = append(lists, nl)
+	var extractions []*api.Extraction
+	for _, extraction := range results {
+		if extraction != nil {
+			extractions = append(extractions, extraction)
 		}
 	}
-	return lists, errors.Join(errs...)
+	return extractions, errors.Join(errs...)
 }
 
 // probe runs the decomposers over one file. The first decomposer to claim
-// the file wins; its graph is returned rooted at a node for the file.
-func (u *Unpacker) probe(fsys fs.FS, path string, decomposers []Decomposer, dOpts *api.DecomposerOptions) (*sbom.NodeList, error) {
+// the file wins; its graph is returned rooted at a node for the file, with
+// the context that decomposer reads in.
+func (u *Unpacker) probe(fsys fs.FS, path string, decomposers []Decomposer, dOpts *api.DecomposerOptions) (*api.Extraction, error) {
 	f, err := fsys.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("opening %q: %w", path, err)
@@ -273,7 +283,13 @@ func (u *Unpacker) probe(fsys fs.FS, path string, decomposers []Decomposer, dOpt
 		if nl == nil {
 			continue
 		}
-		return wrapInFile(nl, path, ra, info.Size())
+		wrapped, err := wrapInFile(nl, path, ra, info.Size())
+		if err != nil {
+			return nil, err
+		}
+		extraction := api.NewExtraction(wrapped)
+		extraction.AddContextOf(d)
+		return extraction, nil
 	}
 	return nil, nil
 }

@@ -103,6 +103,16 @@ requests. The networking level comes from the artifact unpacker's options
 | `--include-build` | `kind: build` | The build dependencies and their subtree, related through `buildDependency` edges. Off by default. |
 | `--include-optional` | _(no-op)_ | Optional features that were enabled are ordinary dependencies in the record; the rest are absent. |
 
+## Generation context
+
+`analyzed`. The decomposer reads the dependency record embedded in a
+binary that is already built, so a document made from its data is an
+analyzed SBOM: CycloneDX lifecycle `post-build`, SPDX 3 type `analyzed`.
+That holds although cargo-auditable wrote the record during the build:
+the SBOM is made afterwards, from the artifact, with only what the
+artifact kept. See
+[Generation context](README.md#generation-context).
+
 ## Strengths
 
 - **Ground truth with structure.** The record is what the linker used,

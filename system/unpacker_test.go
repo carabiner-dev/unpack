@@ -86,3 +86,18 @@ func (bogusSubject) DecomposableType() string { return "bogus" }
 // Sanity check: the bogusSubject still satisfies the api.DecomposableSubject
 // interface so that the test compiles.
 var _ api.DecomposableSubject = bogusSubject{}
+
+// TestUnpackerExtractions checks the packages of a system come back with
+// the context their decomposer reads in: something already put together,
+// taken apart.
+func TestUnpackerExtractions(t *testing.T) {
+	t.Parallel()
+	u := NewUnpacker()
+	subject := &LocalSystem{Root: "rpm/testdata/rhel8-libuuid"}
+
+	extractions, err := u.Extractions(context.Background(), subject)
+	require.NoError(t, err)
+	require.Len(t, extractions, 1)
+	require.Equal(t, []api.GenerationContext{api.ContextAnalyzed}, extractions[0].Contexts)
+	require.Len(t, extractions[0].NodeList.GetNodes(), 1)
+}

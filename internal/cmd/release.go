@@ -12,6 +12,7 @@ import (
 	"github.com/policylabs/signer"
 	"github.com/spf13/cobra"
 
+	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/release"
 )
 
@@ -118,10 +119,11 @@ Examples:
 			}
 
 			unpacker := release.NewUnpacker()
-			lists, err := unpacker.Extract(cmd.Context(), opts.Reference)
+			extractions, err := unpacker.Extractions(cmd.Context(), opts.Reference)
 			if err != nil {
 				return fmt.Errorf("extracting release: %w", err)
 			}
+			lists := api.NodeLists(extractions)
 			if len(lists) == 0 || lists[0] == nil {
 				return errors.New("no release data found")
 			}
@@ -147,11 +149,11 @@ Examples:
 
 			switch {
 			case opts.Sign:
-				err = nodeListToSignedAttestation(signer.NewSigner(), wr, format, nodelist, withAuthors(opts.DocumentAuthors()))
+				err = nodeListToSignedAttestation(signer.NewSigner(), wr, format, nodelist, withAuthors(opts.DocumentAuthors()), withContexts(api.MergedContexts(extractions)))
 			case opts.Attest:
-				err = nodeListToAttestation(wr, format, nodelist, withAuthors(opts.DocumentAuthors()))
+				err = nodeListToAttestation(wr, format, nodelist, withAuthors(opts.DocumentAuthors()), withContexts(api.MergedContexts(extractions)))
 			default:
-				err = nodeListToSbom(wr, format, nodelist, withAuthors(opts.DocumentAuthors()))
+				err = nodeListToSbom(wr, format, nodelist, withAuthors(opts.DocumentAuthors()), withContexts(api.MergedContexts(extractions)))
 			}
 			if err != nil {
 				return fmt.Errorf("rendering SBOM: %w", err)

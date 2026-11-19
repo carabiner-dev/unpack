@@ -62,6 +62,13 @@ variant travels in the purl as a qualifier:
 | `--include-build` | _(no-op)_ | Bundler has no build dependency concept. |
 | `--include-optional` | _(no-op)_ | Bundler has no optional dependency concept. |
 
+## Generation context
+
+`source`. The decomposer reads `Gemfile.lock` as it stands in the source
+tree, before anything is installed, so a document made from its data is
+a source SBOM: CycloneDX lifecycle `pre-build`, SPDX 3 type `source`. See
+[Generation context](README.md#generation-context).
+
 ## Conformance
 
 The reader is held to Bundler's own lockfile parser, run over the same

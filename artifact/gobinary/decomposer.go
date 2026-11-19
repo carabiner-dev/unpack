@@ -254,3 +254,11 @@ func buildSettings(bi *debug.BuildInfo) map[string]string {
 	}
 	return settings
 }
+
+var _ api.ContextReporter = (*Decomposer)(nil)
+
+// GenerationContext says in what context the decomposer's data is read:
+// the build information embedded in a binary already built.
+func (d *Decomposer) GenerationContext() api.GenerationContext {
+	return api.ContextAnalyzed
+}

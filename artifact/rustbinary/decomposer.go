@@ -310,3 +310,11 @@ func packageNode(p *Package) *sbom.Node {
 	}
 	return node
 }
+
+var _ api.ContextReporter = (*Decomposer)(nil)
+
+// GenerationContext says in what context the decomposer's data is read:
+// the dependency record embedded in a binary already built.
+func (d *Decomposer) GenerationContext() api.GenerationContext {
+	return api.ContextAnalyzed
+}

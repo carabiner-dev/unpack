@@ -138,6 +138,18 @@ first:
 | `--include-build` | _(no-op)_ | Build backend requirements are not locked and are not included. |
 | `--include-optional` | extras | The project's own extras. Edge type: `optionalDependency`. An extra named on a dependency edge (`requests[socks]`) is always followed: the parent asked for it. No-op for requirements files. |
 
+## Generation context
+
+`source`, for `uv.lock`, `poetry.lock` and `requirements.txt`. They are
+read as they stand in the source tree, before anything is installed, so
+a document made from them is a source SBOM: CycloneDX lifecycle
+`pre-build`, SPDX 3 type `source`.
+
+Installed environments are another matter. They are read by the system
+decomposer (`system/python/`) out of a filesystem already put together,
+an image or a system root, and that decomposer reports `analyzed`. See
+[Generation context](README.md#generation-context).
+
 ## Strengths
 
 - **Fully offline graph.** Everything but licenses comes from the lock:

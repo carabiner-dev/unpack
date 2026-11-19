@@ -12,21 +12,22 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
-	"github.com/protobom/protobom/pkg/sbom"
+
+	api "github.com/carabiner-dev/unpack/api/v1"
 )
 
 // extractArchive reads the image out of a docker-archive tarball and
 // routes it through the same squash-and-scan pipeline as pulled images.
-func (u *Unpacker) extractArchive(ctx context.Context, ref *Reference) ([]*sbom.NodeList, error) {
+func (u *Unpacker) extractArchive(ctx context.Context, ref *Reference) ([]*api.Extraction, error) {
 	refStr, nref, img, err := openArchiveImage(ref)
 	if err != nil {
 		return nil, err
 	}
-	nl, err := u.extractImage(ctx, refStr, nref, img)
+	extraction, err := u.extractImage(ctx, refStr, nref, img)
 	if err != nil {
 		return nil, err
 	}
-	return []*sbom.NodeList{nl}, nil
+	return []*api.Extraction{extraction}, nil
 }
 
 // openArchiveImage loads the image from the archive along with the

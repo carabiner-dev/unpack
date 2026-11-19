@@ -144,6 +144,15 @@ type Unpacker struct {
 // handles codebase subjects: it scans the subject's path for codebases and runs
 // the configured decomposers over them, returning the resulting nodelists.
 func (unpacker *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject) ([]*sbom.NodeList, error) {
+	extractions, err := unpacker.Extractions(ctx, subject)
+	return api.NodeLists(extractions), err
+}
+
+var _ api.ExtractionUnpacker = (*Unpacker)(nil)
+
+// Extractions is Extract, returning with each nodelist the context its
+// decomposer reads in.
+func (unpacker *Unpacker) Extractions(ctx context.Context, subject api.DecomposableSubject) ([]*api.Extraction, error) {
 	if subject == nil {
 		return nil, fmt.Errorf("dependencies unpacker received a nil subject")
 	}
@@ -157,8 +166,8 @@ func (unpacker *Unpacker) Extract(ctx context.Context, subject api.DecomposableS
 }
 
 // extractSources launches the analyzers in the given sources and returns the
-// resulting nodelists.
-func (unpacker *Unpacker) extractSources(ctx context.Context, sources Sources) ([]*sbom.NodeList, error) {
+// resulting nodelists, each with the context its decomposer reads in.
+func (unpacker *Unpacker) extractSources(ctx context.Context, sources Sources) ([]*api.Extraction, error) {
 	// Index the specified directories
 	codeIndices, err := unpacker.impl.IndexPaths(ctx, &unpacker.Options, sources)
 	if err != nil {
@@ -178,13 +187,13 @@ func (unpacker *Unpacker) extractSources(ctx context.Context, sources Sources) (
 		}
 	}
 
-	nodelists, err := unpacker.impl.ExtractCodeBases(ctx, &unpacker.Options, codebases)
+	extractions, err := unpacker.impl.ExtractCodeBases(ctx, &unpacker.Options, codebases)
 	if err != nil {
 		return nil, fmt.Errorf("extracting data from codebases: %w", err)
 	}
 
 	// Extract from the codebases
-	return nodelists, nil
+	return extractions, nil
 }
 
 // filterCodebases filters the codebase map to only include the codebase matching the filter ID.
@@ -249,16 +258,27 @@ func (unpacker *Unpacker) ExtractCodebase(path string) (*sbom.NodeList, error) {
 
 // ExtractCodeBaseWithContext extracts data from a single directory.
 func (unpacker *Unpacker) ExtractCodebaseWithContext(ctx context.Context, path string) (*sbom.NodeList, error) {
-	nodelists, err := unpacker.Extract(ctx, &Codebase{Path: path})
+	extraction, err := unpacker.CodebaseExtraction(ctx, path)
+	if err != nil || extraction == nil {
+		return nil, err
+	}
+	return extraction.NodeList, nil
+}
+
+// CodebaseExtraction is ExtractCodebaseWithContext, returning with the
+// nodelist the context its decomposer reads in. It returns nil when the
+// directory holds no codebase.
+func (unpacker *Unpacker) CodebaseExtraction(ctx context.Context, path string) (*api.Extraction, error) {
+	extractions, err := unpacker.Extractions(ctx, &Codebase{Path: path})
 	if err != nil {
 		return nil, fmt.Errorf("extracting codebases: %w", err)
 	}
 
-	switch len(nodelists) {
+	switch len(extractions) {
 	case 0:
 		return nil, nil
 	case 1:
-		return nodelists[0], nil
+		return extractions[0], nil
 	default:
 		// Fail if FailOnSingleMulti is set:
 		if unpacker.Options.FailOnSingleMulti {
@@ -266,9 +286,9 @@ func (unpacker *Unpacker) ExtractCodebaseWithContext(ctx context.Context, path s
 		}
 
 		unpacker.Options.logger.WarnContext(
-			ctx, fmt.Sprintf("%d codebases found, only returning the first", len(nodelists)),
+			ctx, fmt.Sprintf("%d codebases found, only returning the first", len(extractions)),
 		)
-		return nodelists[0], nil
+		return extractions[0], nil
 	}
 }
 

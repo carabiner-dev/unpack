@@ -37,7 +37,18 @@ func NewUnpacker() *Unpacker {
 type Unpacker struct{}
 
 // Extract parses the SBOM in the subject and returns its node list.
-func (u *Unpacker) Extract(_ context.Context, subject api.DecomposableSubject) ([]*protosbom.NodeList, error) {
+func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject) ([]*protosbom.NodeList, error) {
+	extractions, err := u.Extractions(ctx, subject)
+	return api.NodeLists(extractions), err
+}
+
+var _ api.ExtractionUnpacker = (*Unpacker)(nil)
+
+// Extractions is Extract, returning with the node list the contexts the
+// document says it was generated in. No decomposer reads here: how the
+// data was read is what whoever wrote the document stated, and a document
+// stating nothing leaves it unknown.
+func (u *Unpacker) Extractions(_ context.Context, subject api.DecomposableSubject) ([]*api.Extraction, error) {
 	if subject == nil {
 		return nil, fmt.Errorf("sbom unpacker received a nil subject")
 	}
@@ -58,7 +69,16 @@ func (u *Unpacker) Extract(_ context.Context, subject api.DecomposableSubject) (
 	if err != nil {
 		return nil, err
 	}
-	return []*protosbom.NodeList{doc.GetNodeList()}, nil
+
+	extraction := api.NewExtraction(doc.GetNodeList())
+	for _, documentType := range doc.GetMetadata().GetDocumentTypes() {
+		// A type the document names in words only is not one of the
+		// contexts, and neither is "other".
+		if documentType.Type != nil && documentType.GetType() != protosbom.DocumentType_OTHER {
+			extraction.AddContexts(documentType.GetType())
+		}
+	}
+	return []*api.Extraction{extraction}, nil
 }
 
 // ParseDocument reads a bill of materials in any format protobom

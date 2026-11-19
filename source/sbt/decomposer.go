@@ -157,3 +157,12 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	}
 	return nl, nil
 }
+
+var _ api.ContextReporter = (*Decomposer)(nil)
+
+// GenerationContext says in what context the decomposer's data is read:
+// a snapshot sbt wrote of what it resolved for the build, which is
+// the build tool's own record and not a file of the source tree.
+func (d *Decomposer) GenerationContext() api.GenerationContext {
+	return api.ContextBuild
+}
