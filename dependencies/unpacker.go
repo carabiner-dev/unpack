@@ -70,6 +70,14 @@ type Options struct {
 	// for the root nodes.
 	ReadGitVersion bool
 
+	// ReadLicenseFile instructs the unpacker to read the license of a
+	// codebase from its license file (LICENSE, COPYING, ...) when the
+	// decomposer found none: a root node the manifest declares no license
+	// for takes the one the file's text is recognized as. The file is
+	// looked for in the codebase's directory and then in those above it,
+	// up to the root of the git repository it is in.
+	ReadLicenseFile bool
+
 	// IgnorePatterns are additional paths to ignore, as gitignore-style
 	// patterns. They apply both when detecting codebases and when
 	// cataloging files into the SBOM.
@@ -123,6 +131,7 @@ type DriverConfig struct {
 var DefaultOptions = Options{
 	FailOnSingleMulti: true,
 	ReadGitVersion:    true,
+	ReadLicenseFile:   true,
 	UseGitIgnore:      true,
 	IndexFiles:        false,
 	logger:            slog.Default(),

@@ -49,6 +49,30 @@ All decomposers share these behaviors:
   software's life it reads, and the document written from its data states
   it. See [Generation context](#generation-context).
 
+## The codebase's own license
+
+A decomposer reads the project's license from its manifest where the
+ecosystem has a place for one (`Cargo.toml`, `package.json`, a POM,
+`composer.json`). Go, Ruby and sbt have none, and where there is one it
+is often empty. So when a root node comes back with no license, the
+unpacker reads it from the project's license file:
+
+- **Which file:** `LICENSE`, `LICENCE` or `COPYING`, bare or with `.md`
+  or `.txt`, in any case.
+- **Where:** the codebase's directory, then the directories above it,
+  nearest first, up to the root of the git repository it is in. A
+  codebase in a subdirectory takes the repository's license when it has
+  no file of its own. A directory in no repository is searched alone.
+- **How:** the text is classified against the SPDX corpus and the node
+  takes the identifier it is recognized as. A file that is not
+  recognized as a license gives none.
+- **Precedence:** a license the manifest declares stands; the file is
+  only read for roots that have none. Every unlicensed root of the
+  codebase takes it, the members of a workspace included.
+
+It needs no network. A library caller turns it off with
+`dependencies.Options.ReadLicenseFile`.
+
 ## Generation context
 
 An SBOM is expected to say in what context it was generated: what there
