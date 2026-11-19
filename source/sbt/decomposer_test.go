@@ -35,6 +35,10 @@ func rewriteSnapshot(t *testing.T, oldnew ...string) string {
 
 func extractSnapshot(t *testing.T, path string, opts *api.DecomposerOptions) *sbom.NodeList {
 	t.Helper()
+	// The graph tests are about the snapshot, not the repository: the
+	// zero networking value is NetworkEssential, which would quietly
+	// turn every test into a Maven Central client.
+	opts.Networking = api.NetworkDisabled
 	nl, err := New(path).Extract(opts)
 	require.NoError(t, err)
 	return nl

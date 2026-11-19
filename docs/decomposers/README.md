@@ -14,7 +14,7 @@ can be serialized as SPDX or CycloneDX.
 | [Python](python.md) | `source/python/` | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry only) | PyPI JSON API |
 | [Ruby (Bundler)](ruby.md) | `source/ruby/` | `Gemfile.lock` | _(not read — executable Ruby)_ | rubygems.org API |
 | [Rust](rust.md) | `source/rust/` | `Cargo.lock` | `Cargo.toml` | crates.io API |
-| [sbt](sbt.md) | `source/sbt/` | _(a GitHub dependency snapshot, given with `--sbt-snapshot`)_ | _(not read — executable Scala)_ | _(none)_ |
+| [sbt](sbt.md) | `source/sbt/` | _(a GitHub dependency snapshot, given with `--sbt-snapshot`)_ | _(not read — executable Scala)_ | Maven Central (hashes) |
 
 ## Artifact decomposers
 
@@ -186,6 +186,8 @@ decomposers uniformly.
 | **Ruby:** local parsing (Gemfile.lock) | works | works | works |
 | **Ruby:** rubygems.org API (licenses, metadata) | skip | yes | yes |
 | **Python:** PyPI JSON API (licenses, metadata) | skip | yes | yes |
+| **sbt:** snapshot read, full graph | works | works | works |
+| **sbt:** Maven Central checksum files (hashes), for every library | skip | yes | yes |
 | **Rust:** local parsing (Cargo.toml/lock) | works | works | works |
 | **Rust:** crates.io API (enrichment), one request a second | skip | yes | yes |
 
