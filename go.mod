@@ -10,6 +10,7 @@ require (
 	github.com/carabiner-dev/hasher v0.2.4
 	github.com/carabiner-dev/protograph v0.1.0
 	github.com/carabiner-dev/termtable v1.1.1
+	github.com/chainguard-dev/clog v1.8.1
 	github.com/fatih/color v1.19.0
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/google/go-containerregistry v0.22.1

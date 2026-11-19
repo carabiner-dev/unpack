@@ -13,6 +13,7 @@ import (
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 // This file reads installed Composer environments: the installed.json a
@@ -116,7 +117,7 @@ func extractVendor(fsys fs.FS, installedPath string, opts *api.DecomposerOptions
 	projectDir := path.Dir(path.Dir(path.Dir(installedPath)))
 	if manifestData, err := fs.ReadFile(fsys, path.Join(projectDir, "composer.json")); err == nil {
 		if manifest, err := ParseComposerJSON(manifestData); err == nil && manifest.Name != "" {
-			return buildComposerTree(lock, manifest, opts)
+			return buildComposerTree(lock, manifest, opts, logging.Silent())
 		}
 	}
 	return buildInstalledTree(lock, opts)

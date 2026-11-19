@@ -6,13 +6,13 @@ package maven
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/code"
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 var _ api.Decomposer = (*Decomposer)(nil)
@@ -113,7 +113,7 @@ func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.Decompose
 	// which only the repository has.
 	dt := NewDependencyTree(effective, resolver, dOpts)
 	if resolver == nil {
-		slog.Debug("maven: networking is disabled, the graph holds only the dependencies pom.xml declares",
+		logging.FromContext(ctx).Debug("maven: networking is disabled, the graph holds only the dependencies pom.xml declares",
 			"pom", filepath.Join(opts.WorkDir, "pom.xml"))
 	}
 	if err := dt.Build(); err != nil {

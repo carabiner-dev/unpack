@@ -22,6 +22,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/code"
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 var (
@@ -161,6 +162,7 @@ func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.Decompose
 	}
 
 	builder := newSnapshotBuilder(snapshot, workDir, opts)
+	builder.log = logging.FromContext(ctx)
 	nl, err := builder.build()
 	if err != nil {
 		return nil, fmt.Errorf("building graph from dependency snapshot: %w", err)

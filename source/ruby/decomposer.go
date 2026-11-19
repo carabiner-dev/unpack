@@ -10,6 +10,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/code"
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 var (
@@ -78,6 +79,9 @@ func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.Decompose
 	}
 
 	rb, err := newRubyBuilder(lock, workDir, opts, platform)
+	if rb != nil {
+		rb.log = logging.FromContext(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}

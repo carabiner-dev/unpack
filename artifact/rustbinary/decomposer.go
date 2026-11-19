@@ -26,6 +26,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/artifact/internal/executable"
+	"github.com/carabiner-dev/unpack/internal/logging"
 	"github.com/carabiner-dev/unpack/source/rust"
 )
 
@@ -155,7 +156,7 @@ func (d *Decomposer) ExtractArtifact(ra io.ReaderAt, path string, opts *api.Deco
 // cargo-auditable looks like. A record that is present but unreadable is
 // an error: the file is one of ours and it is broken.
 func (d *Decomposer) ExtractArtifactWithContext(
-	_ context.Context, ra io.ReaderAt, _ string, opts *api.DecomposerOptions,
+	ctx context.Context, ra io.ReaderAt, _ string, opts *api.DecomposerOptions,
 ) (*sbom.NodeList, error) {
 	if opts == nil {
 		opts = &api.DecomposerOptions{}
@@ -184,7 +185,9 @@ func (d *Decomposer) ExtractArtifactWithContext(
 		if rOpts, ok := opts.GetDriverOptions(d).(*rust.Options); ok {
 			concurrency = rOpts.Concurrency
 		}
-		rust.EnrichNodes(rust.NewCratesIOClient(concurrency), nodes)
+		client := rust.NewCratesIOClient(concurrency)
+		client.Logger = logging.FromContext(ctx)
+		rust.EnrichNodes(client, nodes)
 	}
 	return nl, nil
 }

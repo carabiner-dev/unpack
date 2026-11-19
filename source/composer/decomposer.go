@@ -10,6 +10,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/code"
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 var (
@@ -61,7 +62,7 @@ func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.Decompose
 	if err != nil {
 		return nil, err
 	}
-	return buildComposerTree(lock, manifest, opts)
+	return buildComposerTree(lock, manifest, opts, logging.FromContext(ctx))
 }
 
 var _ api.ContextReporter = (*Decomposer)(nil)
