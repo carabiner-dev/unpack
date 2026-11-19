@@ -309,7 +309,16 @@ func (d *Decomposer) extractRequirements(workDir string, opts *api.DecomposerOpt
 	}
 
 	if opts.Networking >= api.NetworkEssential {
-		NewPyPIClient(dOpts.Concurrency).enrichNodes(nodes, enrichable)
+		// The file's hashes do not say which artifact each belongs to,
+		// and the index does: an entry takes the hash of the file this
+		// environment installs, out of the ones the file accepts.
+		artifacts := &artifactPicker{env: env, allowed: map[packageKey][]string{}}
+		for _, entry := range order {
+			if _, in := selected[entry.Name]; in {
+				artifacts.allowed[packageKey{name: entry.Name, version: entry.Version}] = entry.Hashes
+			}
+		}
+		NewPyPIClient(dOpts.Concurrency).enrichNodes(nodes, enrichable, artifacts)
 	}
 	return nl, nil
 }
@@ -430,7 +439,8 @@ func requirementNode(entry *requirementEntry) *sbom.Node {
 
 	// The file does not say which artifact each hash belongs to, so only
 	// a lone hash identifies this entry's content. A compiled file lists
-	// every artifact's hash, and picking one would be guessing.
+	// every artifact's hash, and picking one would be guessing: that
+	// waits for the index, which names each file (see artifactPicker).
 	if len(entry.Hashes) == 1 {
 		node.Hashes = map[int32]string{int32(sbom.HashAlgorithm_SHA256): entry.Hashes[0]}
 	}

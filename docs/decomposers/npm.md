@@ -75,10 +75,12 @@ dependency are read: Yarn 4 writes the selector with its protocol
 keyed with it. A node is named after the package its entry resolves to,
 which is what an alias or a patched package is really.
 
-**Berry nodes carry no hashes and no download URL, deliberately**: the
-lock's `checksum` covers yarn's own cache archive, which no registry or
-attestation can reproduce, and a hash nothing else can verify identifies
-nothing.
+**The lock gives berry nodes no hashes and no download URL,
+deliberately**: its `checksum` covers yarn's own cache archive, which no
+registry or attestation can reproduce, and a hash nothing else can verify
+identifies nothing. With networking enabled they take both from the
+registry instead, the tarball it serves for the version and that
+tarball's hash; see [below](#suppliers-licenses-and-the-registry).
 
 ### Peer dependencies
 
@@ -102,8 +104,8 @@ dependencies; Yarn's locks do not record a project's own.
 A lock says where a package was fetched from and little or nothing about
 who is behind it or how it is licensed, so with networking enabled each
 package of the public npm registry is asked about there
-(`/{name}/{version}`, ten requests at a time). Two things are read from
-the answer:
+(`/{name}/{version}`, ten requests at a time). Three things are read
+from the answer:
 
 - **The supplier:** the author the package's manifest declares, or, for
   the many packages that declare none, the account that published the
@@ -115,6 +117,13 @@ the answer:
   `package-lock.json` recorded stands. Two values npm gives a meaning
   of its own state no license: `UNLICENSED`, which says none is granted,
   and `SEE LICENSE IN <file>`, which points at a file that is not read.
+- **The tarball and its hash,** for a package whose lock stated none,
+  which is every package of a berry lock: the URL the registry serves
+  the version from, and the strongest hash of its integrity (SHA-512 for
+  anything published in years, the SHA-1 older versions have alone).
+  A hash a lock recorded stands, and it is the stronger statement: a
+  lock pins the content installed, where the registry says what it
+  serves for the version today.
 
 Only packages of the public registry are asked about, so the name of a
 package from anywhere else is never sent to it:
@@ -147,8 +156,8 @@ one reading it.
 | Name | lockfile | |
 | Version | lockfile | Exact resolved version |
 | PURL | computed | `pkg:npm/[@scope/]name@version` |
-| Download URL | lockfile | Registry tarball URL; absent for berry |
-| Hash | lockfile | SRI integrity (sha512/384/256/1), hex; absent for berry |
+| Download URL | lockfile / npm registry | Registry tarball URL. Berry locks record none: with networking, the registry's |
+| Hash | lockfile / npm registry | SRI integrity (sha512/384/256/1), hex. Berry locks record none that can be used: with networking, the registry's |
 | License | `package-lock.json` / npm registry | The lock's when it records one, which only `package-lock.json` does; the registry's otherwise, with networking, for public-registry packages |
 | Supplier | npm registry | The declared author, else the publishing account. Needs networking, public-registry packages only; see above |
 
@@ -225,9 +234,11 @@ lifecycle `pre-build`, SPDX 3 type `source`. See
   simplified or missing in the lock file, and what the lock recorded is
   kept as it is. `UNLICENSED` and `SEE LICENSE IN <file>` leave a node
   with no license.
-- **Berry hashes.** A berry lock's checksums cannot be tied to registry
-  artifacts, so those nodes carry none — an honest gap rather than an
-  unverifiable value.
+- **Berry hashes need the network.** A berry lock's checksums cannot be
+  tied to registry artifacts, so offline those nodes carry none — an
+  honest gap rather than an unverifiable value. With networking they
+  carry the registry's hash for the version, which is what the registry
+  serves and not something the lock pinned.
 - **Classic yarn workspaces.** A classic `yarn.lock` does not record
   workspace members, and only the root `package.json` is read, so the
   members' own dependencies are not walked from them.

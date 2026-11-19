@@ -188,7 +188,14 @@ func TestRegistryEnrichByConfig(t *testing.T) {
 		mu.Lock()
 		requested = append(requested, r.URL.EscapedPath())
 		mu.Unlock()
-		fmt.Fprint(w, `{"_npmUser": {"name": "publisher"}}`) //nolint:errcheck // a fake server's writes have nowhere to fail
+		// The tarball of whatever is asked for, on the public registry,
+		// except for one version said to be served from elsewhere.
+		tarball := "https://registry.npmjs.org/pkg/-/pkg-1.0.0.tgz"
+		if r.URL.EscapedPath() == "/@types%2Fnode/20.1.0" {
+			tarball = "https://mirror.example/node-20.1.0.tgz"
+		}
+		//nolint:errcheck // a fake server's writes have nowhere to fail
+		fmt.Fprintf(w, `{"_npmUser": {"name": "publisher"}, "dist": {"tarball": %q, "shasum": "574c8138ce1d2b5861f0b44579dbadd60c6615b2"}}`, tarball)
 	}))
 	defer server.Close()
 
@@ -230,9 +237,18 @@ func TestRegistryEnrichByConfig(t *testing.T) {
 
 	for _, node := range []*sbom.Node{debug, types, publicTarball} {
 		require.Len(t, node.GetSuppliers(), 1, node.GetName())
+		require.NotEmpty(t, node.GetHashes(), node.GetName())
 	}
+
+	// A node the lock gave no location takes the registry's tarball,
+	// when that is on the public registry; one that has a location keeps
+	// it.
+	require.Equal(t, "https://registry.npmjs.org/pkg/-/pkg-1.0.0.tgz", debug.GetUrlDownload())
+	require.Empty(t, types.GetUrlDownload())
+	require.Equal(t, "https://registry.npmjs.org/pinned/-/pinned-2.0.0.tgz", publicTarball.GetUrlDownload())
 	for _, node := range []*sbom.Node{root, member, secret, tarball, linked, byFile} {
 		require.Empty(t, node.GetSuppliers(), node.GetName())
+		require.Empty(t, node.GetHashes(), node.GetName())
 	}
 
 	// With the configuration undecided, nothing it would have to settle

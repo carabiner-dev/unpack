@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/mail"
+	"slices"
 	"strings"
 	"time"
 
@@ -48,6 +49,69 @@ func NewPyPIClient(concurrency int) *PyPIClient {
 // pypiResponse is the top-level response of /pypi/{name}/{version}/json.
 type pypiResponse struct {
 	Info pypiInfo `json:"info"`
+
+	// URLs lists the files of the version: its wheels and its sdist.
+	URLs []pypiFile `json:"urls"`
+}
+
+// pypiFile is one distribution file of a version, as the index lists it.
+type pypiFile struct {
+	Filename string `json:"filename"`
+	URL      string `json:"url"`
+	Digests  struct {
+		SHA256 string `json:"sha256"`
+	} `json:"digests"`
+}
+
+// artifactPicker picks, for the packages whose source stated no hash that
+// names an artifact, the file the target environment would install out of
+// the ones the index lists.
+//
+// A compiled requirements file is the case: it lists the hash of every
+// file of a package, sdist and each wheel, without saying which is which,
+// so none of them is the package's hash on its own. The index names each
+// file with its hash, which ties one of the file's hashes to the artifact
+// the environment installs.
+type artifactPicker struct {
+	env *Environment
+
+	// allowed holds, for a package, the hashes its source accepts. A
+	// package listed with none accepts any file the index has.
+	allowed map[packageKey][]string
+}
+
+// pick returns the file the environment would install of those the source
+// accepts: the best wheel by its filename tags, the sdist when no wheel
+// fits, as an installer chooses. It returns nil when the index lists no
+// file the source accepts, as for a file compiled against another index.
+func (ap *artifactPicker) pick(key packageKey, files []pypiFile) *pypiFile {
+	accepted := ap.allowed[key]
+
+	best := (*pypiFile)(nil)
+	bestScore := -1
+	var sdist *pypiFile
+	for i := range files {
+		file := &files[i]
+		if file.Digests.SHA256 == "" {
+			continue
+		}
+		if len(accepted) > 0 && !slices.Contains(accepted, file.Digests.SHA256) {
+			continue
+		}
+		if !strings.HasSuffix(file.Filename, ".whl") {
+			if sdist == nil {
+				sdist = file
+			}
+			continue
+		}
+		if score, ok := wheelScore(file.Filename, ap.env); ok && score > bestScore {
+			best, bestScore = file, score
+		}
+	}
+	if best != nil {
+		return best
+	}
+	return sdist
 }
 
 // pypiInfo holds the fields the enrichment reads.
@@ -70,6 +134,10 @@ type pypiInfo struct {
 	AuthorEmail     string `json:"author_email"`
 	Maintainer      string `json:"maintainer"`
 	MaintainerEmail string `json:"maintainer_email"`
+
+	// files are the version's files, which the response lists beside
+	// the info.
+	files []pypiFile
 }
 
 // FetchAll fetches metadata for the packages in parallel. Failures are
@@ -95,6 +163,7 @@ func (c *PyPIClient) FetchAll(packages []packageKey) map[packageKey]*pypiInfo {
 		if err := json.Unmarshal(bodies[i], &resp); err != nil {
 			continue
 		}
+		resp.Info.files = resp.URLs
 		result[pkg] = &resp.Info
 	}
 	return result
@@ -104,8 +173,13 @@ func (c *PyPIClient) FetchAll(packages []packageKey) map[packageKey]*pypiInfo {
 // Only packages that came from the registry are looked up: the index has
 // nothing to say about the project's own packages, nor about git, path and
 // url dependencies, whose installed content is not the index's artifact.
-// Both lockfile builders end with this.
-func (c *PyPIClient) enrichNodes(nodes map[packageKey]*sbom.Node, enrichable map[packageKey]bool) {
+// Every builder ends with this.
+//
+// artifacts is for the sources that state no hash naming an artifact: a
+// node with no hash then takes the hash and location of the file the
+// environment would install, as the index lists it. The lock builders
+// pass nil: their locks name each artifact with its hash.
+func (c *PyPIClient) enrichNodes(nodes map[packageKey]*sbom.Node, enrichable map[packageKey]bool, artifacts *artifactPicker) {
 	keys := make([]packageKey, 0, len(nodes))
 	for key := range nodes {
 		if enrichable[key] {
@@ -121,6 +195,14 @@ func (c *PyPIClient) enrichNodes(nodes map[packageKey]*sbom.Node, enrichable map
 
 		if licenses := pypiLicenses(info); len(licenses) > 0 {
 			node.Licenses = licenses
+		}
+		if artifacts != nil && len(node.GetHashes()) == 0 {
+			if file := artifacts.pick(key, info.files); file != nil {
+				node.Hashes = map[int32]string{int32(sbom.HashAlgorithm_SHA256): file.Digests.SHA256}
+				if node.GetUrlDownload() == "" {
+					node.UrlDownload = file.URL
+				}
+			}
 		}
 		if suppliers := pypiSuppliers(info); len(suppliers) > 0 {
 			node.Suppliers = suppliers
