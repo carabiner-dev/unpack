@@ -7,11 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/internal/logging"
 	"github.com/carabiner-dev/unpack/source/composer"
 	"github.com/carabiner-dev/unpack/source/golang"
 	"github.com/carabiner-dev/unpack/source/maven"
@@ -116,8 +116,6 @@ type Options struct {
 	// take them. Every extraction receives all of them; a decomposer only
 	// ever reads its own.
 	Drivers []DriverConfig
-
-	logger *slog.Logger
 }
 
 // DriverConfig pairs a decomposer with the options to hand it. The
@@ -134,7 +132,6 @@ var DefaultOptions = Options{
 	ReadLicenseFile:   true,
 	UseGitIgnore:      true,
 	IndexFiles:        false,
-	logger:            slog.Default(),
 }
 
 type Sources struct {
@@ -294,9 +291,7 @@ func (unpacker *Unpacker) CodebaseExtraction(ctx context.Context, path string) (
 			return nil, ErrMultipleCodebases
 		}
 
-		unpacker.Options.logger.WarnContext(
-			ctx, fmt.Sprintf("%d codebases found, only returning the first", len(extractions)),
-		)
+		logging.FromContext(ctx).Warnf("%d codebases found, only returning the first", len(extractions))
 		return extractions[0], nil
 	}
 }
