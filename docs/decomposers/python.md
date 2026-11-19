@@ -81,8 +81,18 @@ edges. A hand-written file declares constraints: the root borrows the
 directory's name, since the format names no project, an entry without an
 exact pin becomes a node without a version, and nothing is invented.
 Includes (`-r`) are followed; editables, installer options and bare
-path or URL lines — legal in pip, but naming no package — are skipped. A lone `--hash` is recorded; a compiled file's hash list names
-every artifact of a package without saying which is which, so none is.
+path or URL lines — legal in pip, but naming no package — are skipped.
+
+A lone `--hash` is recorded as the entry's. A compiled file lists the
+hash of every artifact of a package, its sdist and each wheel, without
+saying which is which, so none of them is the package's on its own.
+With networking enabled the index settles it: PyPI names each file of a
+version with its hash, and the entry takes the hash and the location of
+the file the target environment would install, the best wheel by its
+tags or the sdist, out of the ones the requirements file accepts. A
+file whose hashes match nothing the index lists, as one compiled against
+another index, keeps no hash. An entry pinned with no hash at all takes
+the index's for the file the environment installs.
 
 ### Installed environments
 
@@ -124,8 +134,8 @@ unpack extract --platform linux/arm64 --python-version 3.10 .
 | Name | lockfile / METADATA | PEP 503 normalized |
 | Version | lockfile / METADATA | The version the target environment resolves to; absent for unpinned requirements |
 | PURL | computed | `pkg:pypi/{name}@{version}`, version-less when none is known |
-| Download URL | lockfile | uv: the selected artifact's URL; git sources: the repository URL with its commit |
-| Hash (SHA-256) | lockfile | The selected artifact's hash — the file PyPI attestations (PEP 740) bind to |
+| Download URL | lockfile / PyPI API | uv: the selected artifact's URL; git sources: the repository URL with its commit; requirements files: the selected file's URL on the index, with networking |
+| Hash (SHA-256) | lockfile / PyPI API | The selected artifact's hash — the file PyPI attestations (PEP 740) bind to. For a requirements file listing several, the index says which one that is; see above |
 | Repository | lockfile / metadata / PyPI API | `ExternalReference_VCS`; for git dependencies includes the resolved commit |
 | License | PyPI API / METADATA | See below; installed environments read it offline |
 | Description | PyPI API / METADATA | The package summary |
@@ -208,8 +218,10 @@ an image or a system root, and that decomposer reports `analyzed`. See
 - **Lockfile licenses and suppliers need the network.** With networking
   disabled, a lockfile extraction has neither, honestly. Installed
   environments read licenses offline, and name no supplier yet.
-- **A compiled requirements file's hashes are not attributable.** The
-  format lists every artifact's hash without naming the artifacts, so
-  those nodes carry no hash rather than a guessed one.
+- **A compiled requirements file's hashes need the index.** The format
+  lists every artifact's hash without naming the artifacts, so with
+  networking disabled those nodes carry no hash rather than a guessed
+  one. With it, the index names the files and the node is hashed with
+  the one the environment installs.
 - **Path and directory dependencies carry no metadata.** They point at
   local content the locks say little about.

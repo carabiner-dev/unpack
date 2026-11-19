@@ -244,11 +244,13 @@ func TestBuildNodeListFromSet(t *testing.T) {
 	require.NotNil(t, lib)
 	hashed := byPurl("pkg:golang/example.com/hashed@v2.0.0")
 	require.NotNil(t, hashed)
-	assert.Equal(t,
-		"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-		hashed.GetHashes()[int32(sbom.HashAlgorithm_SHA256)],
-		"h1: sums are decoded to hex SHA-256",
-	)
+	// The checksum is of the module's tree and of no file: it is kept as
+	// go writes it, as a property, and offline the node has no hash.
+	require.Len(t, hashed.GetProperties(), 1)
+	assert.Equal(t, PropertyH1, hashed.GetProperties()[0].GetName())
+	assert.Equal(t, "h1:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=", hashed.GetProperties()[0].GetData())
+	assert.Empty(t, hashed.GetHashes())
+	assert.Empty(t, lib.GetProperties(), "a module with no checksum has no property")
 
 	// The stdlib node comes from GoVersion.
 	stdlib := byPurl("pkg:golang/stdlib@1.24.0")

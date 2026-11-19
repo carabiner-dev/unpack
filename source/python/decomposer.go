@@ -124,7 +124,7 @@ func (d *Decomposer) extractUv(workDir string, opts *api.DecomposerOptions) (*sb
 	// Locks carry no licence data at all, so without the index every
 	// Python SBOM is licence-empty. Enrichment fills what PyPI knows.
 	if opts.Networking >= api.NetworkEssential {
-		NewPyPIClient(dOpts.Concurrency).enrichNodes(tb.nodes, tb.enrichable)
+		NewPyPIClient(dOpts.Concurrency).enrichNodes(tb.nodes, tb.enrichable, nil)
 	}
 	return nl, nil
 }
@@ -166,7 +166,7 @@ func (d *Decomposer) extractPoetry(workDir string, opts *api.DecomposerOptions) 
 	}
 
 	if opts.Networking >= api.NetworkEssential {
-		NewPyPIClient(dOpts.Concurrency).enrichNodes(pb.nodes, pb.enrichable)
+		NewPyPIClient(dOpts.Concurrency).enrichNodes(pb.nodes, pb.enrichable, nil)
 	}
 	return nl, nil
 }

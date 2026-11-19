@@ -10,7 +10,7 @@
 2. Settles which modules are in the build, and at which version. From
    Go 1.17 on, `go.mod` lists every module the build needs at the
    version selected, so its requirements are the whole set and `go.sum`
-   only supplies `h1:` hashes (SHA-256 dirhash of each module zip). An
+   only supplies `h1:` checksums (the dirhash of each module's tree). An
    older `go.mod` lists little more than the direct requirements; there
    the rest comes from `go.sum`, each module at the highest version
    recorded for its path, which is the one Go selects, and only when
@@ -56,8 +56,9 @@ history and are ignored.
 | Name | `go.mod` / graph | Module path |
 | Version | `go.mod` / `go.sum` | Resolved version after replace/exclude |
 | PURL | computed | `pkg:golang/{module}@{version}` |
-| Download URL | computed | `https://proxy.golang.org/{module}/@v/{version}.zip` |
-| Hash (SHA-256) | `go.sum` | `h1:` dirhash -- hash of the module zip's file tree, not raw bytes |
+| Download URL | computed | `https://proxy.golang.org/{module}/@v/{version}.zip`, path and version escaped as the proxy has them once it has answered for the zip |
+| Hash (SHA-256) | Go module proxy | The SHA-256 of the module's zip, the file at the download URL. Needs networking; see [Hashes](#hashes) |
+| `go:h1` property | `go.sum` | The module's checksum as Go writes it (`h1:…`). Offline; see [Hashes](#hashes) |
 | License | deps.dev / LICENSE file | deps.dev provides pre-classified SPDX identifiers; zip fallback uses `google/licenseclassifier/v2` |
 | Source repo | deps.dev | `ExternalReference_VCS` from deps.dev `SOURCE_REPO` link |
 | Supplier | module path | Whoever controls the path: the repository owner on a code host, with its URL (`spf13`, `https://github.com/spf13`), the domain otherwise (`golang.org`). `gopkg.in` resolves to the GitHub owner it redirects to. Offline; see [Suppliers](README.md#suppliers) |
@@ -91,12 +92,45 @@ source tree, before anything is built, so a document made from its data
 is a source SBOM: CycloneDX lifecycle `pre-build`, SPDX 3 type `source`. See
 [Generation context](README.md#generation-context).
 
+## Hashes
+
+Go states two things about a module's content, and a node carries each
+as what it is.
+
+**The `go:h1` property** is the checksum `go.sum` records, as Go writes
+it: `h1:` and a base64 value. It is not the hash of a file. Go hashes
+every file of the module, lists them, and hashes the list (a dirhash),
+so that a zip and its extracted tree check the same. It is what
+`go.sum` and the Go checksum database can be compared with, and it is
+there offline. It is not among the node's hashes: it is a SHA-256 in
+name only, and beside a download URL it would read as the hash of the
+zip, which it is not.
+
+**The SHA-256 hash** is of the module's zip, the file the download URL
+names, so the two can be checked against each other with nothing but
+`sha256sum`. `proxy.golang.org` states it: it answers a request for a
+zip with the zip's SHA-256 as the entity tag (`ETag`), which one `HEAD`
+request per module reads without fetching the file. A large zip is
+answered with a redirect to where it is stored, and the hash is on the
+redirect; it is not followed, as the store's own tag is another thing.
+
+The proxy protocol does not promise this, so the value is taken with
+care: only from `proxy.golang.org` over HTTPS, only when the tag has the
+shape of a SHA-256, and a conformance test downloads a zip and holds the
+node's hash to it. Another proxy (`ProxyURL`) is not asked, and its
+modules have no hash. Nor do they with networking disabled: the property
+is all that is known offline.
+
+The hash is of the zip this proxy serves. Go guarantees that the tree of
+a module is the same everywhere, which is what `h1:` checks, and not
+that two proxies zip it to the same bytes.
+
 ## Strengths
 
 - No external tooling needed -- does not shell out to `go`.
 - Handles replace and exclude directives correctly.
-- Hashes come directly from `go.sum`, which is verified by the
-  Go checksum database.
+- The hash is of the file at the download URL, and the `go.sum`
+  checksum, which the Go checksum database verifies, travels with it.
 - The transitive graph is reconstructed by fetching upstream `go.mod`
   files, within the modules the build actually holds, each at the
   version the build selected. The output is the same on every run.
@@ -109,9 +143,13 @@ is a source SBOM: CycloneDX lifecycle `pre-build`, SPDX 3 type `source`. See
 
 ## Weaknesses
 
-- **`h1:` hashes are dirhashes, not file hashes.** The SHA-256 value
-  is a hash of a sorted file-content tree, not the raw zip bytes.
-  Tools that expect a plain file checksum may not be able to verify it.
+- **Hashes need the network and the public proxy.** Offline, or with
+  another proxy, a module has its `go:h1` property and no hash. The
+  proxy stating a zip's hash is observed behavior, not a documented
+  promise; see [Hashes](#hashes).
+- **Only CycloneDX carries the property.** `go:h1` is written to
+  CycloneDX documents and is not in SPDX ones, 2.3 or 3, which take no
+  node properties from the graph.
 - **Proxy/API dependency.** If the Go proxy and deps.dev are both
   unreachable, the transitive graph will be incomplete and dependency
   nodes will lack license data.

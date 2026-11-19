@@ -79,6 +79,7 @@ another commit, extraction fails: the snapshot describes another build.
 | Version | purl | |
 | PURL | snapshot | `pkg:maven/{org}/{name}@{version}`, with `?packaging=` for classifiers |
 | Supplier | coordinate | The organization the coordinate opens with (`org.scala-lang`), as an organization. The build's own modules are named none; see [Suppliers](README.md#suppliers) |
+| Hashes | Maven Central | The checksums published beside the artifact, SHA-1 and, where the repository has it, SHA-256. Needs networking; see [Networking](#networking) |
 
 ## Dependency types
 
@@ -103,4 +104,24 @@ CycloneDX lifecycle `build`, SPDX 3 type `build`. See
 
 ## Networking
 
-None. sbt already resolved the build; reading the snapshot is offline.
+The graph needs none: sbt already resolved the build, and reading the
+snapshot is offline.
+
+Hashes are another matter. A snapshot records what was resolved and
+nothing about the files fetched, so with networking enabled the
+checksums of each library are asked of Maven Central, which keeps them
+in files beside the artifact (`.sha1`, `.sha256`). A classifier, which
+sbt's dependency submission writes as the purl's `packaging` qualifier,
+selects the file.
+
+The snapshot does not say which repository a library came from, so
+every library is asked for, as the [Maven decomposer](maven.md) asks its
+repository for every POM. Two things follow:
+
+- A library that is not on Maven Central, one of an organization's own
+  repository, gets no hash.
+- Its coordinate is still sent there in the asking. Run with
+  `--networking disabled` when the coordinates of private libraries must
+  not leave the machine; the graph is the same, without hashes.
+
+The build's own modules are never asked about.

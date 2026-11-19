@@ -197,7 +197,7 @@ func TestEnrich(t *testing.T) {
 
 	client := NewPyPIClient(2)
 	client.BaseURL = server.URL
-	client.enrichNodes(tb.nodes, tb.enrichable)
+	client.enrichNodes(tb.nodes, tb.enrichable, nil)
 
 	requests := nodeNamed(t, nl, "requests")
 	require.Equal(t, []string{"Apache-2.0"}, requests.GetLicenses())
@@ -227,4 +227,128 @@ func TestEnrich(t *testing.T) {
 	}
 	root := nodeNamed(t, nl, "uvdemo")
 	require.Empty(t, root.GetLicenses())
+}
+
+// TestArtifactPicker checks which of the files the index lists is taken
+// for a package whose source did not say: the one the target environment
+// installs, out of those the source accepts.
+func TestArtifactPicker(t *testing.T) {
+	t.Parallel()
+
+	file := func(name, sha string) pypiFile {
+		f := pypiFile{Filename: name, URL: "https://files.pythonhosted.org/packages/" + name}
+		f.Digests.SHA256 = sha
+		return f
+	}
+	files := []pypiFile{
+		file("pkg-1.0.tar.gz", "sdist"),
+		file("pkg-1.0-py3-none-any.whl", "universal"),
+		file("pkg-1.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", "linux312"),
+		file("pkg-1.0-cp312-cp312-win_amd64.whl", "win312"),
+		file("pkg-1.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", "linux311"),
+	}
+	key := packageKey{name: "pkg", version: "1.0"}
+
+	linux, err := NewEnvironment("linux", "amd64", "3.12")
+	require.NoError(t, err)
+	windows, err := NewEnvironment("windows", "amd64", "3.12")
+	require.NoError(t, err)
+
+	for name, tc := range map[string]struct {
+		env      *Environment
+		allowed  []string
+		files    []pypiFile
+		expected string
+	}{
+		// A compiled file accepts every file of the package: the
+		// environment decides.
+		"the wheel built for the environment": {
+			linux, []string{"sdist", "universal", "linux312", "win312", "linux311"}, files, "linux312",
+		},
+		"the same file list, another platform": {
+			windows, []string{"sdist", "universal", "linux312", "win312", "linux311"}, files, "win312",
+		},
+		// What the source does not accept is not installed, whatever
+		// fits best.
+		"only what the source accepts":          {linux, []string{"sdist", "universal"}, files, "universal"},
+		"the sdist when no accepted wheel fits": {linux, []string{"sdist", "win312"}, files, "sdist"},
+		// A source stating no hash accepts whatever the index has.
+		"no hashes stated": {linux, nil, files, "linux312"},
+		// A file compiled against another index, or since changed.
+		"nothing the source accepts": {linux, []string{"somewhere-else"}, files, ""},
+		"an index listing no files":  {linux, nil, nil, ""},
+		"a file with no digest":      {linux, nil, []pypiFile{{Filename: "pkg-1.0-py3-none-any.whl"}}, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			picker := &artifactPicker{env: tc.env, allowed: map[packageKey][]string{key: tc.allowed}}
+			picked := picker.pick(key, tc.files)
+			if tc.expected == "" {
+				require.Nil(t, picked)
+				return
+			}
+			require.NotNil(t, picked)
+			require.Equal(t, tc.expected, picked.Digests.SHA256)
+		})
+	}
+}
+
+// TestEnrichPicksArtifacts checks the hash and location of the picked file
+// reach a node that had no hash, that a node with one keeps it, and that
+// the lock builders, which pass no picker, are left alone.
+func TestEnrichPicksArtifacts(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		//nolint:errcheck // a fake server's writes have nowhere to fail
+		fmt.Fprint(w, `{"info": {}, "urls": [
+			{"filename": "pkg-1.0.tar.gz", "url": "https://files.example/pkg-1.0.tar.gz", "digests": {"sha256": "sdist"}},
+			{"filename": "pkg-1.0-py3-none-any.whl", "url": "https://files.example/pkg-1.0-py3-none-any.whl", "digests": {"sha256": "wheel"}}
+		]}`)
+	}))
+	defer server.Close()
+
+	env, err := NewEnvironment("linux", "amd64", "3.12")
+	require.NoError(t, err)
+
+	newNodes := func() (nodes map[packageKey]*sbom.Node, enrichable map[packageKey]bool) {
+		nodes = map[packageKey]*sbom.Node{
+			{name: "compiled", version: "1.0"}: {Name: "compiled", Version: "1.0"},
+			{name: "single", version: "1.0"}: {
+				Name: "single", Version: "1.0", UrlDownload: "https://as.stated/single.whl",
+				Hashes: map[int32]string{int32(sbom.HashAlgorithm_SHA256): "stated"},
+			},
+			{name: "foreign", version: "1.0"}: {Name: "foreign", Version: "1.0"},
+		}
+		enrichable = map[packageKey]bool{}
+		for key := range nodes {
+			enrichable[key] = true
+		}
+		return nodes, enrichable
+	}
+
+	client := NewPyPIClient(2)
+	client.BaseURL = server.URL
+
+	nodes, enrichable := newNodes()
+	client.enrichNodes(nodes, enrichable, &artifactPicker{env: env, allowed: map[packageKey][]string{
+		{name: "compiled", version: "1.0"}: {"sdist", "wheel"},
+		{name: "foreign", version: "1.0"}:  {"not-on-this-index"},
+	}})
+
+	compiled := nodes[packageKey{name: "compiled", version: "1.0"}]
+	require.Equal(t, map[int32]string{int32(sbom.HashAlgorithm_SHA256): "wheel"}, compiled.GetHashes())
+	require.Equal(t, "https://files.example/pkg-1.0-py3-none-any.whl", compiled.GetUrlDownload())
+
+	single := nodes[packageKey{name: "single", version: "1.0"}]
+	require.Equal(t, map[int32]string{int32(sbom.HashAlgorithm_SHA256): "stated"}, single.GetHashes())
+	require.Equal(t, "https://as.stated/single.whl", single.GetUrlDownload())
+
+	foreign := nodes[packageKey{name: "foreign", version: "1.0"}]
+	require.Empty(t, foreign.GetHashes())
+	require.Empty(t, foreign.GetUrlDownload())
+
+	nodes, enrichable = newNodes()
+	client.enrichNodes(nodes, enrichable, nil)
+	require.Empty(t, nodes[packageKey{name: "compiled", version: "1.0"}].GetHashes())
 }

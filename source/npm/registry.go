@@ -72,7 +72,38 @@ type registryVersion struct {
 	// list older manifests declared several in.
 	License  *registryLicense  `json:"license"`
 	Licenses []registryLicense `json:"licenses"`
+
+	// Dist is the tarball the registry serves for the version.
+	Dist registryDist `json:"dist"`
 }
+
+// registryDist describes the tarball of a published version: where it is
+// and what it hashes to. The integrity is in SRI form, sha512 for anything
+// published in years; the shasum is the SHA-1 older versions have alone.
+type registryDist struct {
+	Tarball   string `json:"tarball"`
+	Integrity string `json:"integrity"`
+	Shasum    string `json:"shasum"`
+}
+
+// hashes returns the tarball's hash as a node takes it: the strongest of
+// the integrity's, or the SHA-1 when there is no integrity to read.
+func (d *registryDist) hashes() map[int32]string {
+	if integrity := strongestIntegrity(d.Integrity); integrity != "" {
+		if algorithm, hash, err := ParseIntegrity(integrity); err == nil && len(hash) > 0 {
+			if hashAlgo := integrityAlgorithmToSBOM(algorithm); hashAlgo != sbom.HashAlgorithm_UNKNOWN {
+				return map[int32]string{int32(hashAlgo): fmt.Sprintf("%x", hash)}
+			}
+		}
+	}
+	if shasum := strings.ToLower(strings.TrimSpace(d.Shasum)); sha1Hex.MatchString(shasum) {
+		return map[int32]string{int32(sbom.HashAlgorithm_SHA1): shasum}
+	}
+	return nil
+}
+
+// sha1Hex matches a SHA-1 written in hexadecimal.
+var sha1Hex = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 // registryLicense is a license as npm manifests write one: an SPDX
 // expression in a string, or, in older manifests, an object naming its
@@ -232,9 +263,14 @@ func plainVersion(version string) bool {
 
 // enrichNodes fills the graph's nodes with what the registry knows about
 // them: for each package that is the public registry's to describe, its
-// supplier, and its license when the lock stated none. public says which
-// those are, as each kind of lock can tell. The roots are the project's
-// own packages and never asked about.
+// supplier, and what its lock did not state of its license, its tarball
+// and the tarball's hash. public says which those are, as each kind of
+// lock can tell. The roots are the project's own packages and never asked
+// about.
+//
+// What a lock recorded always stands. It is what was installed, and for
+// the hash it is the stronger statement: a lock pins the content, where
+// the registry only says what it serves for the version today.
 func (c *RegistryClient) enrichNodes(nl *sbom.NodeList, public func(*sbom.Node) bool) {
 	roots := map[string]struct{}{}
 	for _, id := range nl.GetRootElements() {
@@ -264,9 +300,16 @@ func (c *RegistryClient) enrichNodes(nl *sbom.NodeList, public func(*sbom.Node) 
 			if supplier != nil {
 				node.Suppliers = []*sbom.Person{supplier.Copy()}
 			}
-			// What the lock recorded stands: it is what was installed.
 			if len(licenses) > 0 && len(node.GetLicenses()) == 0 {
 				node.Licenses = slices.Clone(licenses)
+			}
+			if len(node.GetHashes()) == 0 {
+				if hashes := version.Dist.hashes(); hashes != nil {
+					node.Hashes = hashes
+				}
+			}
+			if node.GetUrlDownload() == "" && isPublicRegistryURL(version.Dist.Tarball) {
+				node.UrlDownload = version.Dist.Tarball
 			}
 		}
 	}

@@ -151,9 +151,16 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 		workDir = "."
 	}
 
-	nl, err := newSnapshotBuilder(snapshot, workDir, opts).build()
+	builder := newSnapshotBuilder(snapshot, workDir, opts)
+	nl, err := builder.build()
 	if err != nil {
 		return nil, fmt.Errorf("building graph from dependency snapshot: %w", err)
+	}
+
+	// The graph is all in the snapshot. The hashes of the libraries are
+	// not, and are asked of the repository when networking allows.
+	if opts.Networking >= api.NetworkEssential {
+		builder.hashLibraries(centralHashes)
 	}
 	return nl, nil
 }
