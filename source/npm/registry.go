@@ -5,6 +5,7 @@ package npm
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -12,9 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/protobom/protobom/pkg/sbom"
 	khttp "sigs.k8s.io/release-utils/http"
 
+	"github.com/carabiner-dev/unpack/internal/logging"
 	"github.com/carabiner-dev/unpack/license"
 )
 
@@ -41,6 +44,18 @@ var publicRegistryHosts = map[string]struct{}{
 type RegistryClient struct {
 	Agent   *khttp.Agent
 	BaseURL string
+
+	// Logger is where the client says what went wrong with its requests.
+	// The decomposer sets it to its caller's; left nil, nothing is logged.
+	Logger *clog.Logger
+}
+
+// logger returns the client's logger, and a silent one when it has none.
+func (c *RegistryClient) logger() *clog.Logger {
+	if c.Logger == nil {
+		return logging.Silent()
+	}
+	return c.Logger
 }
 
 // NewRegistryClient creates a client for the public npm registry.
@@ -218,6 +233,9 @@ func (c *RegistryClient) versionURL(name, version string) string {
 
 // FetchAll fetches the metadata of the packages in parallel. Failures are
 // skipped: enrichment adds what it can and never breaks an extraction.
+// They are not skipped in silence, though. The packages that got nothing
+// are short of a supplier, and maybe of a license and a hash, with nothing
+// in the graph to say why, so the caller is warned of them, once.
 func (c *RegistryClient) FetchAll(packages []PackageKey) map[PackageKey]*registryVersion {
 	if len(packages) == 0 {
 		return nil
@@ -230,15 +248,36 @@ func (c *RegistryClient) FetchAll(packages []PackageKey) map[PackageKey]*registr
 	bodies, errs := c.Agent.GetGroup(urls)
 
 	result := make(map[PackageKey]*registryVersion, len(packages))
+	failed := []string{}
+	var firstErr error
+	fail := func(pkg PackageKey, err error) {
+		failed = append(failed, pkg.Name+"@"+pkg.Version)
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
 	for i, pkg := range packages {
-		if errs[i] != nil || len(bodies[i]) == 0 {
+		if errs[i] != nil {
+			fail(pkg, errs[i])
+			continue
+		}
+		if len(bodies[i]) == 0 {
+			fail(pkg, errors.New("the registry answered with nothing"))
 			continue
 		}
 		version := &registryVersion{}
 		if err := json.Unmarshal(bodies[i], version); err != nil {
+			fail(pkg, fmt.Errorf("reading the registry's answer: %w", err))
 			continue
 		}
 		result[pkg] = version
+	}
+
+	if len(failed) > 0 {
+		slices.Sort(failed)
+		c.logger().Warn("npm: registry lookups failed, those packages get no supplier and may lack a license and a hash",
+			"failed", len(failed), "requested", len(packages), "first_error", firstErr)
+		c.logger().Debug("npm: packages the registry lookup failed for", "packages", failed)
 	}
 	return result
 }

@@ -4,14 +4,18 @@
 package npm
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/require"
 )
@@ -238,4 +242,54 @@ func TestRegistryEnrich(t *testing.T) {
 		require.Empty(t, node.GetSuppliers(), node.GetName())
 		require.Empty(t, node.GetLicenses(), node.GetName())
 	}
+}
+
+// TestRegistryFailuresAreReported checks lookups that fail are skipped, as
+// ever, and that the caller's logger is told: once, with how many of how
+// many, and which ones at the debug level. A run where nothing fails says
+// nothing.
+func TestRegistryFailuresAreReported(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.EscapedPath() {
+		case "/fine/1.0.0":
+			fmt.Fprint(w, `{"license": "MIT"}`) //nolint:errcheck // a fake server's writes have nowhere to fail
+		case "/garbled/1.0.0":
+			fmt.Fprint(w, `not json`) //nolint:errcheck // a fake server's writes have nowhere to fail
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	var out bytes.Buffer
+	client := NewRegistryClient(2)
+	client.BaseURL = server.URL
+	client.Logger = clog.New(slog.NewTextHandler(&out, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	got := client.FetchAll([]PackageKey{
+		{Name: "fine", Version: "1.0.0"},
+		{Name: "missing", Version: "2.0.0"},
+		{Name: "garbled", Version: "1.0.0"},
+	})
+	require.Len(t, got, 1)
+	require.Contains(t, got, PackageKey{Name: "fine", Version: "1.0.0"})
+
+	logged := out.String()
+	require.Equal(t, 1, strings.Count(logged, "level=WARN"), logged)
+	require.Contains(t, logged, "failed=2")
+	require.Contains(t, logged, "requested=3")
+	require.Contains(t, logged, "garbled@1.0.0")
+	require.Contains(t, logged, "missing@2.0.0")
+
+	// Nothing failing is nothing to say.
+	out.Reset()
+	client.FetchAll([]PackageKey{{Name: "fine", Version: "1.0.0"}})
+	require.Empty(t, out.String())
+
+	// And with no logger the failures are skipped as before.
+	quiet := NewRegistryClient(2)
+	quiet.BaseURL = server.URL
+	require.Empty(t, quiet.FetchAll([]PackageKey{{Name: "missing", Version: "2.0.0"}}))
 }
