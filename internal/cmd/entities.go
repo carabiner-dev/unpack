@@ -12,7 +12,6 @@ import (
 
 	"github.com/carabiner-dev/command"
 	protosbom "github.com/protobom/protobom/pkg/sbom"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -186,7 +185,7 @@ func (eo *entityOptions) ApplySupplier(nl *protosbom.NodeList) {
 	}
 	roots := nl.GetRootNodes()
 	if len(roots) == 0 {
-		logrus.Warn("no root components to name the supplier of")
+		cliLog().Warn("no root components to name the supplier of")
 		return
 	}
 	for _, n := range roots {

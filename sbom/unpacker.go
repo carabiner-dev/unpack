@@ -13,9 +13,9 @@ import (
 
 	"github.com/protobom/protobom/pkg/reader"
 	protosbom "github.com/protobom/protobom/pkg/sbom"
-	"github.com/sirupsen/logrus"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 // Ensure the SBOM unpacker satisfies the unified Unpacker interface.
@@ -48,7 +48,7 @@ var _ api.ExtractionUnpacker = (*Unpacker)(nil)
 // document says it was generated in. No decomposer reads here: how the
 // data was read is what whoever wrote the document stated, and a document
 // stating nothing leaves it unknown.
-func (u *Unpacker) Extractions(_ context.Context, subject api.DecomposableSubject) ([]*api.Extraction, error) {
+func (u *Unpacker) Extractions(ctx context.Context, subject api.DecomposableSubject) ([]*api.Extraction, error) {
 	if subject == nil {
 		return nil, fmt.Errorf("sbom unpacker received a nil subject")
 	}
@@ -65,7 +65,7 @@ func (u *Unpacker) Extractions(_ context.Context, subject api.DecomposableSubjec
 	}
 	defer closeFn() //nolint:errcheck // best-effort close of read-only source
 
-	doc, err := ParseDocument(r)
+	doc, err := ParseDocumentWithContext(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -86,6 +86,12 @@ func (u *Unpacker) Extractions(_ context.Context, subject api.DecomposableSubjec
 // statement, a DSSE envelope, a sigstore bundle), and returns the parsed
 // document with its metadata.
 func ParseDocument(r io.ReadSeeker) (*protosbom.Document, error) {
+	return ParseDocumentWithContext(context.Background(), r)
+}
+
+// ParseDocumentWithContext is ParseDocument, run with the caller's
+// context, whose logger it reports to.
+func ParseDocumentWithContext(ctx context.Context, r io.ReadSeeker) (*protosbom.Document, error) {
 	doc, err := reader.New().ParseStream(r)
 	if err == nil {
 		return doc, nil
@@ -93,7 +99,7 @@ func ParseDocument(r io.ReadSeeker) (*protosbom.Document, error) {
 	// protobom only knows bare documents. The data may still be a bill of
 	// materials, wrapped in a security envelope, so try to open it before
 	// reporting the format as unreadable.
-	envDoc, envErr := parseEnveloped(r)
+	envDoc, envErr := parseEnveloped(ctx, r)
 	switch {
 	case envErr == nil:
 		return envDoc, nil
@@ -103,7 +109,7 @@ func ParseDocument(r io.ReadSeeker) (*protosbom.Document, error) {
 		// the envelope.
 		return nil, fmt.Errorf("parsing SBOM data: %w", envErr)
 	default:
-		logrus.Debugf("data was not read as an enveloped SBOM either: %v", envErr)
+		logging.FromContext(ctx).Debugf("data was not read as an enveloped SBOM either: %v", envErr)
 		return nil, fmt.Errorf("parsing SBOM data: %w", err)
 	}
 }

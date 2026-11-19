@@ -7,12 +7,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"strings"
 
 	"github.com/chainguard-dev/clog"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"sigs.k8s.io/release-utils/log"
 	"sigs.k8s.io/release-utils/version"
+
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 const appname = "unpack"
@@ -55,7 +57,7 @@ Extract the artifacts published in a GitHub release:
 
 	rootCmd.PersistentFlags().StringVar(
 		&commandLineOpts.logLevel,
-		"log-level", "info", fmt.Sprintf("the logging verbosity, either %s", log.LevelNames()),
+		"log-level", "info", "the logging verbosity, one of "+strings.Join(logLevels, ", "),
 	)
 
 	return rootCmd
@@ -63,7 +65,26 @@ Extract the artifacts published in a GitHub release:
 
 type commandLineOptions struct {
 	logLevel string
+
+	// logger is the program's logger, set from --log-level before a
+	// command runs. It is also the one in the command's context, which
+	// is how the library finds it; the commands' own code reads it here.
+	logger *clog.Logger
 }
+
+// cliLog returns the program's logger, and a silent one before any
+// command has set it up, as in a test calling the commands' code directly.
+func cliLog() *clog.Logger {
+	if commandLineOpts.logger == nil {
+		return logging.Silent()
+	}
+	return commandLineOpts.logger
+}
+
+// logLevels are the values --log-level takes, most verbose last. They are
+// the names the flag has always taken; several show the same messages,
+// as the logger has four levels (see slogLevel).
+var logLevels = []string{"panic", "fatal", "error", "warn", "warning", "info", "debug", "trace"}
 
 var commandLineOpts = commandLineOptions{}
 
@@ -72,13 +93,8 @@ var commandLineOpts = commandLineOptions{}
 //
 // The library logs through the logger in the context it is called with and
 // stays silent without one, so the command's context is given one writing
-// to standard error. The parts of the program that still log through
-// logrus are configured as before.
+// to standard error. The commands' own messages go to the same logger.
 func initLogging(cmd *cobra.Command, _ []string) error {
-	if err := log.SetupGlobalLogger(commandLineOpts.logLevel); err != nil {
-		return err
-	}
-
 	level, err := slogLevel(commandLineOpts.logLevel)
 	if err != nil {
 		return err
@@ -90,29 +106,25 @@ func initLogging(cmd *cobra.Command, _ []string) error {
 		ctx = context.Background()
 	}
 	cmd.SetContext(clog.WithLogger(ctx, logger))
+	commandLineOpts.logger = logger
 	return nil
 }
 
-// slogLevel reads a --log-level value, which names a logrus level, as the
-// slog level that shows the same messages. slog has four levels to
-// logrus's seven: trace shows what debug does, and fatal and panic what
-// error does.
+// slogLevel reads a --log-level value as the level that shows its
+// messages. The flag takes seven names and the logger has four levels:
+// trace shows what debug does, and fatal and panic what error does.
 func slogLevel(name string) (slog.Level, error) {
-	level, err := logrus.ParseLevel(name)
-	if err != nil {
-		return 0, fmt.Errorf("reading the log level: %w", err)
-	}
-	switch level {
-	case logrus.TraceLevel, logrus.DebugLevel:
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "trace", "debug":
 		return slog.LevelDebug, nil
-	case logrus.InfoLevel:
+	case "info":
 		return slog.LevelInfo, nil
-	case logrus.WarnLevel:
+	case "warn", "warning":
 		return slog.LevelWarn, nil
-	case logrus.ErrorLevel, logrus.FatalLevel, logrus.PanicLevel:
+	case "error", "fatal", "panic":
 		return slog.LevelError, nil
 	}
-	return slog.LevelInfo, nil
+	return 0, fmt.Errorf("unknown log level %q, it is one of %s", name, strings.Join(logLevels, ", "))
 }
 
 // Execute builds the command
@@ -127,7 +139,8 @@ func Execute() {
 	addRelease(rootCmd)
 	rootCmd.AddCommand(version.WithFont("doom"))
 
+	// cobra has printed the error by now.
 	if err := rootCmd.Execute(); err != nil {
-		logrus.Fatal(err)
+		os.Exit(1)
 	}
 }

@@ -10,6 +10,8 @@ import (
 
 	intoto "github.com/in-toto/attestation/go/v1"
 	"github.com/stretchr/testify/require"
+
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 func TestReadtTree(t *testing.T) {
@@ -92,7 +94,7 @@ func TestIgnorePatterns(t *testing.T) {
 			d.Options.IgnorePatterns = tc.morepatterns
 			d.Options.NoGitignore = tc.noGitIgnore
 
-			patterns, err := d.ignorePatterns(os.DirFS("testdata/fs"), ".")
+			patterns, err := d.ignorePatterns(logging.Silent(), os.DirFS("testdata/fs"), ".")
 			if tc.mustErr {
 				require.Error(t, err)
 				return

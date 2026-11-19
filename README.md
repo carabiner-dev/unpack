@@ -282,9 +282,11 @@ nodelists, err := unpacker.Extract(ctx, subject)
 
 Unpackers pass the context on to their decomposers
 (`ExtractWithContext`); a decomposer called directly with `Extract` runs
-with a background context and logs nothing. The file indexing, SBOM
-reading and stitching packages do not log this way yet: they still write
-to the global logrus logger.
+with a background context and logs nothing. The same goes for the
+functions that take no context, such as `sbom.ParseDocument` or a stitch
+catalog's `Load`: each has a `WithContext` variant that logs to the
+context's logger, and the plain one is silent. Nothing in the library
+writes to a global logger.
 
 ## Contributing
 

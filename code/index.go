@@ -5,6 +5,7 @@ package code
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -14,7 +15,8 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
-	"github.com/sirupsen/logrus"
+
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 const gitIgnoreFile = ".gitignore"
@@ -96,11 +98,17 @@ func WithUseGitignore(sino bool) optFn {
 // CatalogFiles traverses a filesystem and returns an index of all directories
 // with their files
 func (i *Indexer) CatalogDirectories(path string, funcs ...optFn) (*PathIndex, error) {
+	return i.CatalogDirectoriesWithContext(context.Background(), path, funcs...)
+}
+
+// CatalogDirectoriesWithContext is CatalogDirectories, run with the
+// caller's context, whose logger it reports to.
+func (i *Indexer) CatalogDirectoriesWithContext(ctx context.Context, path string, funcs ...optFn) (*PathIndex, error) {
 	for _, f := range funcs {
 		f(&i.options)
 	}
 
-	patterns, err := i.ignorePatterns(path)
+	patterns, err := i.ignorePatterns(ctx, path)
 	if err != nil {
 		return nil, fmt.Errorf("building patterns: %w", err)
 	}
@@ -143,7 +151,8 @@ func (i *Indexer) CatalogDirectories(path string, funcs ...optFn) (*PathIndex, e
 
 // ignorePatterns compiles the list of gitignore patterns from options and
 // from the gitignore file.
-func (i *Indexer) ignorePatterns(dirPath string) ([]gitignore.Pattern, error) {
+func (i *Indexer) ignorePatterns(ctx context.Context, dirPath string) ([]gitignore.Pattern, error) {
+	log := logging.FromContext(ctx)
 	patterns := []gitignore.Pattern{}
 	if !i.options.NoDefaultIgnores {
 		for _, s := range DefaultIgnorePatterns {
@@ -173,13 +182,13 @@ func (i *Indexer) ignorePatterns(dirPath string) ([]gitignore.Pattern, error) {
 		for scanner.Scan() {
 			s := scanner.Text()
 			if !strings.HasPrefix(s, "#") && strings.TrimSpace(s) != "" {
-				logrus.Debugf("Loaded .gitignore pattern: >>%s<<", s)
+				log.Debugf("Loaded .gitignore pattern: >>%s<<", s)
 				patterns = append(patterns, gitignore.ParsePattern(s, nil))
 			}
 		}
 	}
 
-	logrus.Debugf(
+	log.Debugf(
 		"Loaded %d patterns from .gitignore (%d from options extra) ",
 		len(patterns), len(i.options.ExtraIgnorePatterns),
 	)

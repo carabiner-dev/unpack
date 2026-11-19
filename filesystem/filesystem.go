@@ -5,6 +5,7 @@ package filesystem
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -13,14 +14,15 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/chainguard-dev/clog"
 	gitignore "github.com/go-git/go-git/v5/plumbing/format/gitignore"
 	"github.com/google/uuid"
 	"github.com/nozzle/throttler"
 	"github.com/protobom/protobom/pkg/sbom"
-	"github.com/sirupsen/logrus"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/filesystem/options"
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 const gitIgnoreFile = ".gitignore"
@@ -45,8 +47,13 @@ type Decomposer struct {
 }
 
 // Extract reads and hashes the files from the filesystem
-func (d *Decomposer) Extract(*api.DecomposerOptions) (*sbom.NodeList, error) {
-	nl, err := d.IndexFS(d.Options.Filesystem)
+func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return d.ExtractWithContext(context.Background(), opts)
+}
+
+// ExtractWithContext is Extract, run with the caller's context.
+func (d *Decomposer) ExtractWithContext(ctx context.Context, _ *api.DecomposerOptions) (*sbom.NodeList, error) {
+	nl, err := d.IndexFSWithContext(ctx, d.Options.Filesystem)
 	if err != nil {
 		return nil, fmt.Errorf("indexing filesystem: %w", err)
 	}
@@ -56,6 +63,14 @@ func (d *Decomposer) Extract(*api.DecomposerOptions) (*sbom.NodeList, error) {
 // IndexFS takes an fs.FS and returns a nodelist with all the files
 // indexed and enriched by the configured processors.
 func (d *Decomposer) IndexFS(source fs.FS) (*sbom.NodeList, error) {
+	return d.IndexFSWithContext(context.Background(), source)
+}
+
+// IndexFSWithContext is IndexFS, run with the caller's context, whose
+// logger it reports to.
+func (d *Decomposer) IndexFSWithContext(ctx context.Context, source fs.FS) (*sbom.NodeList, error) {
+	log := logging.FromContext(ctx)
+
 	// First, get a list of all the files
 	fileList, err := d.readtTree(source)
 	if err != nil {
@@ -64,18 +79,18 @@ func (d *Decomposer) IndexFS(source fs.FS) (*sbom.NodeList, error) {
 
 	// Build a list of patterns from those found in the .gitignore file and
 	// posssibly others passed in the options:
-	patterns, err := d.ignorePatterns(source, ".")
+	patterns, err := d.ignorePatterns(log, source, ".")
 	if err != nil {
 		return nil, fmt.Errorf("building ignore patterns list: %w", err)
 	}
 
 	// Apply the ignore patterns to the list of files
-	fileList = d.applyIgnorePatterns(fileList, patterns)
+	fileList = d.applyIgnorePatterns(log, fileList, patterns)
 	if len(fileList) == 0 {
 		return nil, fmt.Errorf("filesystem has no files to scan")
 	}
 
-	logrus.Debugf("Scanning %d files", len(fileList))
+	log.Debugf("Scanning %d files", len(fileList))
 
 	t := throttler.New(5, len(fileList))
 	nl := sbom.NewNodeList()
@@ -99,7 +114,7 @@ func (d *Decomposer) IndexFS(source fs.FS) (*sbom.NodeList, error) {
 		t.Throttle()
 	}
 
-	logrus.Debugf("Nodelist got %d nodes", len(nl.GetNodes()))
+	log.Debugf("Nodelist got %d nodes", len(nl.GetNodes()))
 
 	// If the throttler picked up errors when running, fail here
 	if err := t.Err(); err != nil {
@@ -135,14 +150,14 @@ func (d *Decomposer) readtTree(source fs.FS) ([]string, error) {
 
 // ignorePatterns compiles the list of gitignore patterns from options and
 // from the gitignore file.
-func (d *Decomposer) ignorePatterns(source fs.FS, dirPath string) ([]gitignore.Pattern, error) {
+func (d *Decomposer) ignorePatterns(log *clog.Logger, source fs.FS, dirPath string) ([]gitignore.Pattern, error) {
 	patterns := []gitignore.Pattern{}
 	for _, s := range d.Options.IgnorePatterns {
 		patterns = append(patterns, gitignore.ParsePattern(s, nil))
 	}
 
 	if d.Options.NoGitignore {
-		logrus.Debug("Not using patterns in .gitignore")
+		log.Debug("Not using patterns in .gitignore")
 		return patterns, nil
 	}
 
@@ -164,12 +179,12 @@ func (d *Decomposer) ignorePatterns(source fs.FS, dirPath string) ([]gitignore.P
 	for scanner.Scan() {
 		s := scanner.Text()
 		if !strings.HasPrefix(s, "#") && strings.TrimSpace(s) != "" {
-			logrus.Debugf("Loaded .gitignore pattern: >>%s<<", s)
+			log.Debugf("Loaded .gitignore pattern: >>%s<<", s)
 			patterns = append(patterns, gitignore.ParsePattern(s, nil))
 		}
 	}
 
-	logrus.Debugf(
+	log.Debugf(
 		"Loaded %d patterns from .gitignore (%d from options extra) ",
 		len(patterns), len(d.Options.IgnorePatterns),
 	)
@@ -178,9 +193,9 @@ func (d *Decomposer) ignorePatterns(source fs.FS, dirPath string) ([]gitignore.P
 
 // ApplyIgnorePatterns applies the gitignore patterns to a list of files, removing matched.
 func (d *Decomposer) applyIgnorePatterns(
-	fileList []string, patterns []gitignore.Pattern,
+	log *clog.Logger, fileList []string, patterns []gitignore.Pattern,
 ) (filteredList []string) {
-	logrus.Debugf(
+	log.Debugf(
 		"Applying %d ignore patterns to list of %d filenames",
 		len(patterns), len(fileList),
 	)
@@ -193,7 +208,7 @@ func (d *Decomposer) applyIgnorePatterns(
 	// Cycle all files, removing those matched:
 	for _, file := range fileList {
 		if matcher.Match(strings.Split(file, "/"), false) {
-			logrus.Debugf("File ignored by .gitignore: %s", file)
+			log.Debugf("File ignored by .gitignore: %s", file)
 		} else {
 			filteredList = append(filteredList, file)
 		}

@@ -4,15 +4,16 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/carabiner-dev/command"
+	"github.com/chainguard-dev/clog"
 	"github.com/protobom/protobom/pkg/formats"
 	protosbom "github.com/protobom/protobom/pkg/sbom"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/proto"
 
@@ -317,11 +318,11 @@ func (so *stitchOptions) Validate() error {
 		return nil
 	}
 	catalog := stitch.NewCatalog()
-	if err := catalog.Load(so.AddSBOMs...); err != nil {
+	if err := catalog.LoadWithContext(clog.WithLogger(context.Background(), cliLog()), so.AddSBOMs...); err != nil {
 		return fmt.Errorf("loading supplemental SBOMs: %w", err)
 	}
 	for _, p := range catalog.Unparsed() {
-		logrus.Infof("skipped %s: not a bill of materials", p)
+		cliLog().Infof("skipped %s: not a bill of materials", p)
 	}
 	so.stitcher = stitch.New(catalog)
 	return nil
@@ -337,7 +338,7 @@ func (so *stitchOptions) Stitch(nl *protosbom.NodeList) error {
 		return err
 	}
 	for _, s := range report.Stitched {
-		logrus.Debugf("stitched %s from %s", s.Entry.Node.GetName(), s.Entry.Supplement.Source)
+		cliLog().Debugf("stitched %s from %s", s.Entry.Node.GetName(), s.Entry.Supplement.Source)
 	}
 	return nil
 }
@@ -353,7 +354,7 @@ func (so *stitchOptions) ReportUnused() {
 		if v := e.Node.GetVersion(); v != "" {
 			name += "@" + v
 		}
-		logrus.Warnf("supplemental SBOM %s describes %s, which was not found", e.Supplement.Source, name)
+		cliLog().Warnf("supplemental SBOM %s describes %s, which was not found", e.Supplement.Source, name)
 	}
 }
 
@@ -447,7 +448,7 @@ func (eo *extRefOptions) Apply(nl *protosbom.NodeList) {
 	}
 	roots := nl.GetRootNodes()
 	if len(roots) == 0 {
-		logrus.Warn("no root components to add external references to")
+		cliLog().Warn("no root components to add external references to")
 		return
 	}
 	for _, n := range roots {
