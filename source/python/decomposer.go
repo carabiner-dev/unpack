@@ -101,18 +101,18 @@ func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.Decompose
 
 	switch {
 	case fileExists(filepath.Join(workDir, "uv.lock")):
-		return d.extractUv(workDir, opts)
+		return d.extractUv(ctx, workDir, opts)
 	case fileExists(filepath.Join(workDir, "poetry.lock")):
-		return d.extractPoetry(workDir, opts)
+		return d.extractPoetry(ctx, workDir, opts)
 	case fileExists(filepath.Join(workDir, "requirements.txt")):
-		return d.extractRequirements(workDir, opts)
+		return d.extractRequirements(ctx, workDir, opts)
 	default:
 		return nil, fmt.Errorf("no supported Python lockfile in %s", workDir)
 	}
 }
 
 // extractUv builds the graph from a uv.lock, which is self-contained.
-func (d *Decomposer) extractUv(workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+func (d *Decomposer) extractUv(ctx context.Context, workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	lock, err := ReadLockfile(filepath.Join(workDir, "uv.lock"))
 	if err != nil {
 		return nil, err
@@ -133,7 +133,7 @@ func (d *Decomposer) extractUv(workDir string, opts *api.DecomposerOptions) (*sb
 	// Locks carry no licence data at all, so without the index every
 	// Python SBOM is licence-empty. Enrichment fills what PyPI knows.
 	if opts.Networking >= api.NetworkEssential {
-		NewPyPIClient(dOpts.Concurrency).enrichNodes(tb.nodes, tb.enrichable, nil)
+		newPyPIClient(ctx, dOpts.Concurrency).enrichNodes(tb.nodes, tb.enrichable, nil)
 	}
 	return nl, nil
 }
@@ -141,7 +141,7 @@ func (d *Decomposer) extractUv(workDir string, opts *api.DecomposerOptions) (*sb
 // extractPoetry builds the graph from a poetry.lock and the manifest next
 // to it, which carries what the lock does not: the project's identity and
 // its direct dependencies.
-func (d *Decomposer) extractPoetry(workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+func (d *Decomposer) extractPoetry(ctx context.Context, workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	lock, err := ReadPoetryLockfile(filepath.Join(workDir, "poetry.lock"))
 	if err != nil {
 		return nil, err
@@ -175,7 +175,7 @@ func (d *Decomposer) extractPoetry(workDir string, opts *api.DecomposerOptions) 
 	}
 
 	if opts.Networking >= api.NetworkEssential {
-		NewPyPIClient(dOpts.Concurrency).enrichNodes(pb.nodes, pb.enrichable, nil)
+		newPyPIClient(ctx, dOpts.Concurrency).enrichNodes(pb.nodes, pb.enrichable, nil)
 	}
 	return nl, nil
 }
