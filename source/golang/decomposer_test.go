@@ -4,6 +4,7 @@
 package golang
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"net/http"
@@ -445,7 +446,12 @@ func TestLicenseEnrichment(t *testing.T) {
 	require.Contains(t, stdlibNodes[0].GetLicenses(), "BSD-3-Clause")
 }
 
-func TestGoSumHashMatchesProxy(t *testing.T) {
+// TestHashesMatchProxyZip holds the two things a node says of a module's
+// content to the zip the proxy serves: the hash, which the proxy states as
+// the zip's entity tag, is the SHA-256 of the file, and the go.sum checksum
+// kept as a property is the zip's dirhash. The first is not promised by
+// the proxy protocol, so this is what would notice it changing.
+func TestHashesMatchProxyZip(t *testing.T) {
 	t.Parallel()
 
 	// Extract the dependency from testdata/simple using our decomposer
@@ -458,19 +464,30 @@ func TestGoSumHashMatchesProxy(t *testing.T) {
 	require.Len(t, nodes, 1, "should find google/uuid node")
 	node := nodes[0]
 
-	// The node should have a hash from go.sum
-	goSumHash, ok := node.GetHashes()[int32(sbom.HashAlgorithm_SHA256)]
-	require.True(t, ok, "node should have a SHA-256 hash from go.sum")
-	require.NotEmpty(t, goSumHash)
+	zipHash, ok := node.GetHashes()[int32(sbom.HashAlgorithm_SHA256)]
+	require.True(t, ok, "node should have the SHA-256 the proxy states for its zip")
 
-	// Download the module zip from the Go proxy
-	resp, err := http.Get("https://proxy.golang.org/github.com/google/uuid/@v/v1.3.0.zip") //nolint:noctx
+	var h1 string
+	for _, property := range node.GetProperties() {
+		if property.GetName() == PropertyH1 {
+			h1 = property.GetData()
+		}
+	}
+	require.NotEmpty(t, h1, "node should carry its go.sum checksum as a property")
+
+	// Download the module zip from where the node says it is
+	require.Equal(t, "https://proxy.golang.org/github.com/google/uuid/@v/v1.3.0.zip", node.GetUrlDownload())
+	resp, err := http.Get(node.GetUrlDownload()) //nolint:noctx // a test fetching the URL it just asserted
 	require.NoError(t, err)
 	defer resp.Body.Close() //nolint:errcheck
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	zipData, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
+
+	// The hash is the file's.
+	require.Equal(t, fmt.Sprintf("%x", sha256.Sum256(zipData)), zipHash,
+		"hash on node should be the SHA-256 of the proxy zip")
 
 	// Write to temp file so dirhash.HashZip can process it
 	zipPath := filepath.Join(t.TempDir(), "uuid.zip")
@@ -479,15 +496,7 @@ func TestGoSumHashMatchesProxy(t *testing.T) {
 	// Compute the dirhash (h1:) — the same algorithm go.sum uses
 	h1Hash, err := dirhash.HashZip(zipPath, dirhash.Hash1)
 	require.NoError(t, err)
-
-	// Convert the dirhash through our goSumToHashes to get the hex digest
-	expectedHashes := goSumToHashes("key", map[string][]string{
-		"key": {h1Hash},
-	})
-	expectedHex := expectedHashes[int32(sbom.HashAlgorithm_SHA256)]
-
-	require.Equal(t, expectedHex, goSumHash,
-		"hash on node should match dirhash computed from proxy zip")
+	require.Equal(t, h1Hash, h1, "the property should be the dirhash computed from the proxy zip")
 }
 
 func TestReadCachedModFile(t *testing.T) {

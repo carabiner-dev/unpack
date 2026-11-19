@@ -65,8 +65,10 @@ usr/local/bin/tool                          (file, sha256)
 
 The same fields the [Go source decomposer](golang.md#data-produced-per-dependency)
 produces, from the same builder: name, version, purl, download URL, the
-`h1:` dirhash as a SHA-256, the supplier read off the module path, and
-the license and source repository from deps.dev when networking allows.
+`h1:` checksum the binary records as the `go:h1` property, the supplier
+read off the module path, and, when networking allows, the SHA-256 of
+the module's zip from the proxy and the license and source repository
+from deps.dev. See [Hashes](golang.md#hashes).
 
 ### Special nodes
 
@@ -136,8 +138,9 @@ made afterwards, from the artifact, with only what the artifact kept. See
 - **Works on the deployed thing.** A distroless image with one Go
   binary in it reports that binary's modules next to the (empty) OS
   inventory. No source checkout, no build.
-- **Checksums for free.** The `h1:` sums travel in the binary, so
-  hashes are present offline.
+- **Checksums for free.** The `h1:` sums travel in the binary, so each
+  module's `go:h1` property is present offline. The hash of its zip
+  needs the proxy.
 - **Same graph as source.** A binary and its source tree render through
   one builder, so the two SBOMs can be compared node for node.
 

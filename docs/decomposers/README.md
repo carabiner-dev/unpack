@@ -167,6 +167,7 @@ decomposers uniformly.
 | Call | disabled | essential | full |
 |------|----------|-----------|------|
 | **Go:** proxy .mod fetch (dependency graph) | skip | yes | yes |
+| **Go:** proxy .zip `HEAD` (hashes), `proxy.golang.org` only | skip | yes | yes |
 | **Go:** deps.dev API (licenses, VCS) | skip | yes | yes |
 | **Go:** proxy .zip download (license fallback) | skip | skip | yes |
 | **Go binary:** build info read | works | works | works |

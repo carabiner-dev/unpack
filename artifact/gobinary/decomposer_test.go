@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"testing"
 
 	"github.com/protobom/protobom/pkg/sbom"
@@ -106,7 +107,12 @@ func TestExtractArtifactFixture(t *testing.T) {
 	// checksum, hanging off the root.
 	uuid := nl.GetNodesByIdentifier("purl", "pkg:golang/github.com/google/uuid@"+versionOf(t, bi, "github.com/google/uuid"))
 	require.Len(t, uuid, 1)
-	assert.NotEmpty(t, uuid[0].GetHashes()[int32(sbom.HashAlgorithm_SHA256)])
+	// The checksum the binary records is of the module's tree, kept as a
+	// property; the zip's hash needs the proxy, which is off here.
+	require.Len(t, uuid[0].GetProperties(), 1)
+	assert.Equal(t, golang.PropertyH1, uuid[0].GetProperties()[0].GetName())
+	assert.True(t, strings.HasPrefix(uuid[0].GetProperties()[0].GetData(), "h1:"))
+	assert.Empty(t, uuid[0].GetHashes())
 	stdlib := nl.GetNodesByIdentifier("purl", "pkg:golang/stdlib@"+goRelease(bi.GoVersion))
 	require.Len(t, stdlib, 1)
 

@@ -110,6 +110,7 @@ func (d *Decomposer) BuildNodeList(set *ModuleSet, opts *api.DecomposerOptions) 
 	}
 
 	if opts.Networking >= api.NetworkEssential {
+		d.hashModuleZips(nl, set.Main.Path, dOpts)
 		d.enrichLicenses(nl, set.Main.Path, dOpts, opts.Networking)
 	}
 	return nl, nil

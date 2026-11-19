@@ -6,8 +6,6 @@ package golang
 import (
 	"bufio"
 	"context"
-	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -508,7 +506,7 @@ func (d *Decomposer) convertTrees(
 		stdlibNode := &sbom.Node{
 			Id:      uuid.NewString(),
 			Type:    sbom.Node_PACKAGE,
-			Name:    "stdlib",
+			Name:    stdlibName,
 			Version: goVersion,
 			Identifiers: map[int32]string{
 				int32(sbom.SoftwareIdentifierType_PURL): stdlibPurl,
@@ -586,7 +584,11 @@ func (d *Decomposer) convertTree(
 					Identifiers: map[int32]string{
 						int32(sbom.SoftwareIdentifierType_PURL): goStringToPurl(subcomponent),
 					},
-					Hashes: goSumToHashes(subcomponent, sumHashes),
+					// The go.sum checksum is of the module's tree and of
+					// no file, so it is a property and not a hash; the
+					// zip's hash comes from the proxy (see hashes.go).
+					Hashes:     map[int32]string{},
+					Properties: goSumProperties(subcomponent, sumHashes),
 					PrimaryPurpose: []sbom.Purpose{
 						sbom.Purpose_LIBRARY,
 					},
@@ -609,27 +611,6 @@ func (d *Decomposer) convertTree(
 		}
 	}
 	return nil
-}
-
-// goSumToHashes converts go.sum hash entries for a module into protobom hashes.
-// go.sum uses "h1:" prefix for SHA-256 hashes, base64-encoded.
-func goSumToHashes(modKey string, sumHashes map[string][]string) map[int32]string {
-	hashes := make(map[int32]string)
-	if sumHashes == nil {
-		return hashes
-	}
-	for _, h := range sumHashes[modKey] {
-		if !strings.HasPrefix(h, "h1:") {
-			continue
-		}
-		b64 := strings.TrimPrefix(h, "h1:")
-		decoded, err := base64.StdEncoding.DecodeString(b64)
-		if err != nil {
-			continue
-		}
-		hashes[int32(sbom.HashAlgorithm_SHA256)] = hex.EncodeToString(decoded)
-	}
-	return hashes
 }
 
 // goStringToPurl converts a graph entry to a package url
