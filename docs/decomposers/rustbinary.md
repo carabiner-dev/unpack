@@ -73,7 +73,7 @@ usr/local/bin/tool                          (file, sha256)
 | PURL | computed | `pkg:cargo/{name}@{version}` |
 | Download URL | computed | `https://crates.io/api/v1/crates/{name}/{version}/download`, crates.io packages only |
 | `cargo:source` property | `source` | Set for crates not from crates.io: `git`, `local`, `registry` or another value; the record holds no URL |
-| License, description, homepage, repository, docs, size, MSRV | crates.io | With networking, crates.io packages only, as on the [Rust page](rust.md) |
+| License, supplier, description, homepage, repository, docs, size, MSRV | crates.io | With networking, crates.io packages only, as on the [Rust page](rust.md); one request a second |
 
 The record carries **no checksums**. `Cargo.lock` does, and the source
 decomposer reports them; a binary cannot.

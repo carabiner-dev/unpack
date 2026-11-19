@@ -9,8 +9,8 @@ can be serialized as SPDX or CycloneDX.
 |-----------|------------|-----------|----------|-------------------|
 | [Go](golang.md) | `source/golang/` | `go.sum` | `go.mod` | deps.dev API + Go module proxy |
 | [Maven](maven.md) | `source/maven/` | _(none)_ | `pom.xml` | Maven Central |
-| [PHP (Composer)](composer.md) | `source/composer/` | `composer.lock` | `composer.json` | _(none — licenses are in the lock)_ |
-| [JavaScript](npm.md) | `source/npm/` | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` | `package.json` | _(none)_ |
+| [PHP (Composer)](composer.md) | `source/composer/` | `composer.lock` | `composer.json` | _(none — licenses and authors are in the lock)_ |
+| [JavaScript](npm.md) | `source/npm/` | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` | `package.json` | npm registry (suppliers, licenses) |
 | [Python](python.md) | `source/python/` | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry only) | PyPI JSON API |
 | [Ruby (Bundler)](ruby.md) | `source/ruby/` | `Gemfile.lock` | _(not read — executable Ruby)_ | rubygems.org API |
 | [Rust](rust.md) | `source/rust/` | `Cargo.lock` | `Cargo.toml` | crates.io API |
@@ -40,7 +40,11 @@ All decomposers share these behaviors:
 - **Commit hash injection** -- when `DecomposerOptions.CommitHash` is set,
   the root node receives a VCS external reference with the SHA-1 hash.
 - **Version override** -- when `DecomposerOptions.Version` is set, the root
-  node's version and PURL are updated accordingly.
+  node's version and PURL are updated accordingly. The Go decomposer names
+  a commit the way Go does instead, by its tag or its pseudo-version; see
+  the [Go page](golang.md#the-roots-version).
+- **Suppliers** -- every decomposer names who each dependency is supplied
+  by, from the best source its ecosystem has. See [Suppliers](#suppliers).
 - **Generation context** -- every decomposer says at what point of the
   software's life it reads, and the document written from its data states
   it. See [Generation context](#generation-context).
@@ -107,6 +111,45 @@ Things that follow from this:
   `discovery` or `decommission`, so a CycloneDX document marked with
   either loses it when converted to SPDX 3.
 
+## Suppliers
+
+An SBOM is expected to name the supplier of each component. No lock file
+records one, so each decomposer takes it from the best source its
+ecosystem has: what the package or its registry declares where there is
+such a thing, and who controls the package's name where there is not.
+
+| Ecosystem | A dependency's supplier | Needs the network |
+|-----------|-------------------------|-------------------|
+| Go | Whoever controls the module's path: the repository owner on a code host (`github.com/spf13`), the domain otherwise (`golang.org`); `gopkg.in` resolves to the GitHub owner it redirects to | No |
+| sbt | The organization the library's coordinate opens with (`org.scala-lang`) | No |
+| PHP | The authors the lock entry lists | No |
+| Maven | The organization the artifact's POM names, or its developers when it names none; both inherited from parent POMs | Yes |
+| Python | The maintainers PyPI lists, or the authors when it lists none | Yes |
+| Ruby | The authors rubygems.org lists | Yes |
+| Rust | The crates.io account that published the version | Yes |
+| JavaScript | The author the package's manifest declares, or the npm account that published the version when it declares none | Yes |
+
+What to keep in mind when reading them:
+
+- **They are not all the same kind of fact.** A POM's organization is a
+  name an entity goes by. A Go module path's owner, an sbt organization
+  and a registry account are identifiers: they say who controls the name,
+  not what that party is called.
+- **Person or organization is mostly unknown.** Only Maven says which a
+  supplier is. Go and sbt suppliers are written as organizations; the
+  rest as persons, so `Pallets` or `Shopify` come out as persons.
+- **Several suppliers, one field.** A package with several authors or
+  maintainers has them all on its node. SPDX 2.3 holds one supplier per
+  package and shows the first.
+- **No source, no supplier.** A package whose metadata names nobody gets
+  none; nothing is made up.
+- **The root is not named.** Who supplies the software the document
+  describes is for whoever writes the document to say, with
+  `--supplier`, as the document's authors are with `--author`. Both take
+  an entity written the way SPDX writes one:
+  `"Organization: Example Inc (security@example.com)"` or
+  `"Person: Jane Doe"`.
+
 ## Networking tiers
 
 The `DecomposerOptions.Networking` field controls how much network access
@@ -117,7 +160,7 @@ decomposers uniformly.
 |-------|-------|-------------|
 | `NetworkEssential` | `0` (default) | Enables network calls essential for building the dependency tree plus lightweight metadata requests (deps.dev, checksum files, crates.io API). |
 | `NetworkFull` | `1` | All of essential, plus downloading full artifacts for hash computation and zip archives for license classification. Prioritizes completeness over bandwidth. |
-| `NetworkDisabled` | `-1` | No network calls. Only local data is used. Some decomposers will produce incomplete results (Go, Maven) while others work fully offline (npm, Rust without enrichment). |
+| `NetworkDisabled` | `-1` | No network calls. Only local data is used. Some decomposers will produce incomplete results (Go and Maven lose transitive dependencies) while others keep the whole graph and only lose what is fetched to enrich it (licenses, suppliers). |
 
 ### Per-decomposer networking behavior
 
@@ -131,18 +174,20 @@ decomposers uniformly.
 | **Go binary:** everything else | as Go | as Go | as Go |
 | **Rust binary:** record read, full graph | works | works | works |
 | **Rust binary:** crates.io API (enrichment) | skip | yes | yes |
-| **Maven:** POM fetch (dependency tree) | skip | yes | yes |
+| **Maven:** direct dependencies, from `pom.xml` and the parent POMs beside it | works | works | works |
+| **Maven:** POM fetch (transitive dependencies, licenses, suppliers) | skip | yes | yes |
 | **Maven:** metadata fetch (snapshots, ranges) | skip | yes | yes |
 | **Maven:** checksum files (.sha1, .sha256) | skip | yes | yes |
 | **Maven:** artifact download (SHA-256/SHA-512) | skip | skip | yes |
-| **JavaScript:** _(none -- fully offline)_ | works | works | works |
+| **JavaScript:** local parsing (lock files, manifests) | works | works | works |
+| **JavaScript:** npm registry (suppliers, and licenses the lock lacks), for packages of the public registry only | skip | yes | yes |
 | **PHP:** _(none -- fully offline, licenses included)_ | works | works | works |
 | **Python:** local parsing (lockfiles, requirements) | works | works | works |
 | **Ruby:** local parsing (Gemfile.lock) | works | works | works |
 | **Ruby:** rubygems.org API (licenses, metadata) | skip | yes | yes |
 | **Python:** PyPI JSON API (licenses, metadata) | skip | yes | yes |
 | **Rust:** local parsing (Cargo.toml/lock) | works | works | works |
-| **Rust:** crates.io API (enrichment) | skip | yes | yes |
+| **Rust:** crates.io API (enrichment), one request a second | skip | yes | yes |
 
 ## Dependency inclusion flags
 
@@ -172,8 +217,10 @@ output. Three flags control the inclusion of additional dependency types:
   included, even with `--include-dev`. The flag only affects dependencies
   declared directly in your own POM (or resolved at the current project
   level).
-- npm's `peerDependencies` are not covered by these flags and remain
-  a decomposer-specific option (`IncludePeerDependencies`).
+- npm's `peerDependencies` are not covered by these flags. A project's
+  own peers are related to it as provided dependencies when installed,
+  and an installed package's peers are followed like its other
+  dependencies; see the [JavaScript page](npm.md#peer-dependencies).
 - Maven's `provided` scope is not covered by these flags and remains
   a decomposer-specific option (`IncludeProvided`).
 - Ruby's Gemfile is executable code, so group membership cannot be read

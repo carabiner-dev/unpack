@@ -420,6 +420,17 @@ dependency twice. Node IDs are UUIDs (`uuid.NewString()`).
 `Purpose_LIBRARY`). Leave a field empty rather than guess: a download URL
 you cannot derive is better omitted than invented.
 
+**Name the supplier of each dependency, and leave the root alone.** Take
+it from the best source the ecosystem has: what the package or its
+registry declares (authors, maintainers, an organization, the publishing
+account), or, where nothing is declared, who controls the package's name
+(a module path's owner, a coordinate's organization). Set `IsOrg` only
+when the source says which it is, and carry the email or URL it states.
+A package whose metadata names nobody gets no supplier. The root's
+supplier is for whoever writes the document to state (`--supplier`), so
+a decomposer never sets it. Add a row to the table in
+[Suppliers](README.md#suppliers).
+
 **Normalize licenses** with `license.Normalize(name, url)` from the shared
 `license` package so output carries SPDX identifiers.
 
@@ -474,7 +485,15 @@ If your decomposer takes options that deserve a CLI flag, wire it in
   than checking the tree out; CI runs on Windows.
 - Test the parsers directly on the fixture files, then test `Extract`
   end to end with `WorkDir` pointing at a fixture and the network either
-  disabled or pointed at an `httptest.Server` through the options.
+  disabled or pointed at an `httptest.Server` through the options. Set
+  `Networking: api.NetworkDisabled` explicitly: the zero value is
+  `NetworkEssential`, which quietly turns a test into a client of the
+  real registry.
+- When a decomposer asks a registry about packages, make sure it only
+  asks about the ones that registry has: a package from a private
+  registry, a repository or a path must not have its name sent to a
+  public one. Respect the registry's stated limits for automated
+  clients, and identify the client if the registry asks for it.
 - Assert on the shape of the graph: root purl, the set of dependency purls,
   the edge types under each inclusion flag. Use `testify/require`.
 - Mark tests `t.Parallel()`. Table-driven tests may repeat literals freely;
@@ -763,6 +782,9 @@ should do nothing else: all logic belongs in the unpacker.
 - [ ] A new unpacker implements `api.ExtractionUnpacker`, with `Extract` returning the node lists of `Extractions`.
 - [ ] Pure Go; no shelling out to ecosystem tooling.
 - [ ] Network use gated on `opts.Networking`; local data alone produces a graph.
+- [ ] Tests set `Networking: api.NetworkDisabled` or point at a local server; none reaches a real registry.
+- [ ] A registry is only asked about packages it has, within its rate limits.
+- [ ] Dependencies carry a supplier where the ecosystem offers one; the root carries none.
 - [ ] Root node carries `opts.Version` and `opts.CommitHash` (source decomposers).
 - [ ] `(nil, nil)` when the database is absent (system decomposers) or the file is not yours (artifact decomposers).
 - [ ] `api.SubjectDefaults` answered honestly for every parent kind (artifact decomposers).

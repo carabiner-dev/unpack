@@ -16,6 +16,7 @@ Whether you're a developer, security researcher, or compliance officer, Unpack h
 - **Multiple Output Formats**: Displays dependencies as a visual tree or exports to standard SBOM formats.
 - **Extensible Architecture**: Easily extendable to support new languages and package managers.
 - **Attestation Support**: Wraps SBOM outputs in an in-toto attestation for verifiable supply chain security.
+- **Minimum Elements**: Names suppliers, authors and the context a document was generated in, alongside hashes, licenses and identifiers.
 
 ---
 
@@ -102,6 +103,28 @@ unpack extract --attest --format=spdx /path/to/your/code
 Attestations are made under the predicate type of what they carry:
 `https://spdx.dev/Document/v3` for SPDX 3, `https://spdx.dev/Document` for
 SPDX 2, and `https://cyclonedx.org/bom` for CycloneDX.
+
+**Example: Name the Supplier and the Authors**
+```bash
+# Who supplies the software the SBOM describes, and who wrote the SBOM.
+# --author can be repeated; both need an SBOM format.
+unpack extract --format=spdx \
+  --supplier "Organization: Example Inc (security@example.com)" \
+  --author "Organization: Example Inc" \
+  --author "Person: Jane Doe (jane@example.com)" \
+  /path/to/your/code
+```
+
+Each value is written the way SPDX writes an entity: `Organization:` or
+`Person:`, the name, and optionally an email in parentheses. The
+supplier goes on the root component and the authors on the document.
+Dependencies get their suppliers from their ecosystem's own data; see
+[Suppliers](docs/decomposers/README.md#suppliers). The flags are also on
+`unpack sbom`, `unpack image`, `unpack artifact` and `unpack release`.
+
+Every SBOM also states the context it was generated in, a source tree or
+something already built, as its decomposers report it; see
+[Generation context](docs/decomposers/README.md#generation-context).
 
 ### `unpack sbom`: Process Existing SBOMs
 
@@ -224,8 +247,8 @@ inventory, and the modules built into any
 | --- | --- | --- | --- |
 | [Go](docs/decomposers/golang.md) | `go.sum` | `go.mod` | Go module proxy |
 | [Maven](docs/decomposers/maven.md) | _(none)_ | `pom.xml` | Maven Central |
-| [PHP (Composer)](docs/decomposers/composer.md) | `composer.lock` | `composer.json` | _(none — licenses are in the lock)_ |
-| [JavaScript](docs/decomposers/npm.md) | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` | `package.json` | _(none)_ |
+| [PHP (Composer)](docs/decomposers/composer.md) | `composer.lock` | `composer.json` | _(none — licenses and authors are in the lock)_ |
+| [JavaScript](docs/decomposers/npm.md) | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` | `package.json` | npm registry (suppliers, licenses) |
 | [Python](docs/decomposers/python.md) | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry) | PyPI JSON API |
 | [Ruby (Bundler)](docs/decomposers/ruby.md) | `Gemfile.lock` | _(not read)_ | rubygems.org API |
 | [Rust](docs/decomposers/rust.md) | `Cargo.lock` | `Cargo.toml` | crates.io API |

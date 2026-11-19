@@ -22,8 +22,12 @@ not in the lock and come from rubygems.org with networking enabled.
    selected artifact: one lock yields a different ffi hash per target.
 3. Walks the graph from the direct dependencies; a spec's dependency
    names are the edges, since the lock resolves a name to one version.
+   A name the lock holds no spec for gets no edge: Bundler writes no
+   spec for itself, so a gem depending on `bundler`, as rails does,
+   names one that is not there, and a gem declared for platforms the
+   lock was not resolved for is listed with nothing behind it.
 4. With networking enabled, enriches registry gems from the rubygems.org
-   version-exact API: licenses, descriptions, homepages, repositories,
+   version-exact API: licenses, authors, descriptions, homepages, repositories,
    and — for locks without checksums — the pure-Ruby artifact's sha256,
    which never displaces a checksum the lock stated and never lands on a
    platform-variant node it does not hash.
@@ -51,6 +55,7 @@ variant travels in the purl as a qualifier:
 | Hash (SHA-256) | `Gemfile.lock` / rubygems.org | The selected artifact's checksum; see above |
 | Repository | git source / rubygems.org | `ExternalReference_VCS`; git gems include the resolved commit |
 | License | rubygems.org | Normalized to SPDX; needs networking |
+| Supplier | rubygems.org | The gem's authors, by name. The registry joins them with commas and keeps no email; a comma before a company suffix (`Example, Inc.`) stays in the name, and a link given in place of names names nobody. Needs networking; see [Suppliers](README.md#suppliers) |
 | Description | rubygems.org | |
 | Homepage | rubygems.org | Set as `UrlHome` |
 
@@ -90,8 +95,8 @@ is the library Bundler ships with.
 - **No dev split.** Which direct gems are development-only lives in the
   Gemfile's Ruby code, which is not executed or parsed: every declared
   gem is included, honestly over-reporting rather than guessing.
-- **Licenses need the network.** The lock carries none; with networking
-  disabled, every node is license-empty.
+- **Licenses and suppliers need the network.** The lock carries
+  neither; with networking disabled, every node is without them.
 - **Hashes need a checksums lock.** Bundler writes CHECKSUMS on request
   (2.6+); without it, only the registry can supply hashes, and only for
   pure-Ruby artifacts.

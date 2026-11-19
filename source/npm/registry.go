@@ -8,18 +8,21 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/protobom/protobom/pkg/sbom"
 	khttp "sigs.k8s.io/release-utils/http"
+
+	"github.com/carabiner-dev/unpack/license"
 )
 
 // This file asks the npm registry what a lockfile does not say about the
-// packages it locks: who each is supplied by. A lock records where a
-// package was fetched from and its integrity, nothing about who is behind
-// it; the registry keeps, for every version, the manifest it was published
-// with and the account that published it.
+// packages it locks: who each is supplied by and under what license. A
+// lock records where a package was fetched from and its integrity, little
+// or nothing else; the registry keeps, for every version, the manifest it
+// was published with and the account that published it.
 
 const (
 	defaultRegistryURL         = "https://registry.npmjs.org"
@@ -64,6 +67,63 @@ type registryVersion struct {
 	// Publisher is the registry account that published the version. Its
 	// name is the account's, not a person's.
 	Publisher *registryPerson `json:"_npmUser"`
+
+	// License is the license the manifest declares, and Licenses the
+	// list older manifests declared several in.
+	License  *registryLicense  `json:"license"`
+	Licenses []registryLicense `json:"licenses"`
+}
+
+// registryLicense is a license as npm manifests write one: an SPDX
+// expression in a string, or, in older manifests, an object naming its
+// type and where it is found.
+type registryLicense struct {
+	Type string `json:"type"`
+	URL  string `json:"url"`
+}
+
+// UnmarshalJSON reads a license in either form. A value that is neither
+// states no license rather than failing the document it is in.
+func (l *registryLicense) UnmarshalJSON(data []byte) error {
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		l.Type = text
+		return nil
+	}
+
+	type object registryLicense
+	var o object
+	if err := json.Unmarshal(data, &o); err == nil {
+		*l = registryLicense(o)
+	}
+	return nil
+}
+
+// licenses returns the licenses the version declares, normalized: the
+// license field, or the older list when there is none.
+//
+// Two values npm gives a meaning of its own are not licenses and state
+// none. "UNLICENSED" says the package grants no license at all, which is
+// not an identifier to pass on as if it were one, and "SEE LICENSE IN
+// <file>" points at a file of the package this reader does not open.
+func (v *registryVersion) licenses() []string {
+	declared := v.Licenses
+	if v.License != nil {
+		declared = []registryLicense{*v.License}
+	}
+
+	licenses := []string{}
+	for _, l := range declared {
+		name := strings.TrimSpace(l.Type)
+		upper := strings.ToUpper(name)
+		if name == "" || upper == "UNLICENSED" || strings.HasPrefix(upper, "SEE LICENSE IN") {
+			continue
+		}
+		if id := license.Normalize(name, l.URL); !slices.Contains(licenses, id) {
+			licenses = append(licenses, id)
+		}
+	}
+	return licenses
 }
 
 // registryPerson is a person as npm manifests write one: an object, or
@@ -172,8 +232,9 @@ func plainVersion(version string) bool {
 
 // enrichNodes fills the graph's nodes with what the registry knows about
 // them: for each package that is the public registry's to describe, its
-// supplier. public says which those are, as each kind of lock can tell.
-// The roots are the project's own packages and never asked about.
+// supplier, and its license when the lock stated none. public says which
+// those are, as each kind of lock can tell. The roots are the project's
+// own packages and never asked about.
 func (c *RegistryClient) enrichNodes(nl *sbom.NodeList, public func(*sbom.Node) bool) {
 	roots := map[string]struct{}{}
 	for _, id := range nl.GetRootElements() {
@@ -197,13 +258,16 @@ func (c *RegistryClient) enrichNodes(nl *sbom.NodeList, public func(*sbom.Node) 
 	}
 
 	for key, version := range c.FetchAll(keys) {
-		supplier := version.supplier()
-		if supplier == nil {
-			continue
-		}
+		supplier, licenses := version.supplier(), version.licenses()
 		// A package installed at several paths is several nodes.
 		for _, node := range byKey[key] {
-			node.Suppliers = []*sbom.Person{supplier.Copy()}
+			if supplier != nil {
+				node.Suppliers = []*sbom.Person{supplier.Copy()}
+			}
+			// What the lock recorded stands: it is what was installed.
+			if len(licenses) > 0 && len(node.GetLicenses()) == 0 {
+				node.Licenses = slices.Clone(licenses)
+			}
 		}
 	}
 }

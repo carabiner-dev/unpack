@@ -74,6 +74,39 @@ func TestRegistrySupplier(t *testing.T) {
 	}
 }
 
+// TestRegistryLicenses checks the licenses a published version declares,
+// over the forms manifests have written them in.
+func TestRegistryLicenses(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		doc      string
+		expected []string
+	}{
+		"an SPDX identifier":       {`{"license": "MIT"}`, []string{"MIT"}},
+		"an SPDX expression":       {`{"license": "(MIT OR Apache-2.0)"}`, []string{"(MIT OR Apache-2.0)"}},
+		"a name the catalog knows": {`{"license": "Apache License 2.0"}`, []string{"Apache-2.0"}},
+		// Older manifests: an object, and a list of them.
+		"an object":               {`{"license": {"type": "ISC", "url": "https://opensource.org/licenses/ISC"}}`, []string{"ISC"}},
+		"a list":                  {`{"licenses": [{"type": "MIT"}, {"type": "Apache-2.0"}, {"type": "MIT"}]}`, []string{"MIT", "Apache-2.0"}},
+		"a list of strings":       {`{"licenses": ["MIT", "BSD-3-Clause"]}`, []string{"MIT", "BSD-3-Clause"}},
+		"the field over the list": {`{"license": "MIT", "licenses": [{"type": "GPL-2.0-only"}]}`, []string{"MIT"}},
+		// What npm gives a meaning of its own, and states no license.
+		"no license granted":  {`{"license": "UNLICENSED"}`, []string{}},
+		"a pointer to a file": {`{"license": "SEE LICENSE IN LICENSE.md"}`, []string{}},
+		"an empty value":      {`{"license": ""}`, []string{}},
+		"neither form":        {`{"license": 42}`, []string{}},
+		"nothing declared":    {`{"_npmUser": {"name": "publisher"}}`, []string{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			version := &registryVersion{}
+			require.NoError(t, json.Unmarshal([]byte(tc.doc), version))
+			require.Equal(t, tc.expected, version.licenses())
+		})
+	}
+}
+
 func TestRegistryVersionURL(t *testing.T) {
 	t.Parallel()
 	client := NewRegistryClient(0)
@@ -96,9 +129,9 @@ func TestRegistryEnrich(t *testing.T) {
 		mu.Unlock()
 		switch r.URL.EscapedPath() {
 		case "/debug/4.4.3":
-			fmt.Fprint(w, `{"author": {"name": "Josh Junon"}, "_npmUser": {"name": "qix"}}`) //nolint:errcheck // a fake server's writes have nowhere to fail
+			fmt.Fprint(w, `{"license": "MIT", "author": {"name": "Josh Junon"}, "_npmUser": {"name": "qix"}}`) //nolint:errcheck // a fake server's writes have nowhere to fail
 		case "/@types%2Fnode/20.1.0":
-			fmt.Fprint(w, `{"_npmUser": {"name": "types", "email": "ts-npm-types@microsoft.com"}}`) //nolint:errcheck // a fake server's writes have nowhere to fail
+			fmt.Fprint(w, `{"license": "MIT", "_npmUser": {"name": "types", "email": "ts-npm-types@microsoft.com"}}`) //nolint:errcheck // a fake server's writes have nowhere to fail
 		default:
 			http.NotFound(w, r)
 		}
@@ -118,6 +151,9 @@ func TestRegistryEnrich(t *testing.T) {
 	// mirror Yarn writes: one request, both nodes.
 	debugAgain := add("debug2", "debug", "4.4.3", "https://registry.yarnpkg.com/debug/-/debug-4.4.3.tgz#abc")
 	types := add("types", "@types/node", "20.1.0", "https://registry.npmjs.org/@types/node/-/node-20.1.0.tgz")
+	// The lock recorded a license for this one, which stands whatever
+	// the registry says now.
+	types.Licenses = []string{"Apache-2.0"}
 	unknown := add("unknown", "unknown", "1.0.0", "https://registry.npmjs.org/unknown/-/unknown-1.0.0.tgz")
 
 	// None of these is the public registry's to describe.
@@ -143,7 +179,13 @@ func TestRegistryEnrich(t *testing.T) {
 	require.Equal(t, "types", types.GetSuppliers()[0].GetName())
 	require.Equal(t, "ts-npm-types@microsoft.com", types.GetSuppliers()[0].GetEmail())
 
+	// The license comes with the same answer, for a node that had none.
+	require.Equal(t, []string{"MIT"}, debug.GetLicenses())
+	require.Equal(t, []string{"MIT"}, debugAgain.GetLicenses())
+	require.Equal(t, []string{"Apache-2.0"}, types.GetLicenses())
+
 	for _, node := range []*sbom.Node{root, unknown, private, insecure, fromGit, noLocation} {
 		require.Empty(t, node.GetSuppliers(), node.GetName())
+		require.Empty(t, node.GetLicenses(), node.GetName())
 	}
 }
