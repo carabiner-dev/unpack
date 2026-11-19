@@ -97,13 +97,24 @@ bring. With `package-lock.json`, which records them:
 The pnpm lock already lists resolved peers among a package's
 dependencies; Yarn's locks do not record a project's own.
 
-### Suppliers and the registry
+### Suppliers, licenses and the registry
 
-A lock says where a package was fetched from and nothing about who is
-behind it, so with networking enabled each package of the public npm
-registry is asked about there (`/{name}/{version}`, ten requests at a
-time). Its supplier is the author its manifest declares, or, for the
-many packages that declare none, the account that published the version.
+A lock says where a package was fetched from and little or nothing about
+who is behind it or how it is licensed, so with networking enabled each
+package of the public npm registry is asked about there
+(`/{name}/{version}`, ten requests at a time). Two things are read from
+the answer:
+
+- **The supplier:** the author the package's manifest declares, or, for
+  the many packages that declare none, the account that published the
+  version.
+- **The license,** for a package whose lock recorded none, which is every
+  package of a pnpm or yarn lock. It is the manifest's `license`, an
+  SPDX identifier or expression, or the object and list forms older
+  manifests used, normalized through the shared license catalog. What
+  `package-lock.json` recorded stands. Two values npm gives a meaning
+  of its own state no license: `UNLICENSED`, which says none is granted,
+  and `SEE LICENSE IN <file>`, which points at a file that is not read.
 
 Only packages of the public registry are asked about, so the name of a
 package from anywhere else is never sent to it:
@@ -138,7 +149,7 @@ one reading it.
 | PURL | computed | `pkg:npm/[@scope/]name@version` |
 | Download URL | lockfile | Registry tarball URL; absent for berry |
 | Hash | lockfile | SRI integrity (sha512/384/256/1), hex; absent for berry |
-| License | `package-lock.json` only | The other lockfiles record none |
+| License | `package-lock.json` / npm registry | The lock's when it records one, which only `package-lock.json` does; the registry's otherwise, with networking, for public-registry packages |
 | Supplier | npm registry | The declared author, else the publishing account. Needs networking, public-registry packages only; see above |
 
 ### Root node additional data
@@ -183,7 +194,7 @@ lifecycle `pre-build`, SPDX 3 type `source`. See
 - **The graph needs no network.** Versions, edges and hashes come from
   local files. `package-lock.json` already contains resolved URLs,
   integrity hashes, and license identifiers for every dependency. Only
-  suppliers are fetched.
+  suppliers, and the licenses a lock does not record, are fetched.
 - **Workspaces in every lock format.** npm, pnpm and yarn berry
   workspaces are read natively, every member a root.
 - **Private names stay private.** The registry is only asked about
@@ -201,16 +212,19 @@ lifecycle `pre-build`, SPDX 3 type `source`. See
 - **npm lockfile v1 not supported.** Only lockfile versions 2 and 3
   (with the `packages` key) are supported, and only pnpm lock schemas
   6 and 9. Older files need regenerating with a modern tool.
-- **Licenses are not fetched.** The registry is asked for suppliers
-  only. Dependency licenses are known where a lockfile records them,
-  which only `package-lock.json` does.
+- **pnpm and yarn licenses need the network.** Their locks record none,
+  so with networking disabled those nodes have no license; the same
+  goes for a package of a private registry, a repository or a path,
+  which the public registry is never asked about.
 - **A supplier may be an account name.** For a package declaring no
   author, the supplier is the npm account that published it, such as
   `react-bot`, which is not the name an entity goes by.
 - **License field limitations.** `package-lock.json` only includes a
   simple `license` string. Packages with complex license expressions
   in their own `package.json` (e.g., `(MIT OR Apache-2.0)`) may be
-  simplified or missing in the lock file.
+  simplified or missing in the lock file, and what the lock recorded is
+  kept as it is. `UNLICENSED` and `SEE LICENSE IN <file>` leave a node
+  with no license.
 - **Berry hashes.** A berry lock's checksums cannot be tied to registry
   artifacts, so those nodes carry none — an honest gap rather than an
   unverifiable value.

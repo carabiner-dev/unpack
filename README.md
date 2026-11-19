@@ -248,7 +248,7 @@ inventory, and the modules built into any
 | [Go](docs/decomposers/golang.md) | `go.sum` | `go.mod` | Go module proxy |
 | [Maven](docs/decomposers/maven.md) | _(none)_ | `pom.xml` | Maven Central |
 | [PHP (Composer)](docs/decomposers/composer.md) | `composer.lock` | `composer.json` | _(none — licenses and authors are in the lock)_ |
-| [JavaScript](docs/decomposers/npm.md) | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` | `package.json` | npm registry (suppliers) |
+| [JavaScript](docs/decomposers/npm.md) | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` | `package.json` | npm registry (suppliers, licenses) |
 | [Python](docs/decomposers/python.md) | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry) | PyPI JSON API |
 | [Ruby (Bundler)](docs/decomposers/ruby.md) | `Gemfile.lock` | _(not read)_ | rubygems.org API |
 | [Rust](docs/decomposers/rust.md) | `Cargo.lock` | `Cargo.toml` | crates.io API |

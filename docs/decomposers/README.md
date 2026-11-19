@@ -10,7 +10,7 @@ can be serialized as SPDX or CycloneDX.
 | [Go](golang.md) | `source/golang/` | `go.sum` | `go.mod` | deps.dev API + Go module proxy |
 | [Maven](maven.md) | `source/maven/` | _(none)_ | `pom.xml` | Maven Central |
 | [PHP (Composer)](composer.md) | `source/composer/` | `composer.lock` | `composer.json` | _(none — licenses and authors are in the lock)_ |
-| [JavaScript](npm.md) | `source/npm/` | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` | `package.json` | npm registry (suppliers) |
+| [JavaScript](npm.md) | `source/npm/` | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` | `package.json` | npm registry (suppliers, licenses) |
 | [Python](python.md) | `source/python/` | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry only) | PyPI JSON API |
 | [Ruby (Bundler)](ruby.md) | `source/ruby/` | `Gemfile.lock` | _(not read — executable Ruby)_ | rubygems.org API |
 | [Rust](rust.md) | `source/rust/` | `Cargo.lock` | `Cargo.toml` | crates.io API |
@@ -180,7 +180,7 @@ decomposers uniformly.
 | **Maven:** checksum files (.sha1, .sha256) | skip | yes | yes |
 | **Maven:** artifact download (SHA-256/SHA-512) | skip | skip | yes |
 | **JavaScript:** local parsing (lock files, manifests) | works | works | works |
-| **JavaScript:** npm registry (suppliers), for packages of the public registry only | skip | yes | yes |
+| **JavaScript:** npm registry (suppliers, and licenses the lock lacks), for packages of the public registry only | skip | yes | yes |
 | **PHP:** _(none -- fully offline, licenses included)_ | works | works | works |
 | **Python:** local parsing (lockfiles, requirements) | works | works | works |
 | **Ruby:** local parsing (Gemfile.lock) | works | works | works |
