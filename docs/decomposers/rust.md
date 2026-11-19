@@ -55,6 +55,15 @@
 | `--include-build` | `IncludeBuildDependencies` | Crates listed in `[build-dependencies]` in `Cargo.toml`. These are typically proc-macro crates or build script helpers. Edge type: `buildDependency`. |
 | `--include-optional` | _(no-op)_ | Cargo's `optional = true` flag on dependencies is related to feature gates, not optional installation. Not currently mapped. |
 
+## Generation context
+
+`source`. The decomposer reads `Cargo.lock` and `Cargo.toml` as they
+stand in the source tree, before anything is built, so a document made
+from its data is a source SBOM: CycloneDX lifecycle `pre-build`, SPDX 3
+type `source`. A built binary is read by the
+[Rust binary](rustbinary.md) decomposer, which reports `analyzed`. See
+[Generation context](README.md#generation-context).
+
 ## Strengths
 
 - **Rich metadata from crates.io.** Every dependency gets license,

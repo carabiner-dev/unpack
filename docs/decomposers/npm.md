@@ -97,6 +97,14 @@ nothing.
 `peerDependencies` are not covered by the common flags and remain a
 decomposer-specific option.
 
+## Generation context
+
+`source`, for every lock file. The decomposer reads the lock and its
+manifests as they stand in the source tree, before anything is built or
+installed, so a document made from its data is a source SBOM: CycloneDX
+lifecycle `pre-build`, SPDX 3 type `source`. See
+[Generation context](README.md#generation-context).
+
 ## Strengths
 
 - **No network requests.** All data comes from local files.

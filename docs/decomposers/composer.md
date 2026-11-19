@@ -74,6 +74,18 @@ registries do.
 | `--include-build` | _(no-op)_ | Composer has no build dependency concept. |
 | `--include-optional` | _(no-op)_ | Composer's `suggest` entries are recommendations, not resolved dependencies, and are not read. |
 
+## Generation context
+
+`source`, for `composer.lock`. It is read as it stands in the source
+tree, before anything is installed, so a document made from it is a
+source SBOM: CycloneDX lifecycle `pre-build`, SPDX 3 type `source`.
+
+Installed environments are another matter. Vendor directories are read
+by the system decomposer (`system/composer/`) out of a filesystem already
+put together, an image or a system root, and that decomposer reports
+`analyzed`. See
+[Generation context](README.md#generation-context).
+
 ## Conformance
 
 The reader is held to `composer show --locked`, which answers from the

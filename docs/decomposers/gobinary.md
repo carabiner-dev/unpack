@@ -119,6 +119,15 @@ transitive requirement, only that it was linked. Every linked module is a
 their `go.mod` files can be read. The inclusion flags are no-ops, as for
 Go source.
 
+## Generation context
+
+`analyzed`. The decomposer reads the build information embedded in a
+binary that is already built, so a document made from its data is an
+analyzed SBOM: CycloneDX lifecycle `post-build`, SPDX 3 type `analyzed`.
+That holds although what it reads was recorded by the build: the SBOM is
+made afterwards, from the artifact, with only what the artifact kept. See
+[Generation context](README.md#generation-context).
+
 ## Strengths
 
 - **Ground truth.** The list is what the linker actually used, after

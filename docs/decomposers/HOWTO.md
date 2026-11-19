@@ -53,6 +53,28 @@ NodeLists, one per thing found. A codebase path holding a Go module and an
 npm project yields two; a container image yields one, rooted at a node
 describing the image.
 
+A NodeList holds components and how they relate. What an unpacker learns
+that is a document's to state and not a component's travels beside it, in
+an `api.Extraction`, through an optional second interface:
+
+```go
+type Extraction struct {
+    NodeList *sbom.NodeList
+    Contexts []GenerationContext // the contexts the graph was read in
+}
+
+type ExtractionUnpacker interface {
+    Extractions(context.Context, DecomposableSubject) ([]*Extraction, error)
+}
+```
+
+`Extractions` is `Extract` with more to tell: the NodeLists are the same
+ones, each with the [generation context](README.md#generation-context) of
+the decomposers behind it. Every unpacker in the repository implements it
+and has `Extract` call it. Callers that want the contexts use
+`api.Extractions(ctx, unpacker, subject)`, which falls back to `Extract`,
+with nothing said, for an unpacker that only has that.
+
 ### Decomposers
 
 A decomposer cracks one flavor of a subject and renders it as a NodeList:
@@ -90,6 +112,17 @@ entry point. The three that matter:
   `ExtractArtifact(io.ReaderAt, path, *DecomposerOptions)`. The artifact
   unpacker probes every file of its subject through the filter and reads
   only the ones that pass.
+
+Every decomposer also implements `api.ContextReporter`, which is how a
+document comes to say in what context it was generated:
+
+- `api.ContextReporter` adds `GenerationContext() api.GenerationContext`:
+  at what point of the software's life the decomposer reads. It is
+  `api.ContextSource` for one reading manifests and lock files in a source
+  tree, `api.ContextBuild` for one reading what a build recorded, and
+  `api.ContextAnalyzed` for one taking apart something already built. The
+  interface is optional as far as the compiler goes; a decomposer without
+  it leaves the documents made from its data without a type.
 
 One more interface is optional and read by *parents*, not by the
 decomposer's own unpacker:
@@ -230,11 +263,18 @@ package example
 var (
     _ api.Decomposer       = (*Decomposer)(nil)
     _ api.SourceDecomposer = (*Decomposer)(nil)
+    _ api.ContextReporter  = (*Decomposer)(nil)
 )
 
 func New() *Decomposer { return &Decomposer{} }
 
 type Decomposer struct{}
+
+// GenerationContext says in what context the decomposer's data is read:
+// a lock file, as it stands in the source tree.
+func (d *Decomposer) GenerationContext() api.GenerationContext {
+    return api.ContextSource
+}
 
 // Options configures the example decomposer.
 type Options struct {
@@ -262,6 +302,17 @@ func (d *Decomposer) getOptions(opts *api.DecomposerOptions) *Options {
 
 The compile-time assertions are the convention across the repo and catch a
 missing method at build time rather than at registration time.
+
+`GenerationContext` is one line, and worth a thought: it decides what the
+SBOMs made from the decomposer's data say about how they were made. Ask
+what the decomposer reads, not which command runs it. A source decomposer
+reading a lock file reads `api.ContextSource`. One reading a record a
+build tool wrote while resolving, as the sbt decomposer does, reads
+`api.ContextBuild`. A system or artifact decomposer reads something
+already built, `api.ContextAnalyzed`, even when what it finds there was
+recorded during the build. Add the decomposer to the table in
+`TestDecomposerContexts` (`api/v1/context_test.go`), which pins the
+context of each one.
 
 Decomposer-specific options travel inside `DecomposerOptions` in a bag keyed
 by the decomposer's Go type. The unpacker fills the bag from
@@ -439,9 +490,10 @@ If your decomposer takes options that deserve a CLI flag, wire it in
 
 Add `docs/decomposers/<ecosystem>.md` following the layout of the existing
 pages: location, how it works, data produced per dependency, options,
-dependency-type mapping, strengths and weaknesses. Then add a row to the
-tables in `docs/decomposers/README.md` (including the networking and
-inclusion-flag tables) and in the top-level `README.md`.
+dependency-type mapping, generation context, strengths and weaknesses.
+Then add a row to the tables in `docs/decomposers/README.md` (including
+the networking, inclusion-flag and generation-context tables) and in the
+top-level `README.md`.
 
 ## Writing a system decomposer
 
@@ -618,7 +670,17 @@ type Unpacker struct {
     decomposers map[string]api.Decomposer
 }
 
+// Extract returns the node lists alone, for callers that want no more.
 func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject) ([]*sbom.NodeList, error) {
+    extractions, err := u.Extractions(ctx, subject)
+    return api.NodeLists(extractions), err
+}
+
+var _ api.ExtractionUnpacker = (*Unpacker)(nil)
+
+// Extractions does the work, and returns with each node list the context
+// it was read in.
+func (u *Unpacker) Extractions(ctx context.Context, subject api.DecomposableSubject) ([]*api.Extraction, error) {
     if subject == nil {
         return nil, fmt.Errorf("widget unpacker received a nil subject")
     }
@@ -629,7 +691,11 @@ func (u *Unpacker) Extract(ctx context.Context, subject api.DecomposableSubject)
         )
     }
     // Build DecomposerOptions from u.Options, run the decomposers, and
-    // route any child subjects through api.UnpackerFor.
+    // route any child subjects through api.UnpackerFor. For each node
+    // list a decomposer returns:
+    //
+    //     extraction := api.NewExtraction(nl)
+    //     extraction.AddContextOf(d)
     ...
 }
 
@@ -667,11 +733,24 @@ Conventions the existing unpackers follow:
 - An unpacker that only routes and has no decomposers of its own makes
   `RegisterDecomposer` and `UnregisterDecomposer` no-ops, as the image
   unpacker does.
+- Put the work in `Extractions` and have `Extract` return its node lists,
+  so the two can never disagree. Give each node list the context of the
+  decomposer that produced it with `Extraction.AddContextOf`, which does
+  nothing for a decomposer that does not say.
+- When you assemble one graph out of several, the graph was read in every
+  context its parts were: read children with
+  `api.Extractions(ctx, child, subject)` rather than `child.Extract`, and
+  merge what they report with `api.MergedContexts`. If your subject is
+  itself something built that you take apart, add `api.ContextAnalyzed`
+  for it, as the image unpacker does: an image holding nothing a
+  decomposer recognizes was still analyzed.
 
 ### CLI
 
 Add a command under `internal/cmd/` that parses its arguments into the
-subject, builds the unpacker, sets options from flags and calls `Extract`.
+subject, builds the unpacker, sets options from flags and calls
+`Extractions`, passing the contexts it gets to the document writer with
+`withContexts`. The command does not decide the context itself.
 Reuse the shared option sets in `optionsets.go` for output format and file
 inclusion so the new command renders exactly like the others. The command
 should do nothing else: all logic belongs in the unpacker.
@@ -680,6 +759,8 @@ should do nothing else: all logic belongs in the unpacker.
 
 - [ ] SPDX header on every new file.
 - [ ] Compile-time interface assertions (`var _ api.Decomposer = ...`).
+- [ ] `GenerationContext()` returns what the decomposer reads, and the decomposer is in `TestDecomposerContexts`.
+- [ ] A new unpacker implements `api.ExtractionUnpacker`, with `Extract` returning the node lists of `Extractions`.
 - [ ] Pure Go; no shelling out to ecosystem tooling.
 - [ ] Network use gated on `opts.Networking`; local data alone produces a graph.
 - [ ] Root node carries `opts.Version` and `opts.CommitHash` (source decomposers).

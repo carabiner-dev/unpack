@@ -90,6 +90,14 @@ configurations, `development` for the rest.
 | `--include-build` | _(no-op)_ | |
 | `--include-optional` | _(no-op)_ | |
 
+## Generation context
+
+`build`. The decomposer does not read a file of the source tree: it reads
+the snapshot sbt wrote of what it resolved for the build, which is the
+build tool's own record. A document made from its data is a build SBOM:
+CycloneDX lifecycle `build`, SPDX 3 type `build`. See
+[Generation context](README.md#generation-context).
+
 ## Networking
 
 None. sbt already resolved the build; reading the snapshot is offline.

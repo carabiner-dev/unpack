@@ -57,6 +57,14 @@ top-level `Networking` setting (`NetworkFull`).
 The `provided` scope (`IncludeProvided`) is a decomposer-specific option
 not mapped to any common flag.
 
+## Generation context
+
+`source`. The decomposer reads `pom.xml` as it stands in the source tree
+and the POMs it leads to, before anything is built, so a document made
+from its data is a source SBOM: CycloneDX lifecycle `pre-build`, SPDX 3
+type `source`. See
+[Generation context](README.md#generation-context).
+
 ## Strengths
 
 - **Full POM resolution.** Handles parent chains, BOM imports, property
