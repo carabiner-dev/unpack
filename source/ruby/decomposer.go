@@ -94,7 +94,9 @@ func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.Decompose
 	// every Ruby SBOM is licence-empty. Enrichment fills what
 	// rubygems.org knows.
 	if opts.Networking >= api.NetworkEssential {
-		NewRubyGemsClient(dOpts.Concurrency).enrichNodes(rb)
+		client := NewRubyGemsClient(dOpts.Concurrency)
+		client.Logger = logging.FromContext(ctx)
+		client.enrichNodes(rb)
 	}
 	return nl, nil
 }

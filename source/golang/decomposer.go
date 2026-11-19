@@ -22,6 +22,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/code"
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 var _ api.Decomposer = (*Decomposer)(nil)
@@ -101,7 +102,9 @@ func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.Decompose
 // falling back to downloading module zips from the Go proxy for
 // modules not found in deps.dev. Sets licenses and VCS external
 // references on dependency nodes.
-func (d *Decomposer) enrichLicenses(nl *sbom.NodeList, rootModule string, opts *Options, networking api.NetworkLevel) {
+func (d *Decomposer) enrichLicenses(
+	ctx context.Context, nl *sbom.NodeList, rootModule string, opts *Options, networking api.NetworkLevel,
+) {
 	// Collect dependency modules that need enrichment
 	var modules []modKey
 	for _, node := range nl.GetNodes() {
@@ -125,6 +128,7 @@ func (d *Decomposer) enrichLicenses(nl *sbom.NodeList, rootModule string, opts *
 	}
 
 	lc := newLicenseClient(opts.ProxyURL, opts.Concurrency)
+	lc.log = logging.FromContext(ctx)
 	results := lc.FetchLicenses(modules, networking >= api.NetworkFull)
 
 	// Apply enrichment data to nodes
@@ -254,6 +258,10 @@ func (d *Decomposer) fetchDependencyGraph(
 		concurrency = defaultConcurrency
 	}
 
+	// A module whose go.mod cannot be read keeps its place in the graph
+	// and loses its own edges, which the caller is told of below.
+	failures := &logging.Failures{}
+
 	// Use WaitGroup and semaphore for parallel fetching
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, concurrency)
@@ -296,6 +304,7 @@ func (d *Decomposer) fetchDependencyGraph(
 			modFile, err := d.fetchModFile(ctx, modPath, version, proxyURL, client, opts.PreferModuleCache)
 			if err != nil {
 				// Skip - some modules may not have go.mod or may be unreachable
+				failures.Add(modKey, err)
 				return
 			}
 
@@ -319,6 +328,19 @@ func (d *Decomposer) fetchDependencyGraph(
 	}
 
 	wg.Wait()
+
+	const (
+		summary = "go: go.mod files could not be read, the graph lacks the edges from those modules to what they require"
+		detail  = "go: modules whose go.mod could not be read"
+	)
+	log := logging.FromContext(ctx)
+	if client == nil {
+		// With networking off the module cache is all there is, and a
+		// module missing from it is what the caller asked for.
+		failures.ReportQuietly(log, len(toFetch), summary, detail)
+		return
+	}
+	failures.Report(log, len(toFetch), summary, detail)
 }
 
 // fetchModFile reads a module's go.mod from the module proxy, which is

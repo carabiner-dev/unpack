@@ -112,6 +112,7 @@ func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.Decompose
 	// POM declares: the dependencies of those live in POMs of their own,
 	// which only the repository has.
 	dt := NewDependencyTree(effective, resolver, dOpts)
+	dt.log = logging.FromContext(ctx)
 	if resolver == nil {
 		logging.FromContext(ctx).Debug("maven: networking is disabled, the graph holds only the dependencies pom.xml declares",
 			"pom", filepath.Join(opts.WorkDir, "pom.xml"))
@@ -124,6 +125,7 @@ func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.Decompose
 	if dOpts.IncludeBuild {
 		dt.AddBuildPlugins()
 	}
+	dt.reportSkipped()
 
 	// 6. Fetch artifact hashes (essential: checksum files; full: download+compute)
 	if opts.Networking >= api.NetworkEssential {

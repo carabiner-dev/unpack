@@ -13,6 +13,8 @@ import (
 
 	"github.com/protobom/protobom/pkg/sbom"
 	"golang.org/x/mod/module"
+
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 // This file is about what a Go module hashes to.
@@ -108,7 +110,18 @@ func (d *Decomposer) hashModuleZips(ctx context.Context, nl *sbom.NodeList, root
 	if !proxyStatesZipHashes(proxyURL) {
 		return
 	}
-	fetchZipHashes(ctx, opts.HTTPClient, proxyURL, moduleNodes(nl, rootModule), opts.Concurrency)
+	nodes := moduleNodes(nl, rootModule)
+	fetchZipHashes(ctx, opts.HTTPClient, proxyURL, nodes, opts.Concurrency)
+
+	failures := &logging.Failures{}
+	for _, node := range nodes {
+		if len(node.GetHashes()) == 0 {
+			failures.Add(node.GetName()+"@"+node.GetVersion(), nil)
+		}
+	}
+	failures.Report(logging.FromContext(ctx), len(nodes),
+		"go: the proxy stated no hash for module zips, those modules have no hash",
+		"go: modules the proxy stated no zip hash for")
 }
 
 // moduleNodes returns the nodes of the graph that are modules a proxy

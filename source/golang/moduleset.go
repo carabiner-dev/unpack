@@ -117,7 +117,7 @@ func (d *Decomposer) BuildNodeListWithContext(ctx context.Context, set *ModuleSe
 
 	if opts.Networking >= api.NetworkEssential {
 		d.hashModuleZips(ctx, nl, set.Main.Path, dOpts)
-		d.enrichLicenses(nl, set.Main.Path, dOpts, opts.Networking)
+		d.enrichLicenses(ctx, nl, set.Main.Path, dOpts, opts.Networking)
 	}
 	return nl, nil
 }
