@@ -4,6 +4,7 @@
 package npm
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/code"
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 var _ api.Decomposer = (*Decomposer)(nil)
@@ -56,9 +58,17 @@ func (d *Decomposer) Requirements(_ *api.DecomposerOptions) []api.Requirement {
 	return nil
 }
 
-// Extract parses package.json and package-lock.json files and builds the complete
-// dependency graph as a protobom NodeList.
+// Extract is ExtractWithContext with a background context, for a caller
+// that has none to give.
 func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return d.ExtractWithContext(context.Background(), opts)
+}
+
+var _ api.ContextDecomposer = (*Decomposer)(nil)
+
+// ExtractWithContext parses package.json and package-lock.json files and builds the complete
+// dependency graph as a protobom NodeList.
+func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	workDir := opts.WorkDir
 	if workDir == "" {
 		workDir = "."
@@ -68,18 +78,18 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	// package-lock.json is the format this decomposer grew up on.
 	switch {
 	case fileExists(filepath.Join(workDir, "package-lock.json")):
-		return d.extractNpm(workDir, opts)
+		return d.extractNpm(ctx, workDir, opts)
 	case fileExists(filepath.Join(workDir, "pnpm-lock.yaml")):
-		return d.extractPnpm(workDir, opts)
+		return d.extractPnpm(ctx, workDir, opts)
 	case fileExists(filepath.Join(workDir, "yarn.lock")):
-		return d.extractYarn(workDir, opts)
+		return d.extractYarn(ctx, workDir, opts)
 	default:
 		return nil, fmt.Errorf("no supported JavaScript lockfile in %s", workDir)
 	}
 }
 
 // extractNpm builds the graph from package-lock.json.
-func (d *Decomposer) extractNpm(workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+func (d *Decomposer) extractNpm(ctx context.Context, workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	// Parse package.json
 	packageJSON, err := ParsePackageJSON(workDir)
 	if err != nil {
@@ -101,7 +111,7 @@ func (d *Decomposer) extractNpm(workDir string, opts *api.DecomposerOptions) (*s
 		return nil, fmt.Errorf("building dependency graph: %w", err)
 	}
 
-	enrichFromRegistry(nl, opts, nil)
+	enrichFromRegistry(ctx, nl, opts, nil)
 	return nl, nil
 }
 
@@ -109,14 +119,16 @@ func (d *Decomposer) extractNpm(workDir string, opts *api.DecomposerOptions) (*s
 // graph's packages, when networking allows. public says which packages
 // are the public registry's to describe; nil is for the locks that state
 // where each package was fetched from, where that settles it.
-func enrichFromRegistry(nl *sbom.NodeList, opts *api.DecomposerOptions, public func(*sbom.Node) bool) {
+func enrichFromRegistry(ctx context.Context, nl *sbom.NodeList, opts *api.DecomposerOptions, public func(*sbom.Node) bool) {
 	if opts.Networking < api.NetworkEssential {
 		return
 	}
 	if public == nil {
 		public = fromPublicRegistry
 	}
-	NewRegistryClient(0).enrichNodes(nl, public)
+	client := NewRegistryClient(0)
+	client.Logger = logging.FromContext(ctx)
+	client.enrichNodes(nl, public)
 }
 
 // pnpmPublic says which packages of a pnpm graph come from the public
@@ -154,7 +166,7 @@ func berryPublic(lock *YarnBerryLock, workDir string) func(*sbom.Node) bool {
 }
 
 // extractPnpm builds the graph from pnpm-lock.yaml.
-func (d *Decomposer) extractPnpm(workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+func (d *Decomposer) extractPnpm(ctx context.Context, workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	lock, err := ReadPnpmLock(workDir)
 	if err != nil {
 		return nil, err
@@ -163,7 +175,7 @@ func (d *Decomposer) extractPnpm(workDir string, opts *api.DecomposerOptions) (*
 	if err != nil {
 		return nil, err
 	}
-	enrichFromRegistry(nl, opts, pnpmPublic(workDir))
+	enrichFromRegistry(ctx, nl, opts, pnpmPublic(workDir))
 	return nl, nil
 }
 
@@ -171,7 +183,7 @@ func (d *Decomposer) extractPnpm(workDir string, opts *api.DecomposerOptions) (*
 // wrote it: both spell the file the same, so the content decides. The
 // manifests carry what neither generation's lock does: the project's
 // identity and the kind of each direct dependency.
-func (d *Decomposer) extractYarn(workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+func (d *Decomposer) extractYarn(ctx context.Context, workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	data, err := os.ReadFile(filepath.Join(workDir, "yarn.lock"))
 	if err != nil {
 		return nil, fmt.Errorf("reading lockfile: %w", err)
@@ -186,7 +198,7 @@ func (d *Decomposer) extractYarn(workDir string, opts *api.DecomposerOptions) (*
 		if err != nil {
 			return nil, err
 		}
-		enrichFromRegistry(nl, opts, berryPublic(lock, workDir))
+		enrichFromRegistry(ctx, nl, opts, berryPublic(lock, workDir))
 		return nl, nil
 	}
 
@@ -202,7 +214,7 @@ func (d *Decomposer) extractYarn(workDir string, opts *api.DecomposerOptions) (*
 	if err != nil {
 		return nil, err
 	}
-	enrichFromRegistry(nl, opts, nil)
+	enrichFromRegistry(ctx, nl, opts, nil)
 	return nl, nil
 }
 

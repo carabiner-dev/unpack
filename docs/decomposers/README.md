@@ -192,6 +192,34 @@ decomposers uniformly.
 | **Rust:** local parsing (Cargo.toml/lock) | works | works | works |
 | **Rust:** crates.io API (enrichment), one request a second | skip | yes | yes |
 
+### Lookups that fail
+
+A lookup that fails does not fail an extraction: the graph is built from
+what is at hand. What is then missing is reported to the caller's logger,
+once for the run and not once a package: a warning with how many lookups
+failed of how many and the first error, and at the `debug` level the
+packages concerned. On the command line that is standard error; a
+program that wired no logger hears nothing (see
+[Logging](../../README.md#logging)).
+
+| Decomposer | Reported | What the graph is then short of |
+|------------|----------|--------------------------------|
+| Go | `go.mod` files that could not be read | The edges from those modules to what they require. With networking disabled this is at the `debug` level: the module cache is then all there is |
+| Go | deps.dev lookups that failed | License and source repository, unless the zip fallback finds a license |
+| Go | Modules the proxy stated no zip hash for | The hash |
+| JavaScript | npm registry lookups that failed | Supplier, and the license and hash the lock did not record |
+| Maven | POMs not found in the repository | The dependencies, license and supplier of those artifacts |
+| Maven | POMs whose parents or imports could not be resolved | What those artifacts inherit |
+| Maven | Artifacts with no checksum files | The hash |
+| Python | PyPI lookups that failed | License, supplier, description, and the hash of a requirements entry |
+| Ruby | rubygems.org lookups that failed | License, supplier, description |
+| Rust | crates.io lookups that failed | License, supplier and the other registry metadata |
+
+A Maven POM that cannot be fetched for a reason other than not being
+there, after retries, is still an error: see the [Maven page](maven.md).
+sbt's checksum lookups are not reported: a library that is not on Maven
+Central is expected there.
+
 ## Dependency inclusion flags
 
 By default, only production/compile dependencies are included in the

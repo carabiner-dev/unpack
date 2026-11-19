@@ -160,6 +160,15 @@ first:
    which Apache version, so unrecognized classifiers are dropped rather
    than guessed at.
 
+### Lookups that fail
+
+A PyPI lookup that fails does not fail the extraction: the package is
+left with what its lockfile said. It is reported, though, as one warning
+for the run giving how many lookups failed of how many and the first
+error, and at the `debug` level the packages concerned. The warning goes
+to the caller's logger: standard error on the command line, nowhere for
+a program that wired none (see [Logging](../../README.md#logging)).
+
 ## Options
 
 | Option | Type | Default | Description |

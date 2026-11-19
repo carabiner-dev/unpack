@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/require"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
@@ -122,4 +123,38 @@ func TestExtractionsCarryTheDecomposersContext(t *testing.T) {
 	nl, err := unpacker.ExtractCodebaseWithContext(context.Background(), t.TempDir())
 	require.NoError(t, err)
 	require.Nil(t, nl)
+}
+
+type contextKey struct{}
+
+// contextRecorder is a decomposer that keeps what the context it is run
+// with carries.
+type contextRecorder struct{ carried any }
+
+func (c *contextRecorder) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return c.ExtractWithContext(context.Background(), opts)
+}
+
+func (c *contextRecorder) ExtractWithContext(ctx context.Context, _ *api.DecomposerOptions) (*sbom.NodeList, error) {
+	c.carried = ctx.Value(contextKey{})
+	nl := sbom.NewNodeList()
+	nl.AddRootNode(&sbom.Node{Id: "root", Name: "root"})
+	return nl, nil
+}
+func (c *contextRecorder) Requirements(*api.DecomposerOptions) []api.Requirement { return nil }
+func (c *contextRecorder) DefaultOptions() any                                   { return nil }
+
+// The context an extraction is called with reaches the decomposers that
+// take one.
+func TestExtractCodeBasesPassesContext(t *testing.T) {
+	t.Parallel()
+	recorder := &contextRecorder{}
+	opts := DefaultOptions
+	opts.ReadGitVersion = false
+
+	ctx := context.WithValue(t.Context(), contextKey{}, "carried")
+	impl := &defaultImplementation{}
+	_, err := impl.ExtractCodeBases(ctx, &opts, map[api.Decomposer][]string{recorder: {t.TempDir()}})
+	require.NoError(t, err)
+	require.Equal(t, "carried", recorder.carried)
 }

@@ -4,6 +4,7 @@
 package stitch
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -12,8 +13,8 @@ import (
 	"sort"
 
 	protosbom "github.com/protobom/protobom/pkg/sbom"
-	"github.com/sirupsen/logrus"
 
+	"github.com/carabiner-dev/unpack/internal/logging"
 	"github.com/carabiner-dev/unpack/sbom"
 )
 
@@ -72,6 +73,12 @@ func NewCatalog() *Catalog {
 // the rest are skipped and listed by Unparsed, since a directory of
 // documents may hold a README next to them.
 func (c *Catalog) Load(paths ...string) error {
+	return c.LoadWithContext(context.Background(), paths...)
+}
+
+// LoadWithContext is Load, run with the caller's context, whose logger it
+// reports to.
+func (c *Catalog) LoadWithContext(ctx context.Context, paths ...string) error {
 	var errs []error
 	for _, path := range paths {
 		info, err := os.Stat(path)
@@ -80,7 +87,7 @@ func (c *Catalog) Load(paths ...string) error {
 			continue
 		}
 		if !info.IsDir() {
-			if err := c.LoadFile(path); err != nil {
+			if err := c.LoadFileWithContext(ctx, path); err != nil {
 				errs = append(errs, err)
 			}
 			continue
@@ -92,8 +99,8 @@ func (c *Catalog) Load(paths ...string) error {
 			if !d.Type().IsRegular() {
 				return nil
 			}
-			if err := c.LoadFile(p); err != nil {
-				logrus.Debugf("skipping %s: %v", p, err)
+			if err := c.LoadFileWithContext(ctx, p); err != nil {
+				logging.FromContext(ctx).Debugf("skipping %s: %v", p, err)
 				c.unparsed = append(c.unparsed, p)
 			}
 			return nil
@@ -107,13 +114,18 @@ func (c *Catalog) Load(paths ...string) error {
 
 // LoadFile reads one supplement from a file.
 func (c *Catalog) LoadFile(path string) error {
+	return c.LoadFileWithContext(context.Background(), path)
+}
+
+// LoadFileWithContext is LoadFile, run with the caller's context.
+func (c *Catalog) LoadFileWithContext(ctx context.Context, path string) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("opening supplement: %w", err)
 	}
 	defer f.Close() //nolint:errcheck // read-only
 
-	doc, err := sbom.ParseDocument(f)
+	doc, err := sbom.ParseDocumentWithContext(ctx, f)
 	if err != nil {
 		return fmt.Errorf("reading supplement %s: %w", path, err)
 	}

@@ -4,6 +4,7 @@
 package python
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -216,7 +217,7 @@ func parseRequirementLine(line string) (*requirementEntry, error) {
 }
 
 // extractRequirements builds the graph a requirements.txt states.
-func (d *Decomposer) extractRequirements(workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+func (d *Decomposer) extractRequirements(ctx context.Context, workDir string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	entries, err := readRequirementsFile(filepath.Join(workDir, "requirements.txt"), map[string]bool{})
 	if err != nil {
 		return nil, err
@@ -318,7 +319,7 @@ func (d *Decomposer) extractRequirements(workDir string, opts *api.DecomposerOpt
 				artifacts.allowed[packageKey{name: entry.Name, version: entry.Version}] = entry.Hashes
 			}
 		}
-		NewPyPIClient(dOpts.Concurrency).enrichNodes(nodes, enrichable, artifacts)
+		newPyPIClient(ctx, dOpts.Concurrency).enrichNodes(nodes, enrichable, artifacts)
 	}
 	return nl, nil
 }

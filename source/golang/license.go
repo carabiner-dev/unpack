@@ -12,11 +12,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	classifier "github.com/google/licenseclassifier/v2"
 	"github.com/google/licenseclassifier/v2/assets"
 	"golang.org/x/mod/module"
 	khttp "sigs.k8s.io/release-utils/http"
 
+	"github.com/carabiner-dev/unpack/internal/logging"
 	"github.com/carabiner-dev/unpack/license"
 )
 
@@ -75,6 +77,12 @@ type depsDevLink struct {
 type licenseClient struct {
 	agent    *khttp.Agent
 	proxyURL string
+
+	// depsDevURL is where the deps.dev API is.
+	depsDevURL string
+
+	// log is the caller's logger, silent unless the decomposer sets it.
+	log *clog.Logger
 }
 
 // newLicenseClient creates a new license client.
@@ -92,8 +100,10 @@ func newLicenseClient(proxyURL string, concurrency int) *licenseClient {
 		WithFailOnHTTPError(true)
 
 	return &licenseClient{
-		agent:    agent,
-		proxyURL: proxyURL,
+		agent:      agent,
+		proxyURL:   proxyURL,
+		depsDevURL: depsDevBaseURL,
+		log:        logging.Silent(),
 	}
 }
 
@@ -147,19 +157,25 @@ func (lc *licenseClient) fetchFromDepsDev(modules []modKey) map[string]*licenseR
 	urls := make([]string, len(modules))
 	for i, m := range modules {
 		escapedName := strings.ReplaceAll(m.Path, "/", "%2F")
-		urls[i] = fmt.Sprintf("%s/systems/go/packages/%s/versions/%s", depsDevBaseURL, escapedName, m.Version)
+		urls[i] = fmt.Sprintf("%s/systems/go/packages/%s/versions/%s", lc.depsDevURL, escapedName, m.Version)
 	}
 
 	bodies, errs := lc.agent.GetGroup(urls)
 
 	result := make(map[string]*licenseResult, len(modules))
+	failures := &logging.Failures{}
 	for i, m := range modules {
-		if errs[i] != nil || len(bodies[i]) == 0 {
+		if errs[i] != nil {
+			failures.Add(m.Path+"@"+m.Version, errs[i])
+			continue
+		}
+		if len(bodies[i]) == 0 {
 			continue
 		}
 
 		var resp depsDevVersionResponse
 		if err := json.Unmarshal(bodies[i], &resp); err != nil {
+			failures.Add(m.Path+"@"+m.Version, fmt.Errorf("reading the answer of deps.dev: %w", err))
 			continue
 		}
 
@@ -182,6 +198,13 @@ func (lc *licenseClient) fetchFromDepsDev(modules []modKey) map[string]*licenseR
 
 		result[m.Path+"@"+m.Version] = lr
 	}
+
+	// A module deps.dev answers for with no license is not a failure. One
+	// it does not answer for is, and is left with no license or
+	// repository unless the zip fallback finds a license file.
+	failures.Report(lc.log, len(modules),
+		"go: deps.dev lookups failed, those modules get no license or source repository from it",
+		"go: modules the deps.dev lookup failed for")
 
 	return result
 }

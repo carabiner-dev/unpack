@@ -5,10 +5,10 @@ package composer
 
 import (
 	"fmt"
-	"log/slog"
 	"slices"
 	"sort"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/google/uuid"
 	"github.com/protobom/protobom/pkg/sbom"
 
@@ -27,6 +27,7 @@ import (
 type composerBuilder struct {
 	manifest *ComposerJSON
 	opts     *api.DecomposerOptions
+	log      *clog.Logger
 
 	nl     *sbom.NodeList
 	byName map[string]*ComposerPackage
@@ -72,10 +73,13 @@ func (cb *composerBuilder) resolve(name string) []*ComposerPackage {
 	return cb.devStandIns[name]
 }
 
-func buildComposerTree(lock *ComposerLock, manifest *ComposerJSON, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+func buildComposerTree(
+	lock *ComposerLock, manifest *ComposerJSON, opts *api.DecomposerOptions, log *clog.Logger,
+) (*sbom.NodeList, error) {
 	cb := &composerBuilder{
 		manifest: manifest,
 		opts:     opts,
+		log:      log,
 		nl:       sbom.NewNodeList(),
 		byName:   map[string]*ComposerPackage{},
 		nodes:    map[string]*sbom.Node{},
@@ -155,7 +159,7 @@ func (cb *composerBuilder) walkRequirements(requirements map[string]string, pare
 			// Nothing in the lock meets it: a dev requirement of a lock
 			// made without them, or a lock out of step with its
 			// manifest. The rest of the graph still stands.
-			slog.Debug("composer: the lock has no package for a requirement",
+			cb.log.Debug("composer: the lock has no package for a requirement",
 				"requirement", name, "required_by", parent.GetName())
 			continue
 		}

@@ -100,7 +100,7 @@ func TestBuildDependencyTree(t *testing.T) {
 	require.NoError(t, err)
 
 	set := d.moduleSetFromGoMod(modFile, "testdata/simple/go.mod")
-	trees := d.resolveGraph(set, &defaultOptions, api.NetworkEssential)
+	trees := d.resolveGraph(t.Context(), set, &defaultOptions, api.NetworkEssential)
 	require.NotNil(t, trees)
 
 	// Check root module has direct dependencies
@@ -118,7 +118,7 @@ func TestBuildDependencyTreeWithReplace(t *testing.T) {
 	require.NoError(t, err)
 
 	set := d.moduleSetFromGoMod(modFile, "testdata/with-replace/go.mod")
-	trees := d.resolveGraph(set, &defaultOptions, api.NetworkEssential)
+	trees := d.resolveGraph(t.Context(), set, &defaultOptions, api.NetworkEssential)
 	require.NotNil(t, trees)
 
 	// Check that replace directive was applied
@@ -538,13 +538,13 @@ func TestFetchModFileWithoutClient(t *testing.T) {
 	t.Setenv("GOMODCACHE", cache)
 
 	d := &Decomposer{}
-	modFile, err := d.fetchModFile("example.com/mod", "v1.0.0", "", nil, false)
+	modFile, err := d.fetchModFile(t.Context(), "example.com/mod", "v1.0.0", "", nil, false)
 	require.NoError(t, err)
 	require.Len(t, modFile.Require, 1)
 	require.Equal(t, "example.com/dep", modFile.Require[0].Mod.Path)
 
 	// Nothing cached and no client: the caller learns why.
-	_, err = d.fetchModFile("example.com/absent", "v1.0.0", "", nil, false)
+	_, err = d.fetchModFile(t.Context(), "example.com/absent", "v1.0.0", "", nil, false)
 	require.ErrorContains(t, err, "not in the local module cache")
 }
 
@@ -590,7 +590,7 @@ func TestFetchModFileSourcePrecedence(t *testing.T) {
 		{"cache stands in when the proxy fails", down.URL, down.Client(), false, "example.com/cached"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			modFile, err := d.fetchModFile(modPath, version, tc.proxy, tc.client, tc.prefer)
+			modFile, err := d.fetchModFile(t.Context(), modPath, version, tc.proxy, tc.client, tc.prefer)
 			require.NoError(t, err)
 			require.Len(t, modFile.Require, 1)
 			require.Equal(t, tc.wantModule, modFile.Require[0].Mod.Path)

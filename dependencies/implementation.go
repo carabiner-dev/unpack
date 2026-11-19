@@ -52,7 +52,8 @@ func (di *defaultImplementation) IndexPaths(
 		// library does not commit its composer.lock) and the codebase is
 		// still there. Options.UseGitIgnore governs cataloging files into
 		// the SBOM, which happens in ExtractCodeBases.
-		idx, err := indexer.CatalogDirectories(
+		idx, err := indexer.CatalogDirectoriesWithContext(
+			ctx,
 			path, code.WithUseGitignore(false),
 			code.WithExtraIgnorePattners(opts.IgnorePatterns),
 		)
@@ -129,7 +130,7 @@ func (di *defaultImplementation) ExtractCodeBases(
 				dOpts.SetDriverOptions(driver.Decomposer, driver.Options)
 			}
 
-			nl, err := d.Extract(dOpts)
+			nl, err := api.ExtractWithContext(ctx, d, dOpts)
 			if err != nil {
 				return nil, fmt.Errorf("from %q with %T: %w", cbPath, d, err)
 			}
@@ -150,7 +151,7 @@ func (di *defaultImplementation) ExtractCodeBases(
 				fsd.Options.IgnorePatterns = append(fsd.Options.IgnorePatterns, opts.IgnorePatterns...)
 				fsd.Options.NoGitignore = !opts.UseGitIgnore
 
-				nlFiles, err := fsd.IndexFS(os.DirFS(cbPath))
+				nlFiles, err := fsd.IndexFSWithContext(ctx, os.DirFS(cbPath))
 				if err != nil {
 					return nil, fmt.Errorf("indexing filesystem: %w", err)
 				}

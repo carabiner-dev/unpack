@@ -5,6 +5,7 @@ package sbom
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -13,7 +14,8 @@ import (
 	predicatejson "github.com/policylabs/collector/predicate/json"
 	"github.com/protobom/protobom/pkg/reader"
 	protosbom "github.com/protobom/protobom/pkg/sbom"
-	"github.com/sirupsen/logrus"
+
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 var (
@@ -36,7 +38,7 @@ var (
 // material travel along with the statement but nothing here checks them, so
 // the dependency data this yields is exactly as trustworthy as the file it
 // was read from.
-func parseEnveloped(r io.ReadSeeker) (*protosbom.Document, error) {
+func parseEnveloped(ctx context.Context, r io.ReadSeeker) (*protosbom.Document, error) {
 	// The failed format sniff consumed part of the stream.
 	if _, err := r.Seek(0, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("rewinding SBOM stream: %w", err)
@@ -71,7 +73,7 @@ func parseEnveloped(r io.ReadSeeker) (*protosbom.Document, error) {
 			continue
 		}
 
-		logrus.Debugf("read SBOM from the %q predicate of a security envelope", pred.GetType())
+		logging.FromContext(ctx).Debugf("read SBOM from the %q predicate of a security envelope", pred.GetType())
 		return doc, nil
 	}
 

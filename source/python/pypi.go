@@ -4,15 +4,20 @@
 package python
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/mail"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/protobom/protobom/pkg/sbom"
 	khttp "sigs.k8s.io/release-utils/http"
+
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 // This file enriches the graph with what the package index knows and the
@@ -30,6 +35,26 @@ const (
 type PyPIClient struct {
 	Agent   *khttp.Agent
 	BaseURL string
+
+	// Logger is where the client says what went wrong with its requests.
+	// The decomposer sets it to its caller's; left nil, nothing is logged.
+	Logger *clog.Logger
+}
+
+// logger returns the client's logger, and a silent one when it has none.
+func (c *PyPIClient) logger() *clog.Logger {
+	if c.Logger == nil {
+		return logging.Silent()
+	}
+	return c.Logger
+}
+
+// newPyPIClient creates a client that reports to the logger of the context
+// a decomposer is run with.
+func newPyPIClient(ctx context.Context, concurrency int) *PyPIClient {
+	client := NewPyPIClient(concurrency)
+	client.Logger = logging.FromContext(ctx)
+	return client
 }
 
 // NewPyPIClient creates a client for the PyPI JSON API.
@@ -155,16 +180,40 @@ func (c *PyPIClient) FetchAll(packages []packageKey) map[packageKey]*pypiInfo {
 	bodies, errs := c.Agent.GetGroup(urls)
 
 	result := make(map[packageKey]*pypiInfo, len(packages))
+	failed := []string{}
+	var firstErr error
+	fail := func(pkg packageKey, err error) {
+		failed = append(failed, pkg.name+"=="+pkg.version)
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
 	for i, pkg := range packages {
-		if errs[i] != nil || len(bodies[i]) == 0 {
+		if errs[i] != nil {
+			fail(pkg, errs[i])
+			continue
+		}
+		if len(bodies[i]) == 0 {
+			fail(pkg, errors.New("the index answered with nothing"))
 			continue
 		}
 		var resp pypiResponse
 		if err := json.Unmarshal(bodies[i], &resp); err != nil {
+			fail(pkg, fmt.Errorf("reading the index's answer: %w", err))
 			continue
 		}
 		resp.Info.files = resp.URLs
 		result[pkg] = &resp.Info
+	}
+
+	// Failures are skipped, as enrichment never breaks an extraction, but
+	// not in silence: the packages that got nothing are short of data
+	// with nothing in the graph to say why.
+	if len(failed) > 0 {
+		slices.Sort(failed)
+		c.logger().Warn("python: PyPI lookups failed, those packages get no license, supplier or description and may lack a hash",
+			"failed", len(failed), "requested", len(packages), "first_error", firstErr)
+		c.logger().Debug("python: packages the PyPI lookup failed for", "packages", failed)
 	}
 	return result
 }

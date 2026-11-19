@@ -11,6 +11,7 @@
 package sbt
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/code"
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 var (
@@ -139,8 +141,16 @@ func shallowest(paths []string) []string {
 	return ret
 }
 
-// Extract builds the dependency graph of the build from the snapshot.
+// Extract is ExtractWithContext with a background context, for a caller
+// that has none to give.
 func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return d.ExtractWithContext(context.Background(), opts)
+}
+
+var _ api.ContextDecomposer = (*Decomposer)(nil)
+
+// ExtractWithContext builds the dependency graph of the build from the snapshot.
+func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	snapshot, err := d.load()
 	if err != nil {
 		return nil, err
@@ -152,6 +162,7 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	}
 
 	builder := newSnapshotBuilder(snapshot, workDir, opts)
+	builder.log = logging.FromContext(ctx)
 	nl, err := builder.build()
 	if err != nil {
 		return nil, fmt.Errorf("building graph from dependency snapshot: %w", err)

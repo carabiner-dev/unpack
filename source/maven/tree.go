@@ -10,10 +10,12 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/google/uuid"
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 // ResolvedDependency represents a dependency after mediation.
@@ -64,6 +66,16 @@ type DependencyTree struct {
 
 	// Managed dependencies from dependencyManagement, keyed by "groupId:artifactId"
 	managed map[string]*Dependency
+
+	// log is the caller's logger, silent until the decomposer sets it.
+	log *clog.Logger
+
+	// What the repository did not have, collected while the tree is
+	// built and reported once it is (see reportSkipped): POMs it has no
+	// file for, and POMs whose parents or imports could not be resolved.
+	missingPOMs    logging.Failures
+	unresolvedPOMs logging.Failures
+	pomsRequested  int
 }
 
 // queueEntry is a BFS queue item for dependency resolution.
@@ -86,6 +98,7 @@ func NewDependencyTree(rootPOM *POM, resolver *Resolver, opts *Options) *Depende
 		edges:      make(map[string][]string),
 		edgeScopes: make(map[string]map[string]string),
 		managed:    make(map[string]*Dependency),
+		log:        logging.Silent(),
 	}
 
 	// Index dependencyManagement
@@ -210,6 +223,7 @@ func (dt *DependencyTree) Build() error {
 			// Fetching a dependency's POM is what lets us discover its
 			// transitive dependencies.
 			depPOM, err := dt.resolver.FetchPOMFrom(dep.GroupID, dep.ArtifactID, version, coord.RepoURL)
+			dt.pomsRequested++
 			switch {
 			case err == nil:
 				// proceed to extract transitive deps below
@@ -218,6 +232,7 @@ func (dt *DependencyTree) Build() error {
 				// in a different repo, or the coordinate is off). Tolerate it:
 				// keep the dependency node but skip expanding its transitives.
 				depPOM = nil
+				dt.missingPOMs.Add(coord.String(), err)
 			default:
 				// Transient/network failure after the agent's retries. Failing
 				// here beats returning a silently incomplete tree.
@@ -228,6 +243,8 @@ func (dt *DependencyTree) Build() error {
 				// Try to resolve effective POM for accurate data
 				if effective, err := dt.resolver.ResolveEffectivePOM(depPOM); err == nil {
 					depPOM = effective
+				} else {
+					dt.unresolvedPOMs.Add(coord.String(), err)
 				}
 				licenses = depPOM.Licenses
 				suppliers = depPOM.Suppliers()
@@ -341,13 +358,18 @@ func (dt *DependencyTree) AddBuildPlugins() {
 		var suppliers []*sbom.Person
 		if dt.resolver != nil {
 			depPOM, err := dt.resolver.FetchPOM(groupID, plugin.ArtifactID, plugin.Version)
+			dt.pomsRequested++
 			if err == nil {
 				effective, err := dt.resolver.ResolveEffectivePOM(depPOM)
 				if err == nil {
 					depPOM = effective
+				} else {
+					dt.unresolvedPOMs.Add(coord.String(), err)
 				}
 				licenses = depPOM.Licenses
 				suppliers = depPOM.Suppliers()
+			} else {
+				dt.missingPOMs.Add(coord.String(), err)
 			}
 		}
 
@@ -593,6 +615,29 @@ func (dt *DependencyTree) FetchHashes(computeModern bool) {
 			rd.Hashes = h
 		}
 	}
+
+	unhashed := &logging.Failures{}
+	for i := range coords {
+		if _, ok := allHashes[coords[i].String()]; !ok {
+			unhashed.Add(coords[i].String(), nil)
+		}
+	}
+	unhashed.Report(dt.log, len(coords),
+		"maven: the repository has no checksums for artifacts, those dependencies have no hash",
+		"maven: artifacts the repository has no checksums for")
+}
+
+// reportSkipped tells the caller's logger what the repository did not
+// have while the tree was built. The tree stands without it, which is why
+// none of it is an error, and is short of what those POMs would have
+// said.
+func (dt *DependencyTree) reportSkipped() {
+	dt.missingPOMs.Report(dt.log, dt.pomsRequested,
+		"maven: POMs were not found in the repository, the graph lacks the dependencies, license and supplier of those artifacts",
+		"maven: artifacts whose POM was not found")
+	dt.unresolvedPOMs.Report(dt.log, dt.pomsRequested,
+		"maven: POMs could not be fully resolved, what those artifacts inherit from a parent or import may be missing",
+		"maven: artifacts whose POM could not be fully resolved")
 }
 
 // ToNodeList converts the resolved dependency tree to a protobom NodeList.

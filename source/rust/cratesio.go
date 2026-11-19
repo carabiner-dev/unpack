@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/protobom/protobom/pkg/sbom"
 	khttp "sigs.k8s.io/release-utils/http"
+
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 const (
@@ -62,6 +64,18 @@ type CratesIOClient struct {
 	// automated clients; another registry speaking the same API may
 	// allow less.
 	RequestInterval time.Duration
+
+	// Logger is where the client says what went wrong with its requests.
+	// A decomposer sets it to its caller's; left nil, nothing is logged.
+	Logger *clog.Logger
+}
+
+// logger returns the client's logger, and a silent one when it has none.
+func (c *CratesIOClient) logger() *clog.Logger {
+	if c.Logger == nil {
+		return logging.Silent()
+	}
+	return c.Logger
 }
 
 // crateVersionResponse is the top-level JSON response from /api/v1/crates/{name}/{version}.
@@ -186,22 +200,21 @@ func (c *CratesIOClient) FetchAll(packages []PackageKey) map[PackageKey]*crateVe
 
 	// Parse responses
 	result := make(map[PackageKey]*crateVersion, len(packages))
-	var failed int
-	var firstErr error
+	failures := &logging.Failures{}
 	for i, pkg := range packages {
+		crate := pkg.Name + "@" + pkg.Version
 		if errs[i] != nil {
-			failed++
-			if firstErr == nil {
-				firstErr = errs[i]
-			}
+			failures.Add(crate, errs[i])
 			continue
 		}
 		if len(bodies[i]) == 0 {
+			failures.Add(crate, errors.New("the registry answered with nothing"))
 			continue
 		}
 
 		var resp crateVersionResponse
 		if err := json.Unmarshal(bodies[i], &resp); err != nil {
+			failures.Add(crate, fmt.Errorf("reading the registry's answer: %w", err))
 			continue
 		}
 
@@ -210,10 +223,9 @@ func (c *CratesIOClient) FetchAll(packages []PackageKey) map[PackageKey]*crateVe
 
 	// A crate that fails is skipped, but not without a trace: every one
 	// of them failing is how a refused client looks.
-	if failed > 0 {
-		slog.Debug("rust: crates.io requests failed, those crates get no metadata",
-			"failed", failed, "requested", len(packages), "first_error", firstErr)
-	}
+	failures.Report(c.logger(), len(packages),
+		"rust: crates.io lookups failed, those crates get no license, supplier or other metadata",
+		"rust: crates the crates.io lookup failed for")
 
 	return result
 }

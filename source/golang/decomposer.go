@@ -22,6 +22,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/code"
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 var _ api.Decomposer = (*Decomposer)(nil)
@@ -68,9 +69,17 @@ func (d *Decomposer) Requirements(_ *api.DecomposerOptions) []api.Requirement {
 	return nil
 }
 
-// Extract parses the local go.mod file, fetches dependency information from
-// the Go module proxy, and builds the complete dependency graph as a protobom NodeList.
+// Extract is ExtractWithContext with a background context, for a caller
+// that has none to give.
 func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return d.ExtractWithContext(context.Background(), opts)
+}
+
+var _ api.ContextDecomposer = (*Decomposer)(nil)
+
+// ExtractWithContext parses the local go.mod file, fetches dependency information from
+// the Go module proxy, and builds the complete dependency graph as a protobom NodeList.
+func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	// 1. Parse local go.mod
 	goModPath := filepath.Join(opts.WorkDir, "go.mod")
 	modFile, err := d.parseLocalGoMod(goModPath)
@@ -82,7 +91,7 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	set := d.moduleSetFromGoMod(modFile, goModPath)
 
 	// 3. Resolve the graph and render it (see BuildNodeList)
-	nl, err := d.BuildNodeList(set, opts)
+	nl, err := d.BuildNodeListWithContext(ctx, set, opts)
 	if err != nil {
 		return nil, fmt.Errorf("building module graph: %w", err)
 	}
@@ -93,7 +102,9 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 // falling back to downloading module zips from the Go proxy for
 // modules not found in deps.dev. Sets licenses and VCS external
 // references on dependency nodes.
-func (d *Decomposer) enrichLicenses(nl *sbom.NodeList, rootModule string, opts *Options, networking api.NetworkLevel) {
+func (d *Decomposer) enrichLicenses(
+	ctx context.Context, nl *sbom.NodeList, rootModule string, opts *Options, networking api.NetworkLevel,
+) {
 	// Collect dependency modules that need enrichment
 	var modules []modKey
 	for _, node := range nl.GetNodes() {
@@ -117,6 +128,7 @@ func (d *Decomposer) enrichLicenses(nl *sbom.NodeList, rootModule string, opts *
 	}
 
 	lc := newLicenseClient(opts.ProxyURL, opts.Concurrency)
+	lc.log = logging.FromContext(ctx)
 	results := lc.FetchLicenses(modules, networking >= api.NetworkFull)
 
 	// Apply enrichment data to nodes
@@ -217,7 +229,7 @@ func (d *Decomposer) parseGoSum(path string) (map[string][]string, error) {
 // and builds edges between them. Only creates edges to modules that are also in
 // the resolved set (avoiding the exponential explosion of fetching all transitive deps).
 func (d *Decomposer) fetchDependencyGraph(
-	trees map[string][]string, resolvedSet map[string]bool,
+	ctx context.Context, trees map[string][]string, resolvedSet map[string]bool,
 	replaces map[string]Replacement, opts *Options, networking api.NetworkLevel,
 ) {
 	// Get list of modules to fetch
@@ -245,6 +257,10 @@ func (d *Decomposer) fetchDependencyGraph(
 	if concurrency <= 0 {
 		concurrency = defaultConcurrency
 	}
+
+	// A module whose go.mod cannot be read keeps its place in the graph
+	// and loses its own edges, which the caller is told of below.
+	failures := &logging.Failures{}
 
 	// Use WaitGroup and semaphore for parallel fetching
 	var wg sync.WaitGroup
@@ -285,9 +301,10 @@ func (d *Decomposer) fetchDependencyGraph(
 			}
 
 			// Fetch the module's go.mod
-			modFile, err := d.fetchModFile(modPath, version, proxyURL, client, opts.PreferModuleCache)
+			modFile, err := d.fetchModFile(ctx, modPath, version, proxyURL, client, opts.PreferModuleCache)
 			if err != nil {
 				// Skip - some modules may not have go.mod or may be unreachable
+				failures.Add(modKey, err)
 				return
 			}
 
@@ -311,6 +328,19 @@ func (d *Decomposer) fetchDependencyGraph(
 	}
 
 	wg.Wait()
+
+	const (
+		summary = "go: go.mod files could not be read, the graph lacks the edges from those modules to what they require"
+		detail  = "go: modules whose go.mod could not be read"
+	)
+	log := logging.FromContext(ctx)
+	if client == nil {
+		// With networking off the module cache is all there is, and a
+		// module missing from it is what the caller asked for.
+		failures.ReportQuietly(log, len(toFetch), summary, detail)
+		return
+	}
+	failures.Report(log, len(toFetch), summary, detail)
 }
 
 // fetchModFile reads a module's go.mod from the module proxy, which is
@@ -321,7 +351,7 @@ func (d *Decomposer) fetchDependencyGraph(
 // be fetched: a nil client, meaning networking is disabled, or a failed
 // request. Setting preferCache reads it first instead.
 func (d *Decomposer) fetchModFile(
-	modPath, version, proxyURL string, client *http.Client, preferCache bool,
+	ctx context.Context, modPath, version, proxyURL string, client *http.Client, preferCache bool,
 ) (*modfile.File, error) {
 	// Escape module path for URL
 	escapedPath, err := module.EscapePath(modPath)
@@ -353,7 +383,7 @@ func (d *Decomposer) fetchModFile(
 
 	url := fmt.Sprintf("%s/%s/@v/%s.mod", proxyURL, escapedPath, version)
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request for %s: %w", url, err)
 	}

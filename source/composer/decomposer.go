@@ -4,10 +4,13 @@
 package composer
 
 import (
+	"context"
+
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/code"
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 var (
@@ -36,8 +39,16 @@ func (d *Decomposer) FindCodeBases(index *code.PathIndex) ([]string, error) {
 	return index.FindFileLocations("composer.lock")
 }
 
-// Extract reads composer.lock and composer.json and builds the graph.
+// Extract is ExtractWithContext with a background context, for a caller
+// that has none to give.
 func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return d.ExtractWithContext(context.Background(), opts)
+}
+
+var _ api.ContextDecomposer = (*Decomposer)(nil)
+
+// ExtractWithContext reads composer.lock and composer.json and builds the graph.
+func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	workDir := opts.WorkDir
 	if workDir == "" {
 		workDir = "."
@@ -51,7 +62,7 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	if err != nil {
 		return nil, err
 	}
-	return buildComposerTree(lock, manifest, opts)
+	return buildComposerTree(lock, manifest, opts, logging.FromContext(ctx))
 }
 
 var _ api.ContextReporter = (*Decomposer)(nil)

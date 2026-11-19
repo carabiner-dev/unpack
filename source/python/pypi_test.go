@@ -4,13 +4,16 @@
 package python
 
 import (
+	"bytes"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/stretchr/testify/require"
 
@@ -351,4 +354,54 @@ func TestEnrichPicksArtifacts(t *testing.T) {
 	nodes, enrichable = newNodes()
 	client.enrichNodes(nodes, enrichable, nil)
 	require.Empty(t, nodes[packageKey{name: "compiled", version: "1.0"}].GetHashes())
+}
+
+// TestPyPIFailuresAreReported checks lookups that fail are skipped, as
+// ever, and that the caller's logger is told: once, with how many of how
+// many, and which ones at the debug level. A run where nothing fails says
+// nothing, and so does a decomposer run with no logger wired.
+func TestPyPIFailuresAreReported(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/fine/1.0.0/json":
+			fmt.Fprint(w, `{"info": {"license": "MIT"}}`) //nolint:errcheck // a fake server's writes have nowhere to fail
+		case "/garbled/1.0.0/json":
+			fmt.Fprint(w, `not json`) //nolint:errcheck // a fake server's writes have nowhere to fail
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	var out bytes.Buffer
+	ctx := clog.WithLogger(t.Context(), clog.New(slog.NewTextHandler(&out, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	client := newPyPIClient(ctx, 2)
+	client.BaseURL = server.URL
+
+	got := client.FetchAll([]packageKey{
+		{name: "fine", version: "1.0.0"},
+		{name: "missing", version: "2.0.0"},
+		{name: "garbled", version: "1.0.0"},
+	})
+	require.Len(t, got, 1)
+	require.Contains(t, got, packageKey{name: "fine", version: "1.0.0"})
+
+	logged := out.String()
+	require.Equal(t, 1, strings.Count(logged, "level=WARN"), logged)
+	require.Contains(t, logged, "failed=2")
+	require.Contains(t, logged, "requested=3")
+	require.Contains(t, logged, "garbled==1.0.0")
+	require.Contains(t, logged, "missing==2.0.0")
+
+	// Nothing failing is nothing to say.
+	out.Reset()
+	client.FetchAll([]packageKey{{name: "fine", version: "1.0.0"}})
+	require.Empty(t, out.String())
+
+	// And with no logger wired the failures are skipped as before.
+	quiet := newPyPIClient(t.Context(), 2)
+	quiet.BaseURL = server.URL
+	require.Empty(t, quiet.FetchAll([]packageKey{{name: "missing", version: "2.0.0"}}))
 }

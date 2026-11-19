@@ -261,6 +261,33 @@ inventory, and the modules built into any
 
 Support for more ecosystems is planned.
 
+## Logging
+
+`--log-level` sets what unpack reports on standard error (`debug`, `info`,
+`warning`, `error`; `info` by default). At `debug` the decomposers say
+where the data they read fell short: a requirement the lock has no
+package for, a registry that stopped answering.
+
+As a library unpack logs nothing unless asked to. It logs through the
+[clog](https://github.com/chainguard-dev/clog) logger in the context it
+is called with, and a context with none is silent, so a program decides
+what is printed and where:
+
+```go
+logger := clog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+ctx := clog.WithLogger(context.Background(), logger)
+
+nodelists, err := unpacker.Extract(ctx, subject)
+```
+
+Unpackers pass the context on to their decomposers
+(`ExtractWithContext`); a decomposer called directly with `Extract` runs
+with a background context and logs nothing. The same goes for the
+functions that take no context, such as `sbom.ParseDocument` or a stitch
+catalog's `Load`: each has a `WithContext` variant that logs to the
+context's logger, and the plain one is silent. Nothing in the library
+writes to a global logger.
+
 ## Contributing
 
 We welcome contributions! Whether it's reporting a bug, suggesting a feature, or submitting a pull request, your feedback is valuable.

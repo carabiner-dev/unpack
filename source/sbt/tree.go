@@ -5,17 +5,18 @@ package sbt
 
 import (
 	"fmt"
-	"log/slog"
 	"net/url"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/google/uuid"
 	purl "github.com/package-url/packageurl-go"
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 // This file turns a dependency snapshot into a graph. The root is the
@@ -34,6 +35,9 @@ type snapshotBuilder struct {
 	workDir  string
 	opts     *api.DecomposerOptions
 
+	// log is the caller's logger, silent until Extract sets it.
+	log *clog.Logger
+
 	nl    *sbom.NodeList
 	nodes map[string]*sbom.Node
 
@@ -46,6 +50,7 @@ func newSnapshotBuilder(snapshot *Snapshot, workDir string, opts *api.Decomposer
 		snapshot: snapshot,
 		workDir:  workDir,
 		opts:     opts,
+		log:      logging.Silent(),
 		nl:       sbom.NewNodeList(),
 		nodes:    map[string]*sbom.Node{},
 		modules:  map[string]struct{}{},
@@ -172,7 +177,7 @@ func (sb *snapshotBuilder) addManifest(root *sbom.Node, key string, m *Manifest)
 		if _, ok := below[ref]; ok {
 			continue
 		}
-		slog.Debug("sbt: resolved module unreachable from direct dependencies", "manifest", name, "module", ref)
+		sb.log.Debug("sbt: resolved module unreachable from direct dependencies", "manifest", name, "module", ref)
 		if err := sb.walk(m, ref, module, visited); err != nil {
 			return err
 		}
@@ -183,7 +188,7 @@ func (sb *snapshotBuilder) addManifest(root *sbom.Node, key string, m *Manifest)
 		if _, ok := visited[ref]; ok {
 			continue
 		}
-		slog.Debug("sbt: resolved module unreachable from direct dependencies", "manifest", name, "module", ref)
+		sb.log.Debug("sbt: resolved module unreachable from direct dependencies", "manifest", name, "module", ref)
 		if err := sb.walk(m, ref, module, visited); err != nil {
 			return err
 		}

@@ -109,7 +109,7 @@ func TestFetchZipHashes(t *testing.T) {
 		node("example.com/untagged"), node("example.com/missing")
 	large := node("example.com/large")
 
-	fetchZipHashes(server.Client(), server.URL, []*sbom.Node{hashed, opaque, untagged, missing, large}, 2)
+	fetchZipHashes(t.Context(), server.Client(), server.URL, []*sbom.Node{hashed, opaque, untagged, missing, large}, 2)
 
 	require.Equal(t, map[int32]string{int32(sbom.HashAlgorithm_SHA256): testZipHash}, hashed.GetHashes())
 	require.Equal(t, server.URL+"/example.com/hashed/@v/v1.0.0.zip", hashed.GetUrlDownload())
@@ -164,7 +164,7 @@ func TestHashModuleZipsOtherProxy(t *testing.T) {
 	nl.AddNode(dep)
 
 	d := Decomposer{}
-	d.hashModuleZips(nl, "example.com/app", &Options{ProxyURL: server.URL, HTTPClient: server.Client()})
+	d.hashModuleZips(t.Context(), nl, "example.com/app", &Options{ProxyURL: server.URL, HTTPClient: server.Client()})
 	require.Zero(t, requests)
 	require.Empty(t, dep.GetHashes())
 }

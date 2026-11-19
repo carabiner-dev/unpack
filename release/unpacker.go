@@ -72,7 +72,7 @@ func (u *Unpacker) Extractions(ctx context.Context, subject api.DecomposableSubj
 		if rd, isRelease := d.(*Decomposer); isRelease {
 			nl, err = rd.ExtractRelease(ctx, ref, opts)
 		} else {
-			nl, err = d.Extract(opts)
+			nl, err = api.ExtractWithContext(ctx, d, opts)
 		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("decomposer %q: %w", name, err))

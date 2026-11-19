@@ -218,7 +218,7 @@ func (u *Unpacker) Extractions(ctx context.Context, subject api.DecomposableSubj
 			if err := gctx.Err(); err != nil {
 				return err
 			}
-			results[i], errs[i] = u.probe(fsys, path, decomposers, dOpts)
+			results[i], errs[i] = u.probe(gctx, fsys, path, decomposers, dOpts)
 			return nil
 		})
 	}
@@ -238,7 +238,16 @@ func (u *Unpacker) Extractions(ctx context.Context, subject api.DecomposableSubj
 // probe runs the decomposers over one file. The first decomposer to claim
 // the file wins; its graph is returned rooted at a node for the file, with
 // the context that decomposer reads in.
-func (u *Unpacker) probe(fsys fs.FS, path string, decomposers []Decomposer, dOpts *api.DecomposerOptions) (*api.Extraction, error) {
+// The built-in decomposers take a context. They cannot say so themselves:
+// this package imports theirs.
+var (
+	_ ContextDecomposer = (*gobinary.Decomposer)(nil)
+	_ ContextDecomposer = (*rustbinary.Decomposer)(nil)
+)
+
+func (u *Unpacker) probe(
+	ctx context.Context, fsys fs.FS, path string, decomposers []Decomposer, dOpts *api.DecomposerOptions,
+) (*api.Extraction, error) {
 	f, err := fsys.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("opening %q: %w", path, err)
@@ -276,7 +285,7 @@ func (u *Unpacker) probe(fsys fs.FS, path string, decomposers []Decomposer, dOpt
 	}
 
 	for _, d := range candidates {
-		nl, err := d.ExtractArtifact(ra, path, dOpts)
+		nl, err := ExtractArtifactWithContext(ctx, d, ra, path, dOpts)
 		if err != nil {
 			return nil, fmt.Errorf("decomposer %q on %q: %w", d.Name(), path, err)
 		}

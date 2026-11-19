@@ -4,14 +4,15 @@
 package maven
 
 import (
+	"context"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/code"
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 var _ api.Decomposer = (*Decomposer)(nil)
@@ -50,9 +51,17 @@ func (d *Decomposer) Requirements(_ *api.DecomposerOptions) []api.Requirement {
 	return nil
 }
 
-// Extract parses the local pom.xml, resolves dependencies from Maven Central,
-// and builds the complete dependency graph as a protobom NodeList.
+// Extract is ExtractWithContext with a background context, for a caller
+// that has none to give.
 func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return d.ExtractWithContext(context.Background(), opts)
+}
+
+var _ api.ContextDecomposer = (*Decomposer)(nil)
+
+// ExtractWithContext parses the local pom.xml, resolves dependencies from Maven Central,
+// and builds the complete dependency graph as a protobom NodeList.
+func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	dOpts := d.getOptions(opts)
 
 	// Apply common dependency inclusion options
@@ -103,8 +112,9 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	// POM declares: the dependencies of those live in POMs of their own,
 	// which only the repository has.
 	dt := NewDependencyTree(effective, resolver, dOpts)
+	dt.log = logging.FromContext(ctx)
 	if resolver == nil {
-		slog.Debug("maven: networking is disabled, the graph holds only the dependencies pom.xml declares",
+		logging.FromContext(ctx).Debug("maven: networking is disabled, the graph holds only the dependencies pom.xml declares",
 			"pom", filepath.Join(opts.WorkDir, "pom.xml"))
 	}
 	if err := dt.Build(); err != nil {
@@ -115,6 +125,7 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	if dOpts.IncludeBuild {
 		dt.AddBuildPlugins()
 	}
+	dt.reportSkipped()
 
 	// 6. Fetch artifact hashes (essential: checksum files; full: download+compute)
 	if opts.Networking >= api.NetworkEssential {

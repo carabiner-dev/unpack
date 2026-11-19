@@ -5,13 +5,16 @@ package ruby
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/protobom/protobom/pkg/sbom"
 	khttp "sigs.k8s.io/release-utils/http"
 
+	"github.com/carabiner-dev/unpack/internal/logging"
 	"github.com/carabiner-dev/unpack/license"
 )
 
@@ -31,6 +34,18 @@ const (
 type RubyGemsClient struct {
 	Agent   *khttp.Agent
 	BaseURL string
+
+	// Logger is where the client says what went wrong with its requests.
+	// The decomposer sets it to its caller's; left nil, nothing is logged.
+	Logger *clog.Logger
+}
+
+// logger returns the client's logger, and a silent one when it has none.
+func (c *RubyGemsClient) logger() *clog.Logger {
+	if c.Logger == nil {
+		return logging.Silent()
+	}
+	return c.Logger
 }
 
 // NewRubyGemsClient creates a client for the rubygems.org API.
@@ -97,6 +112,7 @@ func gemAuthors(authors string) []*sbom.Person {
 
 // FetchAll fetches metadata for the gems in parallel. Failures are
 // skipped: enrichment adds what it can and never breaks an extraction.
+// The caller's logger is told of them, once.
 func (c *RubyGemsClient) FetchAll(specs []*GemSpec) map[*GemSpec]*gemVersionInfo {
 	if len(specs) == 0 {
 		return nil
@@ -110,16 +126,27 @@ func (c *RubyGemsClient) FetchAll(specs []*GemSpec) map[*GemSpec]*gemVersionInfo
 	bodies, errs := c.Agent.GetGroup(urls)
 
 	result := make(map[*GemSpec]*gemVersionInfo, len(specs))
+	failures := &logging.Failures{}
 	for i, spec := range specs {
-		if errs[i] != nil || len(bodies[i]) == 0 {
+		gem := spec.Name + "@" + spec.Version
+		if errs[i] != nil {
+			failures.Add(gem, errs[i])
+			continue
+		}
+		if len(bodies[i]) == 0 {
+			failures.Add(gem, errors.New("the registry answered with nothing"))
 			continue
 		}
 		info := &gemVersionInfo{}
 		if err := json.Unmarshal(bodies[i], info); err != nil {
+			failures.Add(gem, fmt.Errorf("reading the registry's answer: %w", err))
 			continue
 		}
 		result[spec] = info
 	}
+	failures.Report(c.logger(), len(specs),
+		"ruby: rubygems.org lookups failed, those gems get no license, supplier or description",
+		"ruby: gems the rubygems.org lookup failed for")
 	return result
 }
 

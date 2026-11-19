@@ -13,6 +13,7 @@ package rustbinary
 import (
 	"bytes"
 	"compress/zlib"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/artifact/internal/executable"
+	"github.com/carabiner-dev/unpack/internal/logging"
 	"github.com/carabiner-dev/unpack/source/rust"
 )
 
@@ -141,13 +143,21 @@ func (d *Decomposer) Matches(_ fs.FileInfo, header []byte) bool {
 	return executable.Magic(header)
 }
 
-// ExtractArtifact reads the cargo-auditable record in the executable and
+// ExtractArtifact is ExtractArtifactWithContext with a background context,
+// for a caller that has none to give.
+func (d *Decomposer) ExtractArtifact(ra io.ReaderAt, path string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return d.ExtractArtifactWithContext(context.Background(), ra, path, opts)
+}
+
+// ExtractArtifactWithContext reads the cargo-auditable record in the executable and
 // returns the crate graph: the root crate the binary was built from, with
 // the crates linked into it as its descendants. Returns (nil, nil) when the
 // file carries no record, which is what every executable not built with
 // cargo-auditable looks like. A record that is present but unreadable is
 // an error: the file is one of ours and it is broken.
-func (d *Decomposer) ExtractArtifact(ra io.ReaderAt, _ string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+func (d *Decomposer) ExtractArtifactWithContext(
+	ctx context.Context, ra io.ReaderAt, _ string, opts *api.DecomposerOptions,
+) (*sbom.NodeList, error) {
 	if opts == nil {
 		opts = &api.DecomposerOptions{}
 	}
@@ -175,7 +185,9 @@ func (d *Decomposer) ExtractArtifact(ra io.ReaderAt, _ string, opts *api.Decompo
 		if rOpts, ok := opts.GetDriverOptions(d).(*rust.Options); ok {
 			concurrency = rOpts.Concurrency
 		}
-		rust.EnrichNodes(rust.NewCratesIOClient(concurrency), nodes)
+		client := rust.NewCratesIOClient(concurrency)
+		client.Logger = logging.FromContext(ctx)
+		rust.EnrichNodes(client, nodes)
 	}
 	return nl, nil
 }

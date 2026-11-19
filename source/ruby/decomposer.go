@@ -4,10 +4,13 @@
 package ruby
 
 import (
+	"context"
+
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/code"
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 var (
@@ -45,9 +48,17 @@ func (d *Decomposer) FindCodeBases(index *code.PathIndex) ([]string, error) {
 	return index.FindFileLocations("Gemfile.lock")
 }
 
-// Extract reads Gemfile.lock and builds the graph the target platform
-// sees.
+// Extract is ExtractWithContext with a background context, for a caller
+// that has none to give.
 func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return d.ExtractWithContext(context.Background(), opts)
+}
+
+var _ api.ContextDecomposer = (*Decomposer)(nil)
+
+// ExtractWithContext reads Gemfile.lock and builds the graph the target platform
+// sees.
+func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	workDir := opts.WorkDir
 	if workDir == "" {
 		workDir = "."
@@ -68,6 +79,9 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	}
 
 	rb, err := newRubyBuilder(lock, workDir, opts, platform)
+	if rb != nil {
+		rb.log = logging.FromContext(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +94,9 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	// every Ruby SBOM is licence-empty. Enrichment fills what
 	// rubygems.org knows.
 	if opts.Networking >= api.NetworkEssential {
-		NewRubyGemsClient(dOpts.Concurrency).enrichNodes(rb)
+		client := NewRubyGemsClient(dOpts.Concurrency)
+		client.Logger = logging.FromContext(ctx)
+		client.enrichNodes(rb)
 	}
 	return nl, nil
 }

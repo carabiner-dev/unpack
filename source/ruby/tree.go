@@ -5,15 +5,16 @@ package ruby
 
 import (
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"runtime"
 	"strings"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/google/uuid"
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/internal/logging"
 )
 
 // This file turns a Gemfile.lock into the dependency graph one platform
@@ -30,6 +31,9 @@ type rubyBuilder struct {
 	lock    *GemLockfile
 	workDir string
 	opts    *api.DecomposerOptions
+
+	// log is the caller's logger, silent until Extract sets it.
+	log *clog.Logger
 
 	// platforms are the target's gem platforms, most specific first.
 	platforms []string
@@ -53,6 +57,7 @@ func newRubyBuilder(lock *GemLockfile, workDir string, opts *api.DecomposerOptio
 		lock:      lock,
 		workDir:   workDir,
 		opts:      opts,
+		log:       logging.Silent(),
 		platforms: candidates,
 		nl:        sbom.NewNodeList(),
 		byName:    map[string][]*GemSpec{},
@@ -123,7 +128,7 @@ func (rb *rubyBuilder) rootNode() *sbom.Node {
 func (rb *rubyBuilder) addEdge(name string, parent *sbom.Node) error {
 	spec := rb.selectSpec(name)
 	if spec == nil {
-		slog.Debug("ruby: the lockfile has no spec for a dependency", "gem", name, "required_by", parent.GetName())
+		rb.log.Debug("ruby: the lockfile has no spec for a dependency", "gem", name, "required_by", parent.GetName())
 		return nil
 	}
 

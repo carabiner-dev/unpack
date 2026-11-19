@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
 
@@ -36,7 +37,13 @@ type fakeDecomposer struct {
 	subjects []string
 	failOn   string // path whose extraction fails
 	rejects  string // path Matches accepts but ExtractArtifact disowns
+
+	// carried keeps, by path, what the context carried under contextKey
+	// when the path was extracted.
+	carried sync.Map
 }
+
+type contextKey struct{}
 
 var (
 	_ Decomposer          = (*fakeDecomposer)(nil)
@@ -55,7 +62,14 @@ func (f *fakeDecomposer) Matches(_ fs.FileInfo, header []byte) bool {
 	return bytes.HasPrefix(header, []byte(f.magic))
 }
 
-func (f *fakeDecomposer) ExtractArtifact(ra io.ReaderAt, path string, _ *api.DecomposerOptions) (*sbom.NodeList, error) {
+func (f *fakeDecomposer) ExtractArtifact(ra io.ReaderAt, path string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return f.ExtractArtifactWithContext(context.Background(), ra, path, opts)
+}
+
+func (f *fakeDecomposer) ExtractArtifactWithContext(
+	ctx context.Context, ra io.ReaderAt, path string, _ *api.DecomposerOptions,
+) (*sbom.NodeList, error) {
+	f.carried.Store(path, ctx.Value(contextKey{}))
 	if path == f.failOn {
 		return nil, errors.New("boom")
 	}
@@ -162,6 +176,22 @@ func TestExtractFilesystem(t *testing.T) {
 	require.NotNil(t, pkg)
 	assert.Equal(t, "example.com/tool", pkg.GetName())
 	assert.Equal(t, sbom.Node_PACKAGE, pkg.GetType())
+}
+
+// The context an extraction is called with reaches the decomposers that
+// take one.
+func TestExtractPassesContext(t *testing.T) {
+	t.Parallel()
+	fake := &fakeDecomposer{name: "fake", magic: "GOBIN "}
+	u := newTestUnpacker(fake)
+
+	ctx := context.WithValue(t.Context(), contextKey{}, "carried")
+	_, err := u.Extract(ctx, &Filesystem{FS: testFS()})
+	require.NoError(t, err)
+
+	carried, ok := fake.carried.Load("bin/tool")
+	require.True(t, ok)
+	require.Equal(t, "carried", carried)
 }
 
 func TestExtractRestrictedPaths(t *testing.T) {
