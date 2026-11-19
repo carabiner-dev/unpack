@@ -50,7 +50,9 @@ sbt 'githubGenerateSnapshot {"ignoredModules":[],"ignoredConfigs":[]}'
 4. From each module, the walk follows its direct dependencies and, from
    them, the callers sbt recorded. Modules sbt resolved but the walk
    cannot reach (their callers were evicted) hang from the module, so
-   nothing resolved drops out of the inventory.
+   nothing resolved drops out of the inventory. Only the top of what
+   was not reached hangs there: what an unreached module depends on is
+   reached through it, and is not made to look like a direct dependency.
 5. Nodes are shared by purl across manifests: a library many modules use
    is one node, and a module of the build another module depends on is
    the node its manifest describes, which links the modules into their
@@ -76,6 +78,7 @@ another commit, extraction fails: the snapshot describes another build.
 | Name | purl | The artifact id, cross-version suffix included (`scala3-library_3`) |
 | Version | purl | |
 | PURL | snapshot | `pkg:maven/{org}/{name}@{version}`, with `?packaging=` for classifiers |
+| Supplier | coordinate | The organization the coordinate opens with (`org.scala-lang`), as an organization. The build's own modules are named none; see [Suppliers](README.md#suppliers) |
 
 ## Dependency types
 

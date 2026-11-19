@@ -45,12 +45,39 @@ extras enables them in the environment the markers evaluate against.
 Hashes are wheel-selected from the lock's file lists; the lock names
 artifacts by filename only, so nodes carry no download URL.
 
+A lock holds several versions of one package when the version resolved
+differs by environment. A 2.1 lock states on each entry where it
+applies. A 2.0 lock does not, so its entries are told apart by what the
+lock does state: the version constraint the edge was resolved under,
+which only the entry meant for it satisfies, and the Python versions
+each entry supports. Constraints are read in PEP 440 form and in
+Poetry's own caret and tilde ranges (`^1.2`, `~1.2`). A legacy
+`[tool.poetry.dependencies]` entry keeps its constraint too, and one
+declared as a list, a constraint for each environment it differs in, is
+one requirement per item, restricted by the `python`, `platform` or
+`markers` it states.
+
 ### requirements.txt
 
 Read for what each line actually says. A compiled file (`pip-compile`,
 `uv pip compile`) is as good as a lock, and its `# via` annotations
 record which requirement pulled in which, so the tree is rebuilt from
-them. A hand-written file declares constraints: the root borrows the
+them. Both annotation styles are read: on the lines under an entry, as
+`# via flask` or a bare `# via` with one parent per line below it, and
+at the end of the entry's own line (`--annotation-style=line`), parents
+separated by commas. Any other comment names nothing. Each annotation
+is related by what it names:
+
+- a requirements file or the project's manifest (`-r requirements.in`,
+  `myproj (pyproject.toml)`) is the project, so an edge from the root;
+- a package of the target environment is a parent;
+- a package the file declares for another environment is neither, and
+  an entry left with no parent in the environment is left out with
+  them;
+- a constraints file (`-c constraints.txt`) requires nothing.
+
+So a package the project and another package both require gets both
+edges. A hand-written file declares constraints: the root borrows the
 directory's name, since the format names no project, an entry without an
 exact pin becomes a node without a version, and nothing is invented.
 Includes (`-r`) are followed; editables, installer options and bare
@@ -104,6 +131,7 @@ unpack extract --platform linux/arm64 --python-version 3.10 .
 | Description | PyPI API / METADATA | The package summary |
 | Homepage | PyPI API / METADATA | Set as `UrlHome` |
 | Documentation | PyPI API / METADATA | `ExternalReference_DOCUMENTATION` |
+| Supplier | PyPI API | The package's maintainers, or its authors when it names no maintainer, each with an email when stated. Lockfile extractions only, with networking; see [Suppliers](README.md#suppliers) |
 | Installer | INSTALLER | Installed environments only, a `python:installer` property |
 
 ### Licenses
@@ -177,9 +205,9 @@ an image or a system root, and that decomposer reports `analyzed`. See
   edges cannot yet carry the markers themselves.
 - **Linux assumes glibc.** Wheel selection matches `manylinux` tags;
   `musllinux` (Alpine-style) wheels are never chosen.
-- **Lockfile licenses need the network.** With networking disabled, a
-  lockfile extraction is license-empty, honestly. Installed
-  environments do not have this problem.
+- **Lockfile licenses and suppliers need the network.** With networking
+  disabled, a lockfile extraction has neither, honestly. Installed
+  environments read licenses offline, and name no supplier yet.
 - **A compiled requirements file's hashes are not attributable.** The
   format lists every artifact's hash without naming the artifacts, so
   those nodes carry no hash rather than a guessed one.

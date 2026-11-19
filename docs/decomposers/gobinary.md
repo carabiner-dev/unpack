@@ -65,8 +65,8 @@ usr/local/bin/tool                          (file, sha256)
 
 The same fields the [Go source decomposer](golang.md#data-produced-per-dependency)
 produces, from the same builder: name, version, purl, download URL, the
-`h1:` dirhash as a SHA-256, and the license and source repository from
-deps.dev when networking allows.
+`h1:` dirhash as a SHA-256, the supplier read off the module path, and
+the license and source repository from deps.dev when networking allows.
 
 ### Special nodes
 

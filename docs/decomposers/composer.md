@@ -22,6 +22,13 @@ walked only under `--include-dev`. The lock supplies everything else, and
 the graph is walked from the manifest's requirements through each
 package's own `require` table.
 
+A requirement can name something the lock holds no package for: a
+component a framework `replace`s, or a virtual package such as
+`psr/log-implementation` that is only ever `provide`d. It is met by the
+locked packages standing in for the name, each of them when there are
+several, as the lock does not say which one Composer took. A requirement
+nothing in the lock meets is left out.
+
 Platform requirements — `php` itself, `ext-*` extensions, the composer
 APIs — are constraints on the runtime rather than packages: every real
 package is `vendor/name`, platform names carry no slash, and they become
@@ -35,7 +42,8 @@ the lockfile's own shape, so an installed environment is a lock found in
 place: when the project's `composer.json` sits above the vendor directory
 — the layout deployments have — the graph builds exactly as for a
 codebase, root and direct requirements included. Without a manifest,
-whatever nothing installed requires roots the graph, and the file's own
+whatever nothing installed requires roots the graph, by its own name or
+by one it replaces or provides, and the file's own
 `dev-package-names` partition tells the kinds. Both generations of the
 file are read (Composer 2's object, Composer 1's bare array), and a
 filesystem holding several vendor directories merges them into one graph.
@@ -55,6 +63,7 @@ Composer ships as a phar.
 | Repository | `source` | `ExternalReference_VCS`, with the exact commit: `url#reference` |
 | Hash (SHA-1) | `dist.shasum` | Only when a registry states one — Packagist does not; see below |
 | License | lock / installed.json | Normalized to SPDX; offline |
+| Supplier | lock / installed.json | The package's `authors`, in order, each with the email and homepage it states. Offline; see [Suppliers](README.md#suppliers) |
 | Description | lock / installed.json | |
 | Homepage | lock / installed.json | Set as `UrlHome` |
 
@@ -95,8 +104,8 @@ edges. The oracle runs in Docker like the Maven one.
 
 ## Strengths
 
-- **Fully offline, licenses included.** Everything an SBOM wants is in
-  the lock or the installed metadata.
+- **Fully offline, licenses and suppliers included.** Everything an SBOM
+  wants is in the lock or the installed metadata.
 - **Commit-level provenance.** Every package names its repository and
   the exact commit it was resolved from.
 - **Deployments and images.** The installed-environment reader means a
@@ -109,5 +118,8 @@ edges. The oracle runs in Docker like the Maven one.
   carry an archive SHA-1 only when a registry states one.
 - **`suggest` is not read.** Optional integrations are recommendations
   Composer does not resolve, so there is nothing locked to report.
+- **Suppliers are authors.** The lock names who wrote a package, not who
+  published it, and does not say whether an author is a person or an
+  organization: `PHP-FIG` is written as a person.
 - **Vendor trees inside archives are invisible.** A phar-packaged
   application scans to nothing, honestly.
