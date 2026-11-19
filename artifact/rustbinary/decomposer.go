@@ -13,6 +13,7 @@ package rustbinary
 import (
 	"bytes"
 	"compress/zlib"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -141,13 +142,21 @@ func (d *Decomposer) Matches(_ fs.FileInfo, header []byte) bool {
 	return executable.Magic(header)
 }
 
-// ExtractArtifact reads the cargo-auditable record in the executable and
+// ExtractArtifact is ExtractArtifactWithContext with a background context,
+// for a caller that has none to give.
+func (d *Decomposer) ExtractArtifact(ra io.ReaderAt, path string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return d.ExtractArtifactWithContext(context.Background(), ra, path, opts)
+}
+
+// ExtractArtifactWithContext reads the cargo-auditable record in the executable and
 // returns the crate graph: the root crate the binary was built from, with
 // the crates linked into it as its descendants. Returns (nil, nil) when the
 // file carries no record, which is what every executable not built with
 // cargo-auditable looks like. A record that is present but unreadable is
 // an error: the file is one of ours and it is broken.
-func (d *Decomposer) ExtractArtifact(ra io.ReaderAt, _ string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+func (d *Decomposer) ExtractArtifactWithContext(
+	_ context.Context, ra io.ReaderAt, _ string, opts *api.DecomposerOptions,
+) (*sbom.NodeList, error) {
 	if opts == nil {
 		opts = &api.DecomposerOptions{}
 	}

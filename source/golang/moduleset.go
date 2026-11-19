@@ -4,6 +4,7 @@
 package golang
 
 import (
+	"context"
 	"fmt"
 	goversion "go/version"
 	"sort"
@@ -94,6 +95,11 @@ func (s *ModuleSet) sumHashes() map[string][]string {
 // networking enabled, dependency nodes are also enriched with license and
 // source repository data.
 func (d *Decomposer) BuildNodeList(set *ModuleSet, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return d.BuildNodeListWithContext(context.Background(), set, opts)
+}
+
+// BuildNodeListWithContext is BuildNodeList, run with the caller's context.
+func (d *Decomposer) BuildNodeListWithContext(ctx context.Context, set *ModuleSet, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	if set == nil || set.Main.Path == "" {
 		return nil, fmt.Errorf("module set has no main module")
 	}
@@ -102,7 +108,7 @@ func (d *Decomposer) BuildNodeList(set *ModuleSet, opts *api.DecomposerOptions) 
 	}
 	dOpts := d.getOptions(opts)
 
-	trees := d.resolveGraph(set, dOpts, opts.Networking)
+	trees := d.resolveGraph(ctx, set, dOpts, opts.Networking)
 
 	nl, err := d.convertTrees(opts, set.Main.Path, &trees, set.GoVersion, set.sumHashes())
 	if err != nil {
@@ -110,7 +116,7 @@ func (d *Decomposer) BuildNodeList(set *ModuleSet, opts *api.DecomposerOptions) 
 	}
 
 	if opts.Networking >= api.NetworkEssential {
-		d.hashModuleZips(nl, set.Main.Path, dOpts)
+		d.hashModuleZips(ctx, nl, set.Main.Path, dOpts)
 		d.enrichLicenses(nl, set.Main.Path, dOpts, opts.Networking)
 	}
 	return nl, nil
@@ -120,7 +126,7 @@ func (d *Decomposer) BuildNodeList(set *ModuleSet, opts *api.DecomposerOptions) 
 // are the set's Requires; every other edge is read from the requiring
 // module's go.mod and kept only when its target is in the set. Indirect
 // modules those edges leave unreached are then attached to the root.
-func (d *Decomposer) resolveGraph(set *ModuleSet, opts *Options, networking api.NetworkLevel) map[string][]string {
+func (d *Decomposer) resolveGraph(ctx context.Context, set *ModuleSet, opts *Options, networking api.NetworkLevel) map[string][]string {
 	trees := make(map[string][]string)
 
 	resolved := make(map[string]bool, len(set.Modules))
@@ -134,7 +140,7 @@ func (d *Decomposer) resolveGraph(set *ModuleSet, opts *Options, networking api.
 		trees[rootKey] = append(trees[rootKey], m.Key())
 	}
 
-	d.fetchDependencyGraph(trees, resolved, set.Replaces, opts, networking)
+	d.fetchDependencyGraph(ctx, trees, resolved, set.Replaces, opts, networking)
 	attachUnreached(trees, rootKey, set.Indirect)
 	return trees
 }

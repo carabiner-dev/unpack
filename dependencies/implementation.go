@@ -129,7 +129,7 @@ func (di *defaultImplementation) ExtractCodeBases(
 				dOpts.SetDriverOptions(driver.Decomposer, driver.Options)
 			}
 
-			nl, err := d.Extract(dOpts)
+			nl, err := api.ExtractWithContext(ctx, d, dOpts)
 			if err != nil {
 				return nil, fmt.Errorf("from %q with %T: %w", cbPath, d, err)
 			}

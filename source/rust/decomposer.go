@@ -4,6 +4,7 @@
 package rust
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/protobom/protobom/pkg/sbom"
@@ -46,9 +47,17 @@ func (d *Decomposer) Requirements(_ *api.DecomposerOptions) []api.Requirement {
 	return nil
 }
 
-// Extract parses Cargo.toml and Cargo.lock files and builds the complete
-// dependency graph as a protobom NodeList.
+// Extract is ExtractWithContext with a background context, for a caller
+// that has none to give.
 func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return d.ExtractWithContext(context.Background(), opts)
+}
+
+var _ api.ContextDecomposer = (*Decomposer)(nil)
+
+// ExtractWithContext parses Cargo.toml and Cargo.lock files and builds the complete
+// dependency graph as a protobom NodeList.
+func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	workDir := opts.WorkDir
 	if workDir == "" {
 		workDir = "."

@@ -4,6 +4,7 @@
 package python
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -81,10 +82,18 @@ func (d *Decomposer) FindCodeBases(index *code.PathIndex) ([]string, error) {
 	return dirs, nil
 }
 
-// Extract builds the dependency graph the target environment sees, from
+// Extract is ExtractWithContext with a background context, for a caller
+// that has none to give.
+func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return d.ExtractWithContext(context.Background(), opts)
+}
+
+var _ api.ContextDecomposer = (*Decomposer)(nil)
+
+// ExtractWithContext builds the dependency graph the target environment sees, from
 // whichever lockfile the codebase has. A project migrating between tools
 // may carry both; uv.lock wins, being the one uv keeps current.
-func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	workDir := opts.WorkDir
 	if workDir == "" {
 		workDir = "."

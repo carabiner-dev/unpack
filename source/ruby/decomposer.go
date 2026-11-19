@@ -4,6 +4,8 @@
 package ruby
 
 import (
+	"context"
+
 	"github.com/protobom/protobom/pkg/sbom"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
@@ -45,9 +47,17 @@ func (d *Decomposer) FindCodeBases(index *code.PathIndex) ([]string, error) {
 	return index.FindFileLocations("Gemfile.lock")
 }
 
-// Extract reads Gemfile.lock and builds the graph the target platform
-// sees.
+// Extract is ExtractWithContext with a background context, for a caller
+// that has none to give.
 func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return d.ExtractWithContext(context.Background(), opts)
+}
+
+var _ api.ContextDecomposer = (*Decomposer)(nil)
+
+// ExtractWithContext reads Gemfile.lock and builds the graph the target platform
+// sees.
+func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	workDir := opts.WorkDir
 	if workDir == "" {
 		workDir = "."

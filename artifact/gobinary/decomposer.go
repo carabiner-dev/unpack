@@ -11,6 +11,7 @@
 package gobinary
 
 import (
+	"context"
 	"debug/buildinfo"
 	"fmt"
 	"io"
@@ -101,12 +102,20 @@ func (d *Decomposer) Matches(_ fs.FileInfo, header []byte) bool {
 	return executable.Magic(header)
 }
 
-// ExtractArtifact reads the build information embedded in the executable and
+// ExtractArtifact is ExtractArtifactWithContext with a background context,
+// for a caller that has none to give.
+func (d *Decomposer) ExtractArtifact(ra io.ReaderAt, path string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return d.ExtractArtifactWithContext(context.Background(), ra, path, opts)
+}
+
+// ExtractArtifactWithContext reads the build information embedded in the executable and
 // returns the program's module graph: the main module as the root, with the
 // modules linked into the binary as its dependencies. Returns (nil, nil)
 // when the file carries no Go build information, which is what any
 // executable not built by the Go toolchain looks like.
-func (d *Decomposer) ExtractArtifact(ra io.ReaderAt, _ string, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+func (d *Decomposer) ExtractArtifactWithContext(
+	ctx context.Context, ra io.ReaderAt, _ string, opts *api.DecomposerOptions,
+) (*sbom.NodeList, error) {
 	if opts == nil {
 		opts = &api.DecomposerOptions{}
 	}
@@ -149,7 +158,7 @@ func (d *Decomposer) ExtractArtifact(ra io.ReaderAt, _ string, opts *api.Decompo
 		inner.SetDriverOptions(d.golang, gOpts)
 	}
 
-	nl, err := d.golang.BuildNodeList(set, inner)
+	nl, err := d.golang.BuildNodeListWithContext(ctx, set, inner)
 	if err != nil {
 		return nil, fmt.Errorf("building module graph: %w", err)
 	}

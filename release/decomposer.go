@@ -75,11 +75,18 @@ func (d *Decomposer) Requirements(opts *api.DecomposerOptions) []api.Requirement
 // driver options and delegating to ExtractRelease. Callers that have a
 // context should call ExtractRelease directly.
 func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return d.ExtractWithContext(context.Background(), opts)
+}
+
+var _ api.ContextDecomposer = (*Decomposer)(nil)
+
+// ExtractWithContext is Extract, run with the caller's context.
+func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	ref := d.referenceFromOptions(opts)
 	if ref == nil {
 		return nil, errors.New("no release reference set in the decomposer options")
 	}
-	return d.ExtractRelease(context.Background(), ref, opts)
+	return d.ExtractRelease(ctx, ref, opts)
 }
 
 // ExtractRelease fetches the release the reference points to through the

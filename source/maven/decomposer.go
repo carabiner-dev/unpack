@@ -4,6 +4,7 @@
 package maven
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -50,9 +51,17 @@ func (d *Decomposer) Requirements(_ *api.DecomposerOptions) []api.Requirement {
 	return nil
 }
 
-// Extract parses the local pom.xml, resolves dependencies from Maven Central,
-// and builds the complete dependency graph as a protobom NodeList.
+// Extract is ExtractWithContext with a background context, for a caller
+// that has none to give.
 func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return d.ExtractWithContext(context.Background(), opts)
+}
+
+var _ api.ContextDecomposer = (*Decomposer)(nil)
+
+// ExtractWithContext parses the local pom.xml, resolves dependencies from Maven Central,
+// and builds the complete dependency graph as a protobom NodeList.
+func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	dOpts := d.getOptions(opts)
 
 	// Apply common dependency inclusion options

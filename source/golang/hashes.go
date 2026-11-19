@@ -100,7 +100,7 @@ func zipURL(proxyURL, modPath, version string) (string, bool) {
 // proxy states it, and the zip's location with it, so that the hash is of
 // the file the node says to download. A module the proxy states nothing
 // usable for is left without a hash.
-func (d *Decomposer) hashModuleZips(nl *sbom.NodeList, rootModule string, opts *Options) {
+func (d *Decomposer) hashModuleZips(ctx context.Context, nl *sbom.NodeList, rootModule string, opts *Options) {
 	proxyURL := opts.ProxyURL
 	if proxyURL == "" {
 		proxyURL = defaultProxyURL
@@ -108,7 +108,7 @@ func (d *Decomposer) hashModuleZips(nl *sbom.NodeList, rootModule string, opts *
 	if !proxyStatesZipHashes(proxyURL) {
 		return
 	}
-	fetchZipHashes(opts.HTTPClient, proxyURL, moduleNodes(nl, rootModule), opts.Concurrency)
+	fetchZipHashes(ctx, opts.HTTPClient, proxyURL, moduleNodes(nl, rootModule), opts.Concurrency)
 }
 
 // moduleNodes returns the nodes of the graph that are modules a proxy
@@ -127,7 +127,7 @@ func moduleNodes(nl *sbom.NodeList, rootModule string) []*sbom.Node {
 
 // fetchZipHashes asks the proxy for the entity tag of each node's zip and
 // sets the hash it states on the node. A nil client is the default one.
-func fetchZipHashes(client *http.Client, proxyURL string, nodes []*sbom.Node, concurrency int) {
+func fetchZipHashes(ctx context.Context, client *http.Client, proxyURL string, nodes []*sbom.Node, concurrency int) {
 	if concurrency <= 0 {
 		concurrency = defaultConcurrency
 	}
@@ -154,7 +154,7 @@ func fetchZipHashes(client *http.Client, proxyURL string, nodes []*sbom.Node, co
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			hash := headZipHash(client, location)
+			hash := headZipHash(ctx, client, location)
 			if hash == "" {
 				return
 			}
@@ -169,8 +169,8 @@ func fetchZipHashes(client *http.Client, proxyURL string, nodes []*sbom.Node, co
 // location, or nothing. The client must not follow redirects: the proxy
 // states the hash where it answers, with the file or with a redirect to
 // it.
-func headZipHash(client *http.Client, location string) string {
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodHead, location, http.NoBody)
+func headZipHash(ctx context.Context, client *http.Client, location string) string {
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, location, http.NoBody)
 	if err != nil {
 		return ""
 	}

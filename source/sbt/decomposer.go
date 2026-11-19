@@ -11,6 +11,7 @@
 package sbt
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -139,8 +140,16 @@ func shallowest(paths []string) []string {
 	return ret
 }
 
-// Extract builds the dependency graph of the build from the snapshot.
+// Extract is ExtractWithContext with a background context, for a caller
+// that has none to give.
 func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+	return d.ExtractWithContext(context.Background(), opts)
+}
+
+var _ api.ContextDecomposer = (*Decomposer)(nil)
+
+// ExtractWithContext builds the dependency graph of the build from the snapshot.
+func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	snapshot, err := d.load()
 	if err != nil {
 		return nil, err

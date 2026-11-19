@@ -4,6 +4,7 @@
 package artifact
 
 import (
+	"context"
 	"io"
 	"io/fs"
 
@@ -41,4 +42,28 @@ type Decomposer interface {
 	// (nil, nil) means the file turned out not to be one of the
 	// decomposer's artifacts, which is not an error.
 	ExtractArtifact(ra io.ReaderAt, path string, opts *api.DecomposerOptions) (*sbom.NodeList, error)
+}
+
+// ContextDecomposer is implemented by artifact decomposers that can be run
+// with a context: the one the unpacker was given, which carries its
+// caller's cancellation and whatever else it put there, such as a logger.
+type ContextDecomposer interface {
+	Decomposer
+
+	// ExtractArtifactWithContext is ExtractArtifact, run with the
+	// caller's context.
+	ExtractArtifactWithContext(
+		ctx context.Context, ra io.ReaderAt, path string, opts *api.DecomposerOptions,
+	) (*sbom.NodeList, error)
+}
+
+// ExtractArtifactWithContext runs an artifact decomposer with a context
+// when it takes one, and without when it does not.
+func ExtractArtifactWithContext(
+	ctx context.Context, d Decomposer, ra io.ReaderAt, path string, opts *api.DecomposerOptions,
+) (*sbom.NodeList, error) {
+	if cd, ok := d.(ContextDecomposer); ok {
+		return cd.ExtractArtifactWithContext(ctx, ra, path, opts)
+	}
+	return d.ExtractArtifact(ra, path, opts)
 }

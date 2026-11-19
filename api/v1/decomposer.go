@@ -4,6 +4,8 @@
 package v1
 
 import (
+	"context"
+
 	"github.com/protobom/protobom/pkg/sbom"
 
 	"github.com/carabiner-dev/unpack/code"
@@ -15,6 +17,29 @@ type Decomposer interface {
 	Extract(*DecomposerOptions) (*sbom.NodeList, error)
 	Requirements(*DecomposerOptions) []Requirement
 	DefaultOptions() any
+}
+
+// ContextDecomposer is implemented by decomposers that can be run with a
+// context: the one their caller was given, which carries its cancellation
+// and whatever else it put there, such as a logger. Extract takes none, so
+// a decomposer that only implements Decomposer cannot be reached by either.
+//
+// An unpacker runs its decomposers through ExtractWithContext, the
+// function, which uses the method where there is one.
+type ContextDecomposer interface {
+	Decomposer
+
+	// ExtractWithContext is Extract, run with the caller's context.
+	ExtractWithContext(context.Context, *DecomposerOptions) (*sbom.NodeList, error)
+}
+
+// ExtractWithContext runs a decomposer with a context when it takes one,
+// and without when it does not.
+func ExtractWithContext(ctx context.Context, d Decomposer, opts *DecomposerOptions) (*sbom.NodeList, error) {
+	if cd, ok := d.(ContextDecomposer); ok {
+		return cd.ExtractWithContext(ctx, opts)
+	}
+	return d.Extract(opts)
 }
 
 // SubjectDefaults is implemented by decomposers that know which kinds of
