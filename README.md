@@ -207,6 +207,29 @@ unpack ls --format=json /path/to/project
 unpack ls --ignore "*/testdata/*" --ignore "temp/" .
 ```
 
+### Choosing decomposers: `--enable` and `--disable`
+
+Each language is read by a decomposer that goes by the language's name,
+the one codebase IDs start with (`golang`, `maven`, `npm`, `php`,
+`python`, `ruby`, `rust`). `extract` and `ls` take two flags to choose
+among them, both repeatable or comma separated:
+
+```bash
+# Leave the JavaScript and Ruby codebases of a repository out
+unpack extract --multi --disable npm,ruby .
+
+# Run a decomposer that is off unless asked for
+unpack ls --enable <name> .
+```
+
+`--disable` leaves out a decomposer that runs by default. `--enable`
+brings in one that does not: a decomposer whose reading is an
+approximation is not run without being asked for. A name unpack does not
+know is an error that lists the ones it does, and `--help` shows them.
+
+The sbt decomposer is the exception: it reads a file only its own flag
+can name, so it is enabled with `--sbt-snapshot`.
+
 ### `unpack artifact`: Inspect Built Artifacts
 
 Some artifacts carry their own dependency data. A Go executable records

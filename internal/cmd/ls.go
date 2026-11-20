@@ -25,6 +25,7 @@ const (
 var validCodebasesFormats = []string{codebasesFormatTable, codebasesFormatJSON}
 
 type codebasesOptions struct {
+	decomposerOptions
 	Path           string
 	IgnorePatterns []string
 	Format         string
@@ -32,7 +33,7 @@ type codebasesOptions struct {
 
 // Validate validates the options in context with arguments
 func (o *codebasesOptions) Validate() error {
-	errs := []error{}
+	errs := []error{o.ValidateDecomposers()}
 	if o.Path == "" {
 		errs = append(errs, errors.New("path not defined"))
 	}
@@ -46,6 +47,8 @@ func (o *codebasesOptions) Validate() error {
 
 // AddFlags adds the subcommands flags
 func (o *codebasesOptions) AddFlags(cmd *cobra.Command) {
+	o.AddDecomposerFlags(cmd)
+
 	cmd.PersistentFlags().StringVarP(
 		&o.Path, "path", "p", "", "path to scan for codebases",
 	)
@@ -107,6 +110,9 @@ Examples:
 func listCodebases(ctx context.Context, opts *codebasesOptions) error {
 	unpacker := dependencies.NewUnpacker()
 	unpacker.Options.IgnorePatterns = opts.IgnorePatterns
+	if err := opts.ApplyDecomposers(unpacker); err != nil {
+		return err
+	}
 
 	codebases, err := unpacker.ListCodebases(ctx, opts.Path)
 	if err != nil {

@@ -40,6 +40,7 @@ type extractOptions struct {
 	stitchOptions
 	extRefOptions
 	entityOptions
+	decomposerOptions
 	IgnorePatterns       []string
 	Path                 string
 	Networking           string
@@ -70,6 +71,7 @@ func (ro *extractOptions) Validate() error {
 		ro.stitchOptions.Validate(),
 		ro.ValidateFor(ro.Format),
 		ro.ValidateEntitiesFor(ro.Format),
+		ro.ValidateDecomposers(),
 	}
 	if ro.Path == "" {
 		errs = append(errs, errors.New("path not defined"))
@@ -101,6 +103,7 @@ func (ro *extractOptions) AddFlags(cmd *cobra.Command) {
 	ro.stitchOptions.AddFlags(cmd)
 	ro.extRefOptions.AddFlags(cmd)
 	ro.entityOptions.AddFlags(cmd)
+	ro.AddDecomposerFlags(cmd)
 
 	cmd.PersistentFlags().StringVarP(
 		&ro.Path, "path", "p", ".", "path to the artifact to unpack",
@@ -255,7 +258,13 @@ to the current directory.
 			// sbt builds are only read from the snapshot sbt wrote of
 			// them, so the decomposer only exists when given one.
 			if opts.SbtSnapshot != "" {
-				unpacker.RegisterDecomposerAs("sbt", sbt.New(opts.SbtSnapshot))
+				unpacker.RegisterDecomposerAs(sbtName, sbt.New(opts.SbtSnapshot))
+			}
+
+			// The decomposers the flags switch on or off, now that the
+			// ones other flags bring in are there to be named.
+			if err := opts.ApplyDecomposers(unpacker); err != nil {
+				return err
 			}
 
 			unpacker.Options.Networking = networkLevel(opts.Networking)
@@ -287,9 +296,10 @@ to the current directory.
 					fmt.Fprintln(os.Stderr, "Available codebases:")
 					fmt.Fprintln(os.Stderr)
 					return listCodebases(cmd.Context(), &codebasesOptions{
-						Path:           opts.Path,
-						IgnorePatterns: opts.IgnorePatterns,
-						Format:         codebasesFormatTable,
+						decomposerOptions: opts.decomposerOptions,
+						Path:              opts.Path,
+						IgnorePatterns:    opts.IgnorePatterns,
+						Format:            codebasesFormatTable,
 					})
 				}
 				codebases = filtered
@@ -307,9 +317,10 @@ to the current directory.
 					fmt.Fprintln(os.Stderr, "Run unpack extract <codebase ID> (or unpack extract --multi with an SBOM format)")
 					fmt.Fprintln(os.Stderr)
 					return listCodebases(cmd.Context(), &codebasesOptions{
-						Path:           opts.Path,
-						IgnorePatterns: opts.IgnorePatterns,
-						Format:         codebasesFormatTable,
+						decomposerOptions: opts.decomposerOptions,
+						Path:              opts.Path,
+						IgnorePatterns:    opts.IgnorePatterns,
+						Format:            codebasesFormatTable,
 					})
 				}
 			}
