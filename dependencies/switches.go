@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	api "github.com/carabiner-dev/unpack/api/v1"
+	"github.com/carabiner-dev/unpack/source/cmake"
 )
 
 // This file is how a caller chooses which decomposers an unpacker runs.
@@ -22,7 +23,11 @@ import (
 
 // optionalDecomposers are the decomposers the unpacker knows and does not
 // run unless they are switched on, each with how to make one.
-var optionalDecomposers = map[string]func() api.Decomposer{}
+var optionalDecomposers = map[string]func() api.Decomposer{
+	// CMake files say what a project may depend on, and not what a
+	// build of it has.
+	"cmake": func() api.Decomposer { return cmake.New() },
+}
 
 // ErrUnknownDecomposer is returned when a decomposer is switched on or
 // off by a name the unpacker does not know.

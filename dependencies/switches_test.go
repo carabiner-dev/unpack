@@ -130,12 +130,39 @@ func TestDecomposerSwitches(t *testing.T) {
 	})
 }
 
-// The built-in set is what it was: every language unpack reads runs by
-// default.
+// The built-in set: the languages read from a lock or a manifest run by
+// default, and CMake, whose reading is an approximation, only when asked
+// for.
 func TestDefaultDecomposers(t *testing.T) {
 	t.Parallel()
+	unpacker := NewUnpacker()
 	require.Equal(t,
 		[]string{"golang", "maven", "npm", "php", "python", "ruby", "rust"},
-		NewUnpacker().DefaultDecomposerNames(),
+		unpacker.DefaultDecomposerNames(),
 	)
+	require.Equal(t,
+		[]string{"cmake", "golang", "maven", "npm", "php", "python", "ruby", "rust"},
+		unpacker.DecomposerNames(),
+	)
+}
+
+// TestCMakeIsOptIn checks a CMake project is no codebase until the
+// decomposer is switched on, and is read once it is.
+func TestCMakeIsOptIn(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "CMakeLists.txt"), []byte("project(demo VERSION 1.0)\nfind_package(ZLIB REQUIRED)\n"))
+
+	unpacker := NewUnpacker()
+	unpacker.Options.ReadGitVersion = false
+	require.Empty(t, languages(t, unpacker, dir))
+
+	unpacker.Options.Decomposers = map[string]bool{"cmake": true}
+	require.Equal(t, []string{"cmake"}, languages(t, unpacker, dir))
+
+	lists, err := unpacker.Extract(t.Context(), &Codebase{Path: dir})
+	require.NoError(t, err)
+	require.Len(t, lists, 1)
+	require.Equal(t, "demo", lists[0].GetRootNodes()[0].GetName())
+	require.Len(t, lists[0].GetNodes(), 2)
 }
