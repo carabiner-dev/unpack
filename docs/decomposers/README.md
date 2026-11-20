@@ -1,7 +1,7 @@
 # Decomposers
 
-Unpack ships with decomposers for eight package ecosystems and for CMake
-projects. Each decomposer
+Unpack ships with decomposers for eight package ecosystems, and for CMake
+projects and pkg-config files. Each decomposer
 parses lock files and manifest files, resolves the dependency graph, and
 produces a [protobom](https://github.com/protobom/protobom) NodeList that
 can be serialized as SPDX or CycloneDX.
@@ -10,6 +10,7 @@ can be serialized as SPDX or CycloneDX.
 |-----------|------------|-----------|----------|-------------------|
 | [C and C++ (CMake)](cmake.md) | `source/cmake/` | _(none)_ | `CMakeLists.txt`, `*.cmake`; off unless asked for with `--enable cmake` | _(none)_ |
 | [C and C++ (Conan)](conan.md) | `source/conan/` | `conan.lock` | `conanfile.txt` | _(none)_ |
+| [C and C++ (pkg-config)](pkgconf.md) | `source/pkgconf/` | _(none)_ | `*.pc`, `*.pc.in`; off unless asked for with `--enable pkgconf` | _(none)_ |
 | [Go](golang.md) | `source/golang/` | `go.sum` | `go.mod` | deps.dev API + Go module proxy |
 | [Maven](maven.md) | `source/maven/` | _(none)_ | `pom.xml` | Maven Central |
 | [PHP (Composer)](composer.md) | `source/composer/` | `composer.lock` | `composer.json` | _(none — licenses and authors are in the lock)_ |
@@ -90,7 +91,7 @@ decomposer implements `api.ContextReporter` and names the one it reads in.
 
 | Context | Meaning | Decomposers |
 |---------|---------|-------------|
-| `source` | Read from a source tree and the manifests and lock files in it, before anything is built | CMake, Conan, Go, Maven, JavaScript, PHP, Python, Ruby, Rust |
+| `source` | Read from a source tree and the manifests and lock files in it, before anything is built | CMake, Conan, Go, Maven, JavaScript, PHP, pkg-config, Python, Ruby, Rust |
 | `build` | Read from what the build tool recorded of its own dependency resolution | sbt |
 | `analyzed` | Read by taking apart something already built | Go binary, Rust binary, the release reader, and the system readers (rpm, deb, apk, installed Python environments, Composer vendor directories) |
 
@@ -213,6 +214,7 @@ decomposers uniformly.
 | **Python:** local parsing (lockfiles, requirements) | works | works | works |
 | **CMake:** local parsing, no network at any level | works | works | works |
 | **Conan:** local parsing, no network at any level | works | works | works |
+| **pkg-config:** local parsing, no network at any level | works | works | works |
 | **Ruby:** local parsing (Gemfile.lock) | works | works | works |
 | **Ruby:** rubygems.org API (licenses, metadata) | skip | yes | yes |
 | **Python:** PyPI JSON API (licenses, metadata) | skip | yes | yes |

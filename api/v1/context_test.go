@@ -20,6 +20,7 @@ import (
 	"github.com/carabiner-dev/unpack/source/golang"
 	"github.com/carabiner-dev/unpack/source/maven"
 	"github.com/carabiner-dev/unpack/source/npm"
+	"github.com/carabiner-dev/unpack/source/pkgconf"
 	"github.com/carabiner-dev/unpack/source/python"
 	"github.com/carabiner-dev/unpack/source/ruby"
 	"github.com/carabiner-dev/unpack/source/rust"
@@ -51,6 +52,7 @@ func TestDecomposerContexts(t *testing.T) {
 		"ruby":     {ruby.New(), api.ContextSource},
 		"cmake":    {cmake.New(), api.ContextSource},
 		"conan":    {conan.New(), api.ContextSource},
+		"pkgconf":  {pkgconf.New(), api.ContextSource},
 		"rust":     {rust.New(), api.ContextSource},
 
 		// What the build tool recorded of its own resolution.

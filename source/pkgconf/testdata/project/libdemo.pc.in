@@ -1,0 +1,21 @@
+# The library, as its build installs it.
+prefix=@CMAKE_INSTALL_PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: Demo
+Description: A demonstration library
+URL: https://example.org/demo
+Version: @PROJECT_VERSION@
+License: MIT
+License: Apache-2.0
+License.file: ${prefix}/share/licenses/demo/LICENSE
+Maintainer: Demo Team <team@example.org>
+Source: https://example.org/demo/demo-@PROJECT_VERSION@.tar.gz
+Copyright: 2020-2026 Demo Authors
+Copyright: 2019 Someone Else
+Requires: zlib >= 1.2.11, libdemo-core = @PROJECT_VERSION@ pkgconf >= 1.9.0
+Requires.private: openssl>=3.0 libcrypto \
+    @EXTRA_REQUIRES@
+Libs: -L${libdir} -ldemo
+Cflags: -I${includedir}
