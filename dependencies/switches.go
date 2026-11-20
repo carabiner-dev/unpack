@@ -11,6 +11,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/source/cmake"
+	"github.com/carabiner-dev/unpack/source/pkgconf"
 )
 
 // This file is how a caller chooses which decomposers an unpacker runs.
@@ -27,6 +28,10 @@ var optionalDecomposers = map[string]func() api.Decomposer{
 	// CMake files say what a project may depend on, and not what a
 	// build of it has.
 	"cmake": func() api.Decomposer { return cmake.New() },
+
+	// pkg-config files turn up in the source of projects of every
+	// language, as templates with their versions still to be filled in.
+	"pkgconf": func() api.Decomposer { return pkgconf.New() },
 }
 
 // ErrUnknownDecomposer is returned when a decomposer is switched on or

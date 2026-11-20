@@ -224,8 +224,8 @@ unpack extract --enable cmake .
 
 `--disable` leaves out a decomposer that runs by default. `--enable`
 brings in one that does not: a decomposer whose reading is an
-approximation is not run without being asked for. `cmake`, for C and C++
-projects, is the one there is. A name unpack does not
+approximation is not run without being asked for. There are two, both
+for C and C++ projects: `cmake` and `pkgconf`. A name unpack does not
 know is an error that lists the ones it does, and `--help` shows them.
 
 The sbt decomposer is the exception: it reads a file only its own flag
@@ -275,6 +275,7 @@ inventory, and the modules built into any
 | [JavaScript](docs/decomposers/npm.md) | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` | `package.json` | npm registry (suppliers, licenses) |
 | [Python](docs/decomposers/python.md) | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry) | PyPI JSON API |
 | [C and C++ (Conan)](docs/decomposers/conan.md) | `conan.lock` | `conanfile.txt` | _(none)_ |
+| [C and C++ (pkg-config)](docs/decomposers/pkgconf.md) | _(none)_ | `*.pc`, `*.pc.in`, with `--enable pkgconf` | _(none)_ |
 | [C and C++ (CMake)](docs/decomposers/cmake.md) | _(none)_ | `CMakeLists.txt`, `*.cmake`, with `--enable cmake` | _(none)_ |
 | [Ruby (Bundler)](docs/decomposers/ruby.md) | `Gemfile.lock` | _(not read)_ | rubygems.org API |
 | [Rust](docs/decomposers/rust.md) | `Cargo.lock` | `Cargo.toml` | crates.io API |
