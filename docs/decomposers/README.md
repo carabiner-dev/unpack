@@ -1,12 +1,14 @@
 # Decomposers
 
-Unpack ships with decomposers for seven package ecosystems. Each decomposer
+Unpack ships with decomposers for seven package ecosystems and for CMake
+projects. Each decomposer
 parses lock files and manifest files, resolves the dependency graph, and
 produces a [protobom](https://github.com/protobom/protobom) NodeList that
 can be serialized as SPDX or CycloneDX.
 
 | Ecosystem | Entry point | Lock file | Manifest | Remote enrichment |
 |-----------|------------|-----------|----------|-------------------|
+| [C and C++ (CMake)](cmake.md) | `source/cmake/` | _(none)_ | `CMakeLists.txt`, `*.cmake`; off unless asked for with `--enable cmake` | _(none)_ |
 | [Go](golang.md) | `source/golang/` | `go.sum` | `go.mod` | deps.dev API + Go module proxy |
 | [Maven](maven.md) | `source/maven/` | _(none)_ | `pom.xml` | Maven Central |
 | [PHP (Composer)](composer.md) | `source/composer/` | `composer.lock` | `composer.json` | _(none — licenses and authors are in the lock)_ |
@@ -87,7 +89,7 @@ decomposer implements `api.ContextReporter` and names the one it reads in.
 
 | Context | Meaning | Decomposers |
 |---------|---------|-------------|
-| `source` | Read from a source tree and the manifests and lock files in it, before anything is built | Go, Maven, JavaScript, PHP, Python, Ruby, Rust |
+| `source` | Read from a source tree and the manifests and lock files in it, before anything is built | CMake, Go, Maven, JavaScript, PHP, Python, Ruby, Rust |
 | `build` | Read from what the build tool recorded of its own dependency resolution | sbt |
 | `analyzed` | Read by taking apart something already built | Go binary, Rust binary, the release reader, and the system readers (rpm, deb, apk, installed Python environments, Composer vendor directories) |
 
@@ -208,6 +210,7 @@ decomposers uniformly.
 | **JavaScript:** npm registry (suppliers, and licenses the lock lacks), for packages of the public registry only | skip | yes | yes |
 | **PHP:** _(none -- fully offline, licenses included)_ | works | works | works |
 | **Python:** local parsing (lockfiles, requirements) | works | works | works |
+| **CMake:** local parsing, no network at any level | works | works | works |
 | **Ruby:** local parsing (Gemfile.lock) | works | works | works |
 | **Ruby:** rubygems.org API (licenses, metadata) | skip | yes | yes |
 | **Python:** PyPI JSON API (licenses, metadata) | skip | yes | yes |
@@ -278,6 +281,10 @@ output. Three flags control the inclusion of additional dependency types:
   dependencies; see the [JavaScript page](npm.md#peer-dependencies).
 - Maven's `provided` scope is not covered by these flags and remains
   a decomposer-specific option (`IncludeProvided`).
+- CMake projects show their optional dependencies without
+  `--include-optional`, which there only adds what an option turns off
+  by default: optional means "used when present" to CMake. See the
+  [CMake page](cmake.md#dependency-types).
 - Ruby's Gemfile is executable code, so group membership cannot be read
   statically: all three flags are no-ops and every declared gem is
   included. See the [Ruby page](ruby.md).

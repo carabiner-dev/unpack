@@ -207,6 +207,30 @@ unpack ls --format=json /path/to/project
 unpack ls --ignore "*/testdata/*" --ignore "temp/" .
 ```
 
+### Choosing decomposers: `--enable` and `--disable`
+
+Each language is read by a decomposer that goes by the language's name,
+the one codebase IDs start with (`golang`, `maven`, `npm`, `php`,
+`python`, `ruby`, `rust`). `extract` and `ls` take two flags to choose
+among them, both repeatable or comma separated:
+
+```bash
+# Leave the JavaScript and Ruby codebases of a repository out
+unpack extract --multi --disable npm,ruby .
+
+# Run a decomposer that is off unless asked for
+unpack extract --enable cmake .
+```
+
+`--disable` leaves out a decomposer that runs by default. `--enable`
+brings in one that does not: a decomposer whose reading is an
+approximation is not run without being asked for. `cmake`, for C and C++
+projects, is the one there is. A name unpack does not
+know is an error that lists the ones it does, and `--help` shows them.
+
+The sbt decomposer is the exception: it reads a file only its own flag
+can name, so it is enabled with `--sbt-snapshot`.
+
 ### `unpack artifact`: Inspect Built Artifacts
 
 Some artifacts carry their own dependency data. A Go executable records
@@ -250,6 +274,7 @@ inventory, and the modules built into any
 | [PHP (Composer)](docs/decomposers/composer.md) | `composer.lock` | `composer.json` | _(none — licenses and authors are in the lock)_ |
 | [JavaScript](docs/decomposers/npm.md) | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` | `package.json` | npm registry (suppliers, licenses) |
 | [Python](docs/decomposers/python.md) | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry) | PyPI JSON API |
+| [C and C++ (CMake)](docs/decomposers/cmake.md) | _(none)_ | `CMakeLists.txt`, `*.cmake`, with `--enable cmake` | _(none)_ |
 | [Ruby (Bundler)](docs/decomposers/ruby.md) | `Gemfile.lock` | _(not read)_ | rubygems.org API |
 | [Rust](docs/decomposers/rust.md) | `Cargo.lock` | `Cargo.toml` | crates.io API |
 | [sbt](docs/decomposers/sbt.md) | _(a dependency snapshot, `--sbt-snapshot`)_ | _(not read)_ | Maven Central (hashes) |

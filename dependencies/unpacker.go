@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 
 	"github.com/protobom/protobom/pkg/sbom"
 
@@ -34,8 +35,9 @@ func init() {
 
 func NewUnpacker() *Unpacker {
 	return &Unpacker{
-		Options: DefaultOptions,
-		impl:    &defaultImplementation{},
+		Options:   DefaultOptions,
+		impl:      &defaultImplementation{},
+		available: maps.Clone(optionalDecomposers),
 		decomposers: map[string]api.Decomposer{
 			"rust":   rust.New(),
 			"golang": golang.New(),
@@ -69,6 +71,14 @@ type Options struct {
 	// the git history and pass it to the decomposers to use as the version
 	// for the root nodes.
 	ReadGitVersion bool
+
+	// Decomposers switches decomposers on or off by name, the name of
+	// the language as codebase IDs have it (golang, npm, ...). A
+	// decomposer that runs by default is left out with false; one that
+	// only runs when asked for is brought in with true. Names not listed
+	// keep their default, and a name the unpacker does not know is an
+	// error when the unpacker runs. See DecomposerNames.
+	Decomposers map[string]bool
 
 	// ReadLicenseFile instructs the unpacker to read the license of a
 	// codebase from its license file (LICENSE, COPYING, ...) when the
@@ -144,6 +154,10 @@ type Unpacker struct {
 	Options     Options
 	impl        unpackerImplementation
 	decomposers map[string]api.Decomposer
+
+	// available are the decomposers that run only when switched on, by
+	// name, each with how to make one (see Options.Decomposers).
+	available map[string]func() api.Decomposer
 }
 
 // Extract reads dependency data from a subject. The dependencies unpacker
@@ -180,7 +194,12 @@ func (unpacker *Unpacker) extractSources(ctx context.Context, sources Sources) (
 		return nil, fmt.Errorf("indexing codebases: %w", err)
 	}
 
-	codebases, err := unpacker.impl.ScanPaths(ctx, &unpacker.Options, unpacker.decomposers, codeIndices)
+	decomposers, err := unpacker.activeDecomposers()
+	if err != nil {
+		return nil, err
+	}
+
+	codebases, err := unpacker.impl.ScanPaths(ctx, &unpacker.Options, decomposers, codeIndices)
 	if err != nil {
 		return nil, fmt.Errorf("scaning for codebases: %w", err)
 	}
@@ -322,7 +341,12 @@ func (unpacker *Unpacker) ListCodebases(ctx context.Context, path string) ([]Cod
 	}
 
 	// Scan for codebases
-	codebaseMap, err := unpacker.impl.ScanPaths(ctx, &unpacker.Options, unpacker.decomposers, codeIndices)
+	decomposers, err := unpacker.activeDecomposers()
+	if err != nil {
+		return nil, err
+	}
+
+	codebaseMap, err := unpacker.impl.ScanPaths(ctx, &unpacker.Options, decomposers, codeIndices)
 	if err != nil {
 		return nil, fmt.Errorf("scanning for codebases: %w", err)
 	}
