@@ -1,0 +1,22 @@
+# The project's requirements.
+[requires]
+zlib/[>=1.2 <2]
+openssl/3.2.1
+fmt/10.2.1
+internal/2.0@acme/stable
+
+[test_requires]
+catch2/3.5.2
+
+[tool_requires]
+cmake/[>=3.25]
+
+[generators]
+CMakeDeps
+CMakeToolchain
+
+[options]
+openssl/*:shared=True
+
+[layout]
+cmake_layout

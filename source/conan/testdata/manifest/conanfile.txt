@@ -1,0 +1,11 @@
+[requires]
+poco/1.9.4
+zlib/[>1.0 <1.9]
+boost/1.70.0#revision2
+private/1.0@team/testing
+
+[tool_requires]
+cmake/3.28.1
+
+[test_requires]
+gtest/1.14.0
