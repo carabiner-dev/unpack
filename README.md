@@ -210,8 +210,8 @@ unpack ls --ignore "*/testdata/*" --ignore "temp/" .
 ### Choosing decomposers: `--enable` and `--disable`
 
 Each language is read by a decomposer that goes by the language's name,
-the one codebase IDs start with (`golang`, `maven`, `npm`, `php`,
-`python`, `ruby`, `rust`). `extract` and `ls` take two flags to choose
+the one codebase IDs start with (`conan`, `golang`, `maven`, `npm`,
+`php`, `python`, `ruby`, `rust`). `extract` and `ls` take two flags to choose
 among them, both repeatable or comma separated:
 
 ```bash
@@ -260,7 +260,7 @@ to leave out one kind of artifact, `--skip-path` to leave out more paths, and
 
 ## Supported Ecosystems
 
-Unpack includes decomposers for seven package ecosystems. See the
+Unpack includes decomposers for eight package ecosystems. See the
 [decomposer documentation](docs/decomposers/README.md) for details.
 Container image scans additionally report installed Python environments
 (site-packages) and Composer vendor directories next to the OS package
@@ -274,6 +274,7 @@ inventory, and the modules built into any
 | [PHP (Composer)](docs/decomposers/composer.md) | `composer.lock` | `composer.json` | _(none — licenses and authors are in the lock)_ |
 | [JavaScript](docs/decomposers/npm.md) | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` | `package.json` | npm registry (suppliers, licenses) |
 | [Python](docs/decomposers/python.md) | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry) | PyPI JSON API |
+| [C and C++ (Conan)](docs/decomposers/conan.md) | `conan.lock` | `conanfile.txt` | _(none)_ |
 | [C and C++ (CMake)](docs/decomposers/cmake.md) | _(none)_ | `CMakeLists.txt`, `*.cmake`, with `--enable cmake` | _(none)_ |
 | [Ruby (Bundler)](docs/decomposers/ruby.md) | `Gemfile.lock` | _(not read)_ | rubygems.org API |
 | [Rust](docs/decomposers/rust.md) | `Cargo.lock` | `Cargo.toml` | crates.io API |

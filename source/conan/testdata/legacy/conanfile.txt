@@ -1,0 +1,9 @@
+[requires]
+applib/1.0@acme/stable
+openssl/1.1.1k
+
+[test_requires]
+catch2/2.13.7
+
+[build_requires]
+cmake/3.20.5
