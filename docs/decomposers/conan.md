@@ -7,7 +7,8 @@ Reads C and C++ projects whose dependencies are managed with
 (`conan.lock`) and the declarative manifest (`conanfile.txt`). Conan is
 not run and extraction is offline.
 
-Only Conan 2 lockfiles are read. The other form of a recipe,
+Lockfiles of both Conan 2 and Conan 1 are read; they are two different
+documents, and the older one holds more. The other form of a recipe,
 `conanfile.py`, is a Python program and is not read: a project that has
 one and no lockfile is not found.
 
@@ -15,7 +16,7 @@ one and no lockfile is not found.
 
 1. `FindCodeBases` finds the directories holding a `conan.lock` or a
    `conanfile.txt`.
-2. With a lockfile, the packages are the lockfile's: every reference of
+2. With a Conan 2 lockfile, the packages are the lockfile's: every reference of
    its lists, at the version and recipe revision it pins.
 
    | List | What it holds | Edge |
@@ -43,6 +44,38 @@ The other sections of a manifest, `[generators]`, `[options]` and
 `[layout]`, configure the build and name no package. The `overrides` of
 a lockfile name none of their own either.
 
+### Conan 1 lockfiles
+
+A Conan 1 lockfile (a `graph_lock` of nodes, format version `0.4`) is
+the dependency graph itself: each node is a package and lists the nodes
+it requires. So the graph is not flat here. It is walked from the node
+the lockfile was made for, the one no other requires, and every edge is
+the lockfile's:
+
+```
+legacy
+  ├ dependsOn ─▶ applib/1.0@acme/stable
+  │                 └ dependsOn ─▶ zlib/1.2.11
+  └ dependsOn ─▶ openssl/1.1.1k
+                    └ dependsOn ─▶ zlib/1.2.11
+```
+
+- `requires` edges are `dependsOn`, `build_requires` edges
+  `buildDependency`, and what a build requirement requires is only there
+  with `--include-build`.
+- A node's `python_requires` are `buildDependency` edges from it.
+- The manifest marks the project's own test and tool requirements, as
+  for Conan 2.
+- A package the graph holds twice, built for the target and for the
+  build machine, is one node.
+- Each node carries the package id the lockfile pins, and the package
+  revision when revisions were in use.
+
+Conan 1 called the format experimental and changed it between releases.
+A lockfile whose graph cannot be made out, one of an older shape or a
+lock bundle, is left aside with a warning, and the project is read from
+its manifest as if it had no lockfile.
+
 ### References
 
 A package is named as Conan writes it:
@@ -62,7 +95,7 @@ organization's own from the one of the same name on Conan Center.
 | Version | lockfile / manifest | Exact from a lockfile; from a manifest only when it pins one |
 | PURL | computed | `pkg:conan/{name}@{version}` with the qualifiers the type defines: `rrev`, `user`, `channel` |
 | `conan:recipe-revision` | lockfile | See below |
-| `conan:package-id`, `conan:package-revision` | lockfile | Only in a lockfile made to lock binaries; one of each per binary |
+| `conan:package-id`, `conan:package-revision` | lockfile | In a Conan 1 lockfile, and in a Conan 2 one made to lock binaries; one of each per binary |
 | `conan:version-range` | manifest | The range asked for, on a node with no version |
 
 There is no license, no supplier and no download location: neither file
@@ -109,6 +142,8 @@ None.
 
 - **Exact versions**, which reading a C++ build system cannot give: the
   lockfile is Conan's own record of what it resolved.
+- **A real graph from Conan 1 lockfiles**, direct and transitive told
+  apart.
 - **Identifiers tools know.** `pkg:conan` purls, with the recipe
   revision.
 - **Private packages are told apart** by their user and channel.
@@ -116,16 +151,18 @@ None.
 
 ## Weaknesses
 
-- **The graph is flat.** A Conan 2 lockfile is lists of references with
-  no edges: which package requires which is not in it, nor which of them
-  the project asks for directly. Every package hangs from the root.
+- **The graph is flat for Conan 2.** A Conan 2 lockfile is lists of
+  references with no edges: which package requires which is not in it,
+  nor which of them the project asks for directly. Every package hangs
+  from the root. A Conan 1 lockfile has the edges.
 - **No hashes, licenses or suppliers.** See above.
 - **`conanfile.py` is not read.** Most recipes are written in Python,
   and many projects commit no lockfile; those are not found. With a
   lockfile and a Python recipe, test requirements are not told from the
   rest.
-- **Conan 1 lockfiles are refused.** They are another format, a graph of
-  nodes, and extraction fails with an error saying so.
+- **Conan 1 lockfiles are found by one name.** `conan.lock` is the
+  default, and Conan 1 projects often wrote theirs elsewhere
+  (`locks/app.lock`); those are not found.
 - **A lockfile can hold more than a build uses.** Lockfiles are merged
   and added to by hand; everything listed is reported.
 - **The profile is not known.** Which settings and options the packages

@@ -13,10 +13,10 @@ import (
 // LockFile is the name Conan gives its lockfile and looks for by default.
 const LockFile = "conan.lock"
 
-// ErrLegacyLockfile is returned for a lockfile in the format of Conan 1,
-// which is another document altogether: a graph of nodes, where Conan 2
-// writes lists of references.
-var ErrLegacyLockfile = errors.New("the lockfile is in the Conan 1 format, which is not read")
+// ErrLegacyLockfile is returned by ParseLock for a lockfile in the format
+// of Conan 1, which is another document altogether: a graph of nodes,
+// where Conan 2 writes lists of references. ParseLegacyLock reads it.
+var ErrLegacyLockfile = errors.New("the lockfile is in the Conan 1 format")
 
 // Lock is a Conan 2 lockfile: the packages a dependency graph resolved
 // to, as flat lists, each sorted newest first. It says which packages and
@@ -47,6 +47,7 @@ type Lock struct {
 type rawLock struct {
 	Version        string            `json:"version"`
 	GraphLock      json.RawMessage   `json:"graph_lock"`
+	LockBundle     json.RawMessage   `json:"lock_bundle"`
 	Requires       []json.RawMessage `json:"requires"`
 	BuildRequires  []json.RawMessage `json:"build_requires"`
 	PythonRequires []json.RawMessage `json:"python_requires"`
@@ -104,7 +105,7 @@ func ParseLock(data []byte) (*Lock, error) {
 	if err := json.Unmarshal(data, raw); err != nil {
 		return nil, fmt.Errorf("parsing lockfile: %w", err)
 	}
-	if len(raw.GraphLock) > 0 {
+	if len(raw.GraphLock) > 0 || len(raw.LockBundle) > 0 {
 		return nil, ErrLegacyLockfile
 	}
 

@@ -238,12 +238,7 @@ func TestExtractManifestOnly(t *testing.T) {
 
 func TestExtractErrors(t *testing.T) {
 	t.Parallel()
-	legacy := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(legacy, LockFile), []byte(legacyLock), 0o600))
-	_, err := New().Extract(&api.DecomposerOptions{WorkDir: legacy})
-	require.ErrorIs(t, err, ErrLegacyLockfile)
-
-	_, err = New().Extract(&api.DecomposerOptions{WorkDir: t.TempDir()})
+	_, err := New().Extract(&api.DecomposerOptions{WorkDir: t.TempDir()})
 	require.ErrorContains(t, err, "no conan.lock or conanfile.txt")
 }
 
@@ -260,4 +255,124 @@ func TestFindCodeBases(t *testing.T) {
 	found, err := New().FindCodeBases(&index)
 	require.NoError(t, err)
 	require.Equal(t, []string{"both", "locked", "manifest"}, found)
+}
+
+func TestParseLegacyLock(t *testing.T) {
+	t.Parallel()
+	lock, err := ParseLegacyLock([]byte(legacyLock))
+	require.NoError(t, err)
+	require.Equal(t, "0.4", lock.Version)
+	require.Len(t, lock.Nodes, 2)
+
+	// The root is the node no other requires, here a package itself.
+	root, err := lock.Root()
+	require.NoError(t, err)
+	require.Equal(t, "0", root.ID)
+	require.Equal(t, "pkgb", root.Ref.Name)
+	require.Equal(t, []string{"1"}, root.Requires)
+	require.Equal(t, "5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9", lock.Nodes["1"].PackageID)
+
+	for name, data := range map[string]string{
+		"not json":         `nope`,
+		"no nodes":         `{"graph_lock": {"nodes": {}}, "version": "0.4"}`,
+		"a lock bundle":    `{"lock_bundle": {"app/1.0": {"packages": []}}}`,
+		"a missing node":   `{"graph_lock": {"nodes": {"0": {"requires": ["7"]}}}}`,
+		"a bad reference":  `{"graph_lock": {"nodes": {"0": {"ref": "nothing"}}}}`,
+		"two roots":        `{"graph_lock": {"nodes": {"0": {"ref": "a/1"}, "1": {"ref": "b/1"}}}}`,
+		"a cycle, no root": `{"graph_lock": {"nodes": {"0": {"requires": ["1"]}, "1": {"requires": ["0"]}}}}`,
+	} {
+		_, err := ParseLegacyLock([]byte(data))
+		require.ErrorIs(t, err, ErrLegacyGraph, name)
+	}
+}
+
+// graph returns the edges of an extraction as "from -> to" by name, with
+// their types.
+func graph(t *testing.T, dir string, opts *api.DecomposerOptions) (edges map[string]sbom.Edge_Type, nodes map[string]*sbom.Node) {
+	t.Helper()
+	opts.WorkDir = dir
+	nl, err := New().Extract(opts)
+	require.NoError(t, err)
+
+	byID := map[string]*sbom.Node{}
+	nodes = map[string]*sbom.Node{}
+	for _, node := range nl.GetNodes() {
+		byID[node.GetId()] = node
+		nodes[node.GetName()] = node
+	}
+	require.Len(t, nodes, len(byID), "a package is one node")
+	edges = map[string]sbom.Edge_Type{}
+	for _, e := range nl.GetEdges() {
+		for _, to := range e.GetTo() {
+			edges[byID[e.GetFrom()].GetName()+" -> "+byID[to].GetName()] = e.GetType()
+		}
+	}
+	return edges, nodes
+}
+
+// TestExtractLegacy checks a Conan 1 lockfile gives its graph: the edges
+// it records, and not a flat list.
+func TestExtractLegacy(t *testing.T) {
+	t.Parallel()
+
+	edges, nodes := graph(t, "testdata/legacy", &api.DecomposerOptions{})
+	require.Equal(t, map[string]sbom.Edge_Type{
+		"legacy -> applib":  sbom.Edge_dependsOn,
+		"legacy -> openssl": sbom.Edge_dependsOn,
+		"applib -> zlib":    sbom.Edge_dependsOn,
+		"openssl -> zlib":   sbom.Edge_dependsOn,
+	}, edges)
+
+	require.Equal(t,
+		"pkg:conan/applib@1.0?channel=stable&rrev=4524fcdd41f33e8df88ece6e755a5dcc&user=acme",
+		string(nodes["applib"].Purl()))
+	require.Equal(t, []*sbom.Property{
+		{Name: PropertyRevision, Data: "4524fcdd41f33e8df88ece6e755a5dcc"},
+		{Name: PropertyPackageID, Data: "5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9"},
+		{Name: PropertyPackageRevision, Data: "5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9#83c38d3b4e5f1b8450434436eec31b00"},
+	}, nodes["applib"].GetProperties())
+	// A package revision of "0" is Conan 1 saying there is none.
+	require.Equal(t, []*sbom.Property{
+		{Name: PropertyPackageID, Data: "6af9cc7cb931c5ad942174fd7838eb655717c709"},
+	}, nodes["zlib"].GetProperties())
+
+	// The tests' and the build's requirements, each with what it brings:
+	// the recipe tooling of a package, the build tool and what the tool
+	// requires, which is the zlib already there.
+	edges, _ = graph(t, "testdata/legacy", &api.DecomposerOptions{IncludeDev: true, IncludeBuild: true})
+	require.Equal(t, map[string]sbom.Edge_Type{
+		"legacy -> applib":  sbom.Edge_dependsOn,
+		"legacy -> openssl": sbom.Edge_dependsOn,
+		"applib -> zlib":    sbom.Edge_dependsOn,
+		"openssl -> zlib":   sbom.Edge_dependsOn,
+		"legacy -> catch2":  sbom.Edge_devDependency,
+		"legacy -> cmake":   sbom.Edge_buildDependency,
+		"cmake -> zlib":     sbom.Edge_dependsOn,
+		"applib -> pytools": sbom.Edge_buildDependency,
+	}, edges)
+}
+
+// TestExtractUnreadableLegacy checks a Conan 1 lockfile that cannot be
+// made out is left aside, and the project read from its manifest or, with
+// none, as a project with nothing known of it.
+func TestExtractUnreadableLegacy(t *testing.T) {
+	t.Parallel()
+	const bundle = `{"lock_bundle": {"app/1.0": {"packages": []}}}`
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, LockFile), []byte(bundle), 0o600))
+	nl, err := New().Extract(&api.DecomposerOptions{WorkDir: dir})
+	require.NoError(t, err)
+	require.Len(t, nl.GetNodes(), 1)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ManifestFile), []byte("[requires]\nzlib/1.3.1\n"), 0o600))
+	nl, err = New().Extract(&api.DecomposerOptions{WorkDir: dir})
+	require.NoError(t, err)
+	require.Len(t, nl.GetNodes(), 2)
+
+	// A lockfile that is no JSON at all is still an error: that is a
+	// broken file, not another format.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, LockFile), []byte("not json"), 0o600))
+	_, err = New().Extract(&api.DecomposerOptions{WorkDir: dir})
+	require.Error(t, err)
 }

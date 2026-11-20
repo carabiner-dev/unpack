@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"os"
 	"path/filepath"
 	"slices"
 
@@ -92,24 +93,35 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 }
 
 // ExtractWithContext reads the project's lockfile and manifest and
-// returns the packages they name, each a dependency of the project.
+// returns the packages they name.
 //
-// The graph is flat. A Conan 2 lockfile lists the packages a graph
-// resolved to and not the edges between them, so which package requires
-// which is not known, nor which of them the project asks for itself.
+// From a Conan 2 lockfile the graph is flat: it lists the packages a
+// graph resolved to and not the edges between them, so which package
+// requires which is not known, nor which of them the project asks for
+// itself. A Conan 1 lockfile holds the graph, and it is rendered as it
+// is.
 func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	workDir := opts.WorkDir
 	if workDir == "" {
 		workDir = "."
 	}
+	log := logging.FromContext(ctx)
 
-	lock, err := ReadLock(filepath.Join(workDir, LockFile))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	lock, legacy, err := readLocks(filepath.Join(workDir, LockFile))
+	switch {
+	case errors.Is(err, ErrLegacyGraph):
+		// A lockfile nobody can read locks nothing, which is no reason
+		// to refuse the project: what its manifest asks for stands.
+		log.Warn("conan: the lockfile is in a Conan 1 format that is not read, it is left aside",
+			"lockfile", filepath.Join(workDir, LockFile), "error", err)
+	case err != nil && !errors.Is(err, fs.ErrNotExist):
 		return nil, err
 	}
+	locked := lock != nil || legacy != nil
+
 	manifest, err := ReadManifest(filepath.Join(workDir, ManifestFile))
 	switch {
-	case errors.Is(err, fs.ErrNotExist) && lock == nil:
+	case errors.Is(err, fs.ErrNotExist) && !locked && !pathExists(filepath.Join(workDir, LockFile)):
 		return nil, fmt.Errorf("no %s or %s in %s", LockFile, ManifestFile, workDir)
 	case errors.Is(err, fs.ErrNotExist):
 		manifest = &Manifest{}
@@ -117,9 +129,8 @@ func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.Decompose
 		return nil, err
 	}
 
-	if lock == nil {
-		logging.FromContext(ctx).Debug(
-			"conan: no lockfile, the graph holds only what conanfile.txt asks for, at the versions or ranges it states",
+	if !locked {
+		log.Debug("conan: no lockfile read, the graph holds only what conanfile.txt asks for, at the versions or ranges it states",
 			"manifest", filepath.Join(workDir, ManifestFile))
 	}
 
@@ -138,25 +149,37 @@ func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.Decompose
 		purposes[ref.Name] = sbom.Edge_devDependency
 	}
 
-	lists := []struct {
+	if legacy != nil {
+		lb := &legacyBuilder{
+			builder: b, lock: legacy, purposes: purposes,
+			nodes: map[string]*sbom.Node{}, visited: map[string]bool{},
+		}
+		if err := lb.build(); err != nil {
+			return nil, err
+		}
+		return b.nl, nil
+	}
+
+	type list struct {
 		refs []*Reference
 		edge sbom.Edge_Type
-	}{
+	}
+	lists := []list{
 		{manifest.Requires, sbom.Edge_dependsOn},
 		{manifest.ToolRequires, sbom.Edge_buildDependency},
 		{manifest.TestRequires, sbom.Edge_devDependency},
 	}
 	if lock != nil {
-		lists[0].refs, lists[1].refs = lock.Requires, lock.BuildRequires
-		lists[2].refs, lists[2].edge = lock.PythonRequires, sbom.Edge_buildDependency
-		lists = append(lists, struct {
-			refs []*Reference
-			edge sbom.Edge_Type
-		}{lock.ConfigRequires, sbom.Edge_buildDependency})
+		lists = []list{
+			{lock.Requires, sbom.Edge_dependsOn},
+			{lock.BuildRequires, sbom.Edge_buildDependency},
+			{lock.PythonRequires, sbom.Edge_buildDependency},
+			{lock.ConfigRequires, sbom.Edge_buildDependency},
+		}
 	}
-	for _, list := range lists {
-		for _, ref := range list.refs {
-			edge := list.edge
+	for _, l := range lists {
+		for _, ref := range l.refs {
+			edge := l.edge
 			if purpose, ok := purposes[ref.Name]; ok && lock != nil {
 				edge = purpose
 			}
@@ -166,6 +189,32 @@ func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.Decompose
 		}
 	}
 	return b.nl, nil
+}
+
+// readLocks reads the lockfile at a path, in whichever of Conan's two
+// formats it is.
+func readLocks(path string) (*Lock, *LegacyLock, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading lockfile: %w", err)
+	}
+	lock, err := ParseLock(data)
+	switch {
+	case err == nil:
+		return lock, nil, nil
+	case !errors.Is(err, ErrLegacyLockfile):
+		return nil, nil, err
+	}
+	legacy, err := ParseLegacyLock(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	return nil, legacy, nil
+}
+
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 type builder struct {

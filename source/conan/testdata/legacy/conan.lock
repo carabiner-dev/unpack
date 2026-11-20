@@ -1,0 +1,62 @@
+{
+ "graph_lock": {
+  "nodes": {
+   "0": {
+    "options": "",
+    "requires": ["1", "2", "4"],
+    "build_requires": ["5"],
+    "path": "conanfile.txt",
+    "context": "host"
+   },
+   "1": {
+    "ref": "applib/1.0@acme/stable#4524fcdd41f33e8df88ece6e755a5dcc",
+    "options": "shared=False",
+    "package_id": "5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9",
+    "prev": "83c38d3b4e5f1b8450434436eec31b00",
+    "python_requires": ["pytools/0.2@acme/stable"],
+    "requires": ["3"],
+    "context": "host"
+   },
+   "2": {
+    "ref": "openssl/1.1.1k",
+    "options": "shared=False",
+    "package_id": "d9a9b0f1e2c3d4a5b6c7d8e9f0a1b2c3d4e5f6a7",
+    "prev": "0",
+    "requires": ["3"],
+    "context": "host"
+   },
+   "3": {
+    "ref": "zlib/1.2.11",
+    "options": "shared=False",
+    "package_id": "6af9cc7cb931c5ad942174fd7838eb655717c709",
+    "prev": "0",
+    "context": "host"
+   },
+   "4": {
+    "ref": "catch2/2.13.7",
+    "options": "",
+    "package_id": "5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9",
+    "prev": "0",
+    "context": "host"
+   },
+   "5": {
+    "ref": "cmake/3.20.5",
+    "options": "",
+    "package_id": "0a420ff5c47119e668867cdb51baff0eca1fdb68",
+    "prev": "0",
+    "requires": ["10"],
+    "context": "build"
+   },
+   "10": {
+    "ref": "zlib/1.2.11",
+    "options": "shared=False",
+    "package_id": "ffffffffffffffffffffffffffffffffffffffff",
+    "prev": "0",
+    "context": "build"
+   }
+  },
+  "revisions_enabled": true
+ },
+ "version": "0.4",
+ "profile_host": "[settings]\narch=x86_64\nos=Linux\n"
+}
