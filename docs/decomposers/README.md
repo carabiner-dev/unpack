@@ -58,6 +58,32 @@ All decomposers share these behaviors:
   software's life it reads, and the document written from its data states
   it. See [Generation context](#generation-context).
 
+## Graphs with several roots
+
+Most extractions have one root, the project. Some have several, each a
+package of its own:
+
+| Decomposer | When |
+|------------|------|
+| [Rust](rust.md) | A Cargo workspace: every member is a root |
+| [JavaScript](npm.md) | An npm, pnpm or Yarn workspace |
+| [pkg-config](pkgconf.md) | A directory with several pkg-config files |
+
+SPDX describes several packages in one document. CycloneDX has one
+place for what a document describes, `metadata.component`, so a graph
+with several roots is written **without one**: its roots are the
+top-level entries of `components`, with the dependency graph below them
+as ever. That is valid CycloneDX, and it reads back as the same roots.
+
+Two things follow for whoever consumes such a document. It names no
+single subject, so a tool that takes a project's name and version from
+`metadata.component` finds none. And one root may depend on another,
+as workspace members do: both are still at the top, and the edge
+between them is in `dependencies`.
+
+A graph with one root is written with that root as the document's
+component.
+
 ## The codebase's own license
 
 A decomposer reads the project's license from its manifest where the
