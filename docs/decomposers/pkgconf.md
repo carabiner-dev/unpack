@@ -173,5 +173,6 @@ test needs pkgconf and does not run in short mode.
 - **Names are pkg-config's.** `pkg:generic` purls match no
   vulnerability database, and one upstream project is often several
   packages (`libssl`, `libcrypto`, `openssl`).
-- **Several files are several roots**, and a document with several
-  roots cannot be written as CycloneDX today; SPDX can.
+- **Several files are several roots.** Such a document names no single
+  subject when written as CycloneDX; see
+  [Graphs with several roots](README.md#graphs-with-several-roots).

@@ -17,6 +17,7 @@ import (
 	intoto "github.com/policylabs/collector/statement/intoto"
 	"github.com/policylabs/signer"
 	"github.com/protobom/protobom/pkg/formats"
+	"github.com/protobom/protobom/pkg/mod"
 	"github.com/protobom/protobom/pkg/sbom"
 	"github.com/protobom/protobom/pkg/writer"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -225,6 +226,11 @@ func nodeListToSbom(wr io.WriteCloser, format formats.Format, nl *sbom.NodeList,
 	}
 	commentContext(doc, format)
 
-	w := writer.New(writer.WithFormat(format))
+	// CycloneDX has one place for what a document describes, and a graph
+	// with several roots, a workspace or a directory of packages, has
+	// several things to put there. Such a graph is written with none:
+	// its roots are the top-level components of the document, which is
+	// CycloneDX all the same. A graph with one root is written as ever.
+	w := writer.New(writer.WithFormat(format), writer.WithMod(mod.CYCLONEDX_MULTIROOT_HEADLESS))
 	return w.WriteStream(doc, wr)
 }
