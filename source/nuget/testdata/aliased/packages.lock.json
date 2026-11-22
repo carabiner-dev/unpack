@@ -1,0 +1,32 @@
+{
+  "version": 3,
+  "client": {
+    "framework": "net9.0",
+    "dependencies": {
+      "Polly": {
+        "type": "Direct",
+        "requested": "[8.4.0, )",
+        "resolved": "8.4.0",
+        "contentHash": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC==",
+        "dependencies": {
+          "Polly.Core": "8.4.0"
+        }
+      },
+      "Polly.Core": {
+        "type": "transitive",
+        "resolved": "8.4.0",
+        "contentHash": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD=="
+      }
+    }
+  },
+  "server": {
+    "framework": "net9.0",
+    "dependencies": {
+      "Polly.Core": {
+        "resolved": "8.4.0",
+        "contentHash": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD=="
+      }
+    }
+  },
+  "somethingNewer": "that is no target"
+}

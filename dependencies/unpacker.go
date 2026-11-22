@@ -18,6 +18,7 @@ import (
 	"github.com/carabiner-dev/unpack/source/golang"
 	"github.com/carabiner-dev/unpack/source/maven"
 	"github.com/carabiner-dev/unpack/source/npm"
+	"github.com/carabiner-dev/unpack/source/nuget"
 	"github.com/carabiner-dev/unpack/source/python"
 	"github.com/carabiner-dev/unpack/source/ruby"
 	"github.com/carabiner-dev/unpack/source/rust"
@@ -50,6 +51,7 @@ func NewUnpacker() *Unpacker {
 			"maven":  maven.New(),
 			"conan":  conan.New(),
 			"swift":  swift.New(),
+			"nuget":  nuget.New(),
 		},
 	}
 }
