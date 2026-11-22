@@ -16,6 +16,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"slices"
 
 	"github.com/google/uuid"
 	purl "github.com/package-url/packageurl-go"
@@ -48,6 +49,10 @@ const (
 	// PropertyPath is where a nested archive is inside the one that
 	// holds it.
 	PropertyPath = "java:path"
+
+	// PropertyLicenseFrom says where a package's license was read:
+	// pom.xml, manifest or license-file.
+	PropertyLicenseFrom = "java:license-from"
 
 	// PropertyMainClass is the class an archive's manifest names to run.
 	PropertyMainClass = "java:main-class"
@@ -228,7 +233,9 @@ func identityNode(id *Identity) *sbom.Node {
 	if id.Vendor != "" {
 		node.Suppliers = []*sbom.Person{{Name: id.Vendor, IsOrg: true}}
 	}
+	node.Licenses = slices.Clone(id.Licenses)
 	addProperty(node, PropertyIdentifiedBy, id.Source)
+	addProperty(node, PropertyLicenseFrom, id.LicenseSource)
 	return node
 }
 

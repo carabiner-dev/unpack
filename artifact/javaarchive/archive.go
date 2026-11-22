@@ -42,6 +42,10 @@ const (
 	maxMetadataSize = 1 << 20
 )
 
+// metaInf is the directory of an archive that holds what it says of
+// itself.
+const metaInf = "META-INF"
+
 // Sources of an archive's identity, surest first.
 const (
 	SourcePOM      = "pom.properties"
@@ -56,8 +60,15 @@ type Identity struct {
 	Name    string
 	Version string
 
-	// Vendor is who the manifest says the archive is from.
+	// Vendor is who the manifest says the archive is from, or failing
+	// that the organization its POM names.
 	Vendor string
+
+	// Licenses are the licenses it states, as SPDX identifiers where
+	// they are recognized, and LicenseSource where they were read:
+	// pom.xml, manifest or license-file.
+	Licenses      []string
+	LicenseSource string
 
 	// Source says where the identity was read from.
 	Source string
@@ -115,14 +126,33 @@ func readArchive(zr *zip.Reader, name string, depth int) *Archive {
 	var manifest map[string]string
 	poms := []Identity{}
 
+	// What the embedded POMs declare, by the directory Maven puts each
+	// in, and the texts of the archive's license files.
+	type declared struct {
+		licenses     []string
+		organization string
+	}
+	declarations := map[string]declared{}
+	licenseTexts := [][]byte{}
+
 	for _, f := range zr.File {
 		if f.FileInfo().IsDir() {
 			continue
 		}
 		switch {
-		case f.Name == "META-INF/MANIFEST.MF":
+		case f.Name == metaInf+"/MANIFEST.MF":
 			if data, ok := readEntry(f, maxMetadataSize); ok {
 				manifest = parseManifest(data)
+			}
+		case isPOMXML(f.Name):
+			if data, ok := readEntry(f, maxMetadataSize); ok {
+				parts := strings.Split(f.Name, "/")
+				licenses, organization := pomDeclares(data)
+				declarations[pomKey(parts[2], parts[3])] = declared{licenses, organization}
+			}
+		case isLicenseEntry(f.Name):
+			if data, ok := readEntry(f, maxLicenseFileSize); ok {
+				licenseTexts = append(licenseTexts, data)
 			}
 		case isPOMProperties(f.Name):
 			if data, ok := readEntry(f, maxMetadataSize); ok {
@@ -140,15 +170,41 @@ func readArchive(zr *zip.Reader, name string, depth int) *Archive {
 		}
 	}
 
+	// What a POM declares goes to the package it is of.
+	apply := func(id *Identity) {
+		declaration := declarations[pomKey(id.Group, id.Name)]
+		if len(declaration.licenses) > 0 {
+			id.Licenses, id.LicenseSource = declaration.licenses, LicenseFromPOM
+		}
+		if id.Vendor == "" {
+			id.Vendor = declaration.organization
+		}
+	}
+
 	archive.MainClass = manifest["main-class"]
 	own, shaded := ownIdentity(poms, name)
 	archive.Shaded = shaded
+	for i := range archive.Shaded {
+		apply(&archive.Shaded[i])
+	}
 	switch {
 	case own != nil:
 		archive.Identity = *own
 		archive.Identity.Vendor = manifestVendor(manifest)
+		apply(&archive.Identity)
 	default:
 		archive.Identity = manifestIdentity(manifest, name)
+	}
+
+	// The manifest and the license file speak for the archive itself.
+	// In an archive other packages were unpacked into, the license file
+	// may be any of theirs, so it is not read there.
+	if own := &archive.Identity; len(own.Licenses) == 0 {
+		if licenses := bundleLicenses(manifest["bundle-license"]); len(licenses) > 0 {
+			own.Licenses, own.LicenseSource = licenses, LicenseFromManifest
+		} else if licenses := fileLicense(licenseTexts); len(licenses) > 0 && len(archive.Shaded) == 0 {
+			own.Licenses, own.LicenseSource = licenses, LicenseFromFile
+		}
 	}
 
 	sort.Slice(archive.Shaded, func(i, j int) bool { return coordinate(&archive.Shaded[i]) < coordinate(&archive.Shaded[j]) })
@@ -162,7 +218,7 @@ func coordinate(id *Identity) string { return id.Group + ":" + id.Name + ":" + i
 // for an artifact: META-INF/maven/<group>/<artifact>/pom.properties.
 func isPOMProperties(name string) bool {
 	parts := strings.Split(name, "/")
-	return len(parts) == 5 && parts[0] == "META-INF" && parts[1] == "maven" && parts[4] == "pom.properties"
+	return len(parts) == 5 && parts[0] == metaInf && parts[1] == "maven" && parts[4] == "pom.properties"
 }
 
 // readEntry reads an entry of an archive, up to a size, and says whether
