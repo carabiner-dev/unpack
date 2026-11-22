@@ -1,7 +1,7 @@
 # Decomposers
 
 Unpack ships with decomposers for eleven package ecosystems, and for CMake
-projects and pkg-config files. Each decomposer
+projects, pkg-config files and GitHub Actions workflows. Each decomposer
 parses lock files and manifest files, resolves the dependency graph, and
 produces a [protobom](https://github.com/protobom/protobom) NodeList that
 can be serialized as SPDX or CycloneDX.
@@ -11,6 +11,7 @@ can be serialized as SPDX or CycloneDX.
 | [C and C++ (CMake)](cmake.md) | `source/cmake/` | _(none)_ | `CMakeLists.txt`, `*.cmake`; off unless asked for with `--enable cmake` | _(none)_ |
 | [C and C++ (Conan)](conan.md) | `source/conan/` | `conan.lock` | `conanfile.txt` | _(none)_ |
 | [C and C++ (pkg-config)](pkgconf.md) | `source/pkgconf/` | _(none)_ | `*.pc`, `*.pc.in`; off unless asked for with `--enable pkgconf` | _(none)_ |
+| [GitHub Actions](githubactions.md) | `source/githubactions/` | _(none)_ | `.github/workflows/*.yml`; off unless asked for with `--enable githubactions` | _(none)_ |
 | [Go](golang.md) | `source/golang/` | `go.sum` | `go.mod` | deps.dev API + Go module proxy |
 | [Gradle](gradle.md) | `source/gradle/` | `gradle.lockfile`, `buildscript-gradle.lockfile` | _(not read — executable Groovy or Kotlin)_ | _(none)_ |
 | [Maven](maven.md) | `source/maven/` | _(none)_ | `pom.xml` | Maven Central |
@@ -95,7 +96,7 @@ decomposer implements `api.ContextReporter` and names the one it reads in.
 
 | Context | Meaning | Decomposers |
 |---------|---------|-------------|
-| `source` | Read from a source tree and the manifests and lock files in it, before anything is built | CMake, Conan, Go, Gradle, Maven, JavaScript, .NET, PHP, pkg-config, Python, Ruby, Rust, Swift |
+| `source` | Read from a source tree and the manifests and lock files in it, before anything is built | CMake, Conan, GitHub Actions, Go, Gradle, Maven, JavaScript, .NET, PHP, pkg-config, Python, Ruby, Rust, Swift |
 | `build` | Read from what the build tool recorded of its own dependency resolution | sbt |
 | `analyzed` | Read by taking apart something already built | Go binary, Rust binary, Java archive, the release reader, and the system readers (rpm, deb, apk, installed Python environments, Composer vendor directories) |
 
@@ -222,6 +223,7 @@ decomposers uniformly.
 | **Swift:** local parsing, no network at any level | works | works | works |
 | **.NET:** local parsing, no network at any level | works | works | works |
 | **Gradle:** local parsing, no network at any level | works | works | works |
+| **GitHub Actions:** local parsing, no network at any level | works | works | works |
 | **Ruby:** local parsing (Gemfile.lock) | works | works | works |
 | **Ruby:** rubygems.org API (licenses, metadata) | skip | yes | yes |
 | **Python:** PyPI JSON API (licenses, metadata) | skip | yes | yes |

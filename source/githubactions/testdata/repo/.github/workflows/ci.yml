@@ -1,0 +1,26 @@
+name: ci
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: node:20-bookworm
+    services:
+      db:
+        image: ghcr.io/example/postgres:16@sha256:4c1c4d8a0b6f6d2e0a6b9f6a1f6b2c3d4e5f60718293a4b5c6d7e8f901234567
+      cache: redis
+      dynamic:
+        image: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - name: Go
+        uses: actions/setup-go@v5
+      - uses: github/codeql-action/init@v3
+      - uses: ./.github/actions/local
+      - uses: docker://alpine:3.20
+      - uses: ${{ inputs.action }}
+      - run: make test
+  release:
+    uses: example-org/workflows/.github/workflows/release.yml@main
+  local:
+    uses: ./.github/workflows/reusable.yaml

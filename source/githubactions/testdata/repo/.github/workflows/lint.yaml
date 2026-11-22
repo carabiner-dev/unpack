@@ -1,0 +1,11 @@
+name: lint
+on: [pull_request]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    container:
+      image: localhost:5000/tools/linter:1.2
+    steps:
+      # The same action again, on another line.
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/checkout@v4

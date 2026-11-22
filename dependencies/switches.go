@@ -11,6 +11,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/source/cmake"
+	"github.com/carabiner-dev/unpack/source/githubactions"
 	"github.com/carabiner-dev/unpack/source/pkgconf"
 )
 
@@ -32,6 +33,11 @@ var optionalDecomposers = map[string]func() api.Decomposer{
 	// pkg-config files turn up in the source of projects of every
 	// language, as templates with their versions still to be filled in.
 	"pkgconf": func() api.Decomposer { return pkgconf.New() },
+
+	// Workflows are what builds and ships the project, not what it is
+	// built from: an inventory of its dependencies is not asking for
+	// them.
+	"githubactions": func() api.Decomposer { return githubactions.New() },
 }
 
 // ErrUnknownDecomposer is returned when a decomposer is switched on or
