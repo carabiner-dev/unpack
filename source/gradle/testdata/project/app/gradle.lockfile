@@ -1,0 +1,14 @@
+# This is a Gradle generated file for dependency locking.
+# Manual edits can break the build and are not advised.
+# This file is expected to be part of source control.
+com.fasterxml.jackson.core:jackson-databind:2.17.1=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.google.guava:guava:33.2.0-jre=runtimeClasspath, testRuntimeClasspath
+com.android.demo:feature:1.0.0=debugRuntimeClasspath,releaseRuntimeClasspath
+jakarta.servlet:jakarta.servlet-api:6.0.0=compileClasspath,testCompileClasspath
+org.projectlombok:lombok:1.18.32=annotationProcessor,compileClasspath
+org.mapstruct:mapstruct-processor:1.5.5.Final=annotationProcessor,testAnnotationProcessor
+org.junit.jupiter:junit-jupiter-api:5.10.2=testCompileClasspath,testRuntimeClasspath
+com.example.tools:codegen:0.3.0=codegenClasspath
+not a module line
+malformed:coordinate=runtimeClasspath
+empty=signatures

@@ -45,7 +45,7 @@ func TestDecomposerOptions(t *testing.T) {
 		for _, opts := range []*decomposerOptions{{Enable: []string{"golan"}}, {Disable: []string{"golan"}}} {
 			err := opts.ApplyDecomposers(unpacker)
 			require.ErrorContains(t, err, `unknown decomposer "golan"`)
-			require.ErrorContains(t, err, "conan, golang, maven, npm")
+			require.ErrorContains(t, err, "conan, golang, gradle, maven, npm")
 			require.Empty(t, unpacker.Options.Decomposers)
 		}
 	})

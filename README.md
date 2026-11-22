@@ -210,7 +210,7 @@ unpack ls --ignore "*/testdata/*" --ignore "temp/" .
 ### Choosing decomposers: `--enable` and `--disable`
 
 Each language is read by a decomposer that goes by the language's name,
-the one codebase IDs start with (`conan`, `golang`, `maven`, `npm`,
+the one codebase IDs start with (`conan`, `golang`, `gradle`, `maven`, `npm`,
 `nuget`, `php`, `python`, `ruby`, `rust`, `swift`). `extract` and `ls` take two flags to choose
 among them, both repeatable or comma separated:
 
@@ -260,7 +260,7 @@ to leave out one kind of artifact, `--skip-path` to leave out more paths, and
 
 ## Supported Ecosystems
 
-Unpack includes decomposers for ten package ecosystems. See the
+Unpack includes decomposers for eleven package ecosystems. See the
 [decomposer documentation](docs/decomposers/README.md) for details.
 Container image scans additionally report installed Python environments
 (site-packages) and Composer vendor directories next to the OS package
@@ -276,6 +276,7 @@ inventory, and the modules built into any
 | [Python](docs/decomposers/python.md) | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry) | PyPI JSON API |
 | [Swift](docs/decomposers/swift.md) | `Package.resolved` | _(not read)_ | _(none)_ |
 | [.NET (NuGet)](docs/decomposers/nuget.md) | `packages.lock.json` | _(not read)_ | _(none)_ |
+| [Gradle](docs/decomposers/gradle.md) | `gradle.lockfile`, `buildscript-gradle.lockfile` | _(not read)_ | _(none)_ |
 | [C and C++ (Conan)](docs/decomposers/conan.md) | `conan.lock` | `conanfile.txt` | _(none)_ |
 | [C and C++ (pkg-config)](docs/decomposers/pkgconf.md) | _(none)_ | `*.pc`, `*.pc.in`, with `--enable pkgconf` | _(none)_ |
 | [C and C++ (CMake)](docs/decomposers/cmake.md) | _(none)_ | `CMakeLists.txt`, `*.cmake`, with `--enable cmake` | _(none)_ |

@@ -16,6 +16,7 @@ import (
 	"github.com/carabiner-dev/unpack/source/composer"
 	"github.com/carabiner-dev/unpack/source/conan"
 	"github.com/carabiner-dev/unpack/source/golang"
+	"github.com/carabiner-dev/unpack/source/gradle"
 	"github.com/carabiner-dev/unpack/source/maven"
 	"github.com/carabiner-dev/unpack/source/npm"
 	"github.com/carabiner-dev/unpack/source/nuget"
@@ -52,6 +53,7 @@ func NewUnpacker() *Unpacker {
 			"conan":  conan.New(),
 			"swift":  swift.New(),
 			"nuget":  nuget.New(),
+			"gradle": gradle.New(),
 		},
 	}
 }

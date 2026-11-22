@@ -1,0 +1,4 @@
+# This is a Gradle generated file for dependency locking.
+com.github.ben-manes:gradle-versions-plugin:0.51.0=classpath
+com.google.guava:guava:33.2.0-jre=classpath
+empty=
