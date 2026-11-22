@@ -36,16 +36,40 @@ repository that had one codebase would have two.
    | `jobs.<id>.container`, `.container.image` | The image a job runs in |
    | `jobs.<id>.services.<id>`, `.image` | The image of a service |
 
-4. Each distinct reference is one node, a `buildDependency` of the
+4. The repository's own actions the steps use, `./path`, are followed;
+   see [Local actions](#local-actions).
+5. Each distinct reference is one node, a `buildDependency` of the
    repository, with every place it is used on it. The same action at two
    refs is two nodes.
 
-Two kinds of reference are left out:
+**Expressions** are left out, `${{ matrix.image }}`: the value is only
+known when the workflow runs.
 
-- **The repository's own**, `./path`: a local action or workflow names
-  nothing from elsewhere.
-- **Expressions**, `${{ matrix.image }}`: the value is only known when
-  the workflow runs.
+### Local actions
+
+A step may use an action of the repository itself, `uses: ./path`. Such
+an action is the repository's own code and is no node. What it runs
+from elsewhere is, so its metadata file, `action.yml` or `action.yaml`
+at that path, is read:
+
+| Key | What it is |
+|-----|------------|
+| `runs.steps[].uses` | The steps of a composite action, read like a workflow's |
+| `runs.image` | The image of a Docker action, when it is pulled: `docker://image:tag` |
+
+A composite action may use other local actions, which are read in turn,
+each once however many use it. A path is relative to the root of the
+repository, and one that leads out of it is not followed. A reference
+found this way says where: its `githubactions:used-in` names the
+action's file.
+
+A Docker action built from a `Dockerfile` beside it names nothing here:
+its base image is in the Dockerfile, which is not read. A JavaScript
+action runs code of the repository and names nothing either.
+
+A reusable workflow of the repository,
+`uses: ./.github/workflows/file.yml`, needs no following: it is one of
+the workflow files, and is read with them.
 
 GitHub is not asked anything: a ref is reported as written and is not
 resolved to a commit.
@@ -120,9 +144,8 @@ None.
 - **Only what the workflows name.** What an action runs in turn, the
   actions a composite action uses or the image a Docker action builds,
   is in that action's repository.
-- **Local actions and workflows are not followed.** A composite action
-  in the repository (`./.github/actions/x`) may use actions from
-  elsewhere, and those are not read.
+- **A local Docker action's Dockerfile is not read**, so the base image
+  it builds from is not listed.
 - **Expressions are skipped**, so an image or action chosen from a
   matrix is not listed.
 - **Tools installed by scripts are not seen**: a `run: curl … | sh` step

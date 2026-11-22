@@ -1,0 +1,5 @@
+name: scan
+description: A Docker action that pulls its image.
+runs:
+  using: docker
+  image: docker://ghcr.io/example/scanner:1.0

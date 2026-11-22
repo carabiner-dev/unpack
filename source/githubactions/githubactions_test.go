@@ -146,6 +146,10 @@ func TestExtract(t *testing.T) {
 		"pkg:docker/alpine@3.20",
 		"pkg:docker/example/postgres@sha256:4c1c4d8a0b6f6d2e0a6b9f6a1f6b2c3d4e5f60718293a4b5c6d7e8f901234567?repository_url=ghcr.io&tag=16",
 		"pkg:docker/tools/linter@1.2?repository_url=localhost:5000",
+		// Through the repository's own actions.
+		"pkg:github/actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9",
+		"pkg:docker/example/helper@2?repository_url=ghcr.io",
+		"pkg:docker/example/scanner@1.0?repository_url=ghcr.io",
 	}, purls)
 
 	checkout := nodes["pkg:github/actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11"]
@@ -206,4 +210,90 @@ func TestFindCodeBases(t *testing.T) {
 	found, err := New().FindCodeBases(&index)
 	require.NoError(t, err)
 	require.Equal(t, []string{".", "repo"}, found)
+}
+
+func TestParseAction(t *testing.T) {
+	t.Parallel()
+	read := func(file string) (raw, local []string) {
+		data, err := os.ReadFile(filepath.Join(repoDir, file))
+		require.NoError(t, err)
+		references, local, err := ParseAction(data)
+		require.NoError(t, err)
+		for _, reference := range references {
+			raw = append(raw, reference.Kind+" "+reference.Raw)
+		}
+		return raw, local
+	}
+
+	// A composite action's steps are read like a workflow's.
+	raw, local := read(".github/actions/local/action.yml")
+	require.Equal(t, []string{"action actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9"}, raw)
+	require.Equal(t, []string{"./.github/actions/nested"}, local)
+
+	// A Docker action that pulls its image names it; one built from a
+	// Dockerfile names nothing here.
+	raw, _ = read("tools/scan/action.yml")
+	require.Equal(t, []string{"image docker://ghcr.io/example/scanner:1.0"}, raw)
+	raw, local = read("tools/built/action.yml")
+	require.Empty(t, raw)
+	require.Empty(t, local)
+
+	for _, content := range []string{"", "name: x\n", "runs: 3\n", "runs:\n  using: node20\n  main: index.js\n"} {
+		references, local, err := ParseAction([]byte(content))
+		require.NoError(t, err, content)
+		require.Empty(t, references, content)
+		require.Empty(t, local, content)
+	}
+	_, _, err := ParseAction([]byte("runs: [unclosed"))
+	require.Error(t, err)
+}
+
+func TestLocalActionPath(t *testing.T) {
+	t.Parallel()
+	for raw, expected := range map[string]string{
+		"./.github/actions/local": ".github/actions/local",
+		"./tools/scan/":           "tools/scan",
+		"./a/../b":                "b",
+		// The repository itself, when it is an action: a common way to
+		// test one.
+		"./":                ".",
+		"./../outside":      "",
+		"./a/../../outside": "",
+	} {
+		require.Equal(t, expected, localActionPath(raw), raw)
+	}
+}
+
+// TestExtractFollowsLocalActions checks what the repository's own actions
+// use is in the graph: through a composite action, the action it uses in
+// turn, and a Docker action's image, with two actions that use each
+// other read once each.
+func TestExtractFollowsLocalActions(t *testing.T) {
+	t.Parallel()
+	nl, err := New().Extract(&api.DecomposerOptions{WorkDir: repoDir})
+	require.NoError(t, err)
+
+	nodes := map[string]*sbom.Node{}
+	for _, node := range nl.GetNodes() {
+		nodes[string(node.Purl())] = node
+	}
+
+	cache := nodes["pkg:github/actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9"]
+	require.NotNil(t, cache)
+	require.Equal(t, []string{".github/actions/local/action.yml:6"}, properties(cache)[PropertyUsedIn])
+	require.Equal(t, []string{"v4.0.2"}, properties(cache)[PropertyComment])
+
+	// Used by a workflow and by a local action: one node, both places.
+	checkout := nodes["pkg:github/actions/checkout@v4"]
+	require.Equal(t, []string{
+		".github/workflows/lint.yaml:11", ".github/actions/nested/action.yaml:6",
+	}, properties(checkout)[PropertyUsedIn])
+
+	require.Contains(t, nodes, "pkg:docker/example/helper@2?repository_url=ghcr.io")
+	scanner := nodes["pkg:docker/example/scanner@1.0?repository_url=ghcr.io"]
+	require.NotNil(t, scanner)
+	require.Equal(t, []string{"tools/scan/action.yml:5"}, properties(scanner)[PropertyUsedIn])
+
+	// Ten from the workflows, three more through the local actions.
+	require.Len(t, nodes, 14)
 }

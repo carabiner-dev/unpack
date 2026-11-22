@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -125,18 +126,8 @@ func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.Decompose
 	nl.AddRootNode(root)
 
 	nodes := map[string]*sbom.Node{}
-	for _, entry := range entries {
-		if entry.IsDir() || !isWorkflowFile(entry.Name()) {
-			continue
-		}
-		file := workflowsDir + "/" + entry.Name()
-		references, err := ReadWorkflow(filepath.Join(dir, entry.Name()))
-		if err != nil {
-			// One workflow that is not YAML is no reason to lose the
-			// others.
-			log.Warn("githubactions: a workflow cannot be read and is left out", "workflow", file, "error", err)
-			continue
-		}
+	// record adds the references read from a file to the graph.
+	record := func(file string, references []*Reference) error {
 		for _, reference := range references {
 			key := reference.Kind + " " + reference.Raw
 			node, known := nodes[key]
@@ -144,14 +135,92 @@ func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.Decompose
 				node = referenceNode(reference)
 				nodes[key] = node
 				if err := nl.RelateNodeAtID(node, root.GetId(), sbom.Edge_buildDependency); err != nil {
-					return nil, fmt.Errorf("relating %s: %w", reference.Raw, err)
+					return fmt.Errorf("relating %s: %w", reference.Raw, err)
 				}
 			}
 			addProperty(node, PropertyUsedIn, fmt.Sprintf("%s:%d", file, reference.Line))
 			addProperty(node, PropertyComment, reference.Comment)
 		}
+		return nil
+	}
+
+	// The repository's own actions the workflows use, to read in turn.
+	pending := []string{}
+	for _, entry := range entries {
+		if entry.IsDir() || !isWorkflowFile(entry.Name()) {
+			continue
+		}
+		file := workflowsDir + "/" + entry.Name()
+		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			return nil, fmt.Errorf("reading workflow: %w", err)
+		}
+		references, local, err := parseWorkflow(data)
+		if err != nil {
+			// One workflow that is not YAML is no reason to lose the
+			// others.
+			log.Warn("githubactions: a workflow cannot be read and is left out", "workflow", file, "error", err)
+			continue
+		}
+		if err := record(file, references); err != nil {
+			return nil, err
+		}
+		pending = append(pending, local...)
+	}
+
+	// A local action is code of the repository, and names nothing from
+	// elsewhere itself. What it uses does: a composite action runs steps
+	// like a workflow's, and may use other local actions in turn.
+	visited := map[string]bool{}
+	for len(pending) > 0 {
+		action := localActionPath(pending[0])
+		pending = pending[1:]
+		if action == "" || visited[action] {
+			continue
+		}
+		visited[action] = true
+
+		file, data := readActionFile(workDir, action)
+		if data == nil {
+			log.Debug("githubactions: a local action has no metadata file to read", "action", action)
+			continue
+		}
+		references, local, err := ParseAction(data)
+		if err != nil {
+			log.Warn("githubactions: a local action cannot be read and is left out", "action", file, "error", err)
+			continue
+		}
+		if err := record(file, references); err != nil {
+			return nil, err
+		}
+		pending = append(pending, local...)
 	}
 	return nl, nil
+}
+
+// localActionPath turns the path a step writes for an action of the
+// repository, ./path, into one relative to the repository, and returns
+// nothing for a path that leaves it.
+func localActionPath(raw string) string {
+	cleaned := path.Clean(strings.TrimPrefix(strings.TrimSpace(raw), "./"))
+	if cleaned == ".." || strings.HasPrefix(cleaned, "../") || path.IsAbs(cleaned) {
+		return ""
+	}
+	return cleaned
+}
+
+// readActionFile reads the metadata file of an action of the repository,
+// and returns its path relative to the repository with its contents, or
+// nothing when the action has none.
+func readActionFile(workDir, action string) (file string, data []byte) {
+	for _, name := range ActionFiles {
+		file = path.Join(action, name)
+		data, err := os.ReadFile(filepath.Join(workDir, filepath.FromSlash(file)))
+		if err == nil {
+			return file, data
+		}
+	}
+	return "", nil
 }
 
 func addProperty(node *sbom.Node, name, value string) {
