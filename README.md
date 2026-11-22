@@ -278,7 +278,7 @@ inventory, and the modules built into any
 | [Python](docs/decomposers/python.md) | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry) | PyPI JSON API |
 | [Swift](docs/decomposers/swift.md) | `Package.resolved` | _(not read)_ | _(none)_ |
 | [.NET (NuGet)](docs/decomposers/nuget.md) | `packages.lock.json` | Project files, `Directory.Packages.props`, `packages.config` | _(none)_ |
-| [Gradle](docs/decomposers/gradle.md) | `gradle.lockfile`, `buildscript-gradle.lockfile` | _(not read)_ | _(none)_ |
+| [Gradle](docs/decomposers/gradle.md) | `gradle.lockfile`, `buildscript-gradle.lockfile` | `gradle/libs.versions.toml` | _(none)_ |
 | [C and C++ (Conan)](docs/decomposers/conan.md) | `conan.lock` | `conanfile.txt` | _(none)_ |
 | [C and C++ (pkg-config)](docs/decomposers/pkgconf.md) | _(none)_ | `*.pc`, `*.pc.in`, with `--enable pkgconf` | _(none)_ |
 | [GitHub Actions](docs/decomposers/githubactions.md) | _(none)_ | `.github/workflows/*.yml`, with `--enable githubactions` | _(none)_ |
