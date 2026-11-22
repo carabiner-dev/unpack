@@ -23,6 +23,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/artifact/gobinary"
+	"github.com/carabiner-dev/unpack/artifact/javaarchive"
 	"github.com/carabiner-dev/unpack/artifact/rustbinary"
 )
 
@@ -102,8 +103,9 @@ func NewUnpacker() *Unpacker {
 	return &Unpacker{
 		Options: DefaultOptions,
 		decomposers: map[string]Decomposer{
-			gobinary.Name:   gobinary.New(),
-			rustbinary.Name: rustbinary.New(),
+			gobinary.Name:    gobinary.New(),
+			rustbinary.Name:  rustbinary.New(),
+			javaarchive.Name: javaarchive.New(),
 		},
 	}
 }
@@ -243,6 +245,7 @@ func (u *Unpacker) Extractions(ctx context.Context, subject api.DecomposableSubj
 var (
 	_ ContextDecomposer = (*gobinary.Decomposer)(nil)
 	_ ContextDecomposer = (*rustbinary.Decomposer)(nil)
+	_ ContextDecomposer = (*javaarchive.Decomposer)(nil)
 )
 
 func (u *Unpacker) probe(

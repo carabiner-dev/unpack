@@ -33,6 +33,7 @@ container image `unpack image` scans.
 | Artifact | Entry point | Reads | Runs by default under | Remote enrichment |
 |----------|------------|-------|-----------------------|-------------------|
 | [Go executables](gobinary.md) | `artifact/gobinary/` | Embedded build information (`debug/buildinfo`) | images, system roots; not codebases | Go module proxy + deps.dev, through the Go decomposer |
+| [Java archives](javaarchive.md) | `artifact/javaarchive/` | `pom.properties` and manifests inside jars, WARs and EARs, nested and shaded | images, system roots; not codebases | _(none)_ |
 | [Rust executables](rustbinary.md) | `artifact/rustbinary/` | The cargo-auditable record (`.dep-v0` section) | images, system roots; not codebases | crates.io API, through the Rust decomposer |
 
 ## Common capabilities
@@ -96,7 +97,7 @@ decomposer implements `api.ContextReporter` and names the one it reads in.
 |---------|---------|-------------|
 | `source` | Read from a source tree and the manifests and lock files in it, before anything is built | CMake, Conan, Go, Gradle, Maven, JavaScript, .NET, PHP, pkg-config, Python, Ruby, Rust, Swift |
 | `build` | Read from what the build tool recorded of its own dependency resolution | sbt |
-| `analyzed` | Read by taking apart something already built | Go binary, Rust binary, the release reader, and the system readers (rpm, deb, apk, installed Python environments, Composer vendor directories) |
+| `analyzed` | Read by taking apart something already built | Go binary, Rust binary, Java archive, the release reader, and the system readers (rpm, deb, apk, installed Python environments, Composer vendor directories) |
 
 ### How it reaches the document
 
