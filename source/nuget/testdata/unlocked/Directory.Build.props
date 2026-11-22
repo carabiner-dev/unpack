@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <XunitVersion>2.8.0</XunitVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Shared.Everywhere" Version="1.2.3" />
+    <PackageReference Include="DotNet.ReproducibleBuilds" Version="1.2.25" PrivateAssets="All" />
+  </ItemGroup>
+</Project>

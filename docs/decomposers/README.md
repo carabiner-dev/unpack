@@ -15,7 +15,7 @@ can be serialized as SPDX or CycloneDX.
 | [Go](golang.md) | `source/golang/` | `go.sum` | `go.mod` | deps.dev API + Go module proxy |
 | [Gradle](gradle.md) | `source/gradle/` | `gradle.lockfile`, `buildscript-gradle.lockfile` | _(not read — executable Groovy or Kotlin)_ | _(none)_ |
 | [Maven](maven.md) | `source/maven/` | _(none)_ | `pom.xml` | Maven Central |
-| [.NET (NuGet)](nuget.md) | `source/nuget/` | `packages.lock.json` | _(not read)_ | _(none)_ |
+| [.NET (NuGet)](nuget.md) | `source/nuget/` | `packages.lock.json` | `*.csproj`, `*.fsproj`, `*.vbproj`, `Directory.Packages.props`, `Directory.Build.props`, `packages.config`, when there is no lockfile | _(none)_ |
 | [PHP (Composer)](composer.md) | `source/composer/` | `composer.lock` | `composer.json` | _(none — licenses and authors are in the lock)_ |
 | [JavaScript](npm.md) | `source/npm/` | `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` | `package.json` | npm registry (suppliers, licenses) |
 | [Python](python.md) | `source/python/` | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry only) | PyPI JSON API |

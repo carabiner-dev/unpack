@@ -1,0 +1,36 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net48</TargetFrameworks>
+    <LocalVersion>2.5.0</LocalVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="serilog" />
+    <PackageReference Include="Polly" />
+    <PackageReference Include="Overridden" VersionOverride="3.0.0" />
+    <PackageReference Include="Local.Lib" Version="$(LocalVersion)" />
+    <PackageReference Include="Unknown.Prop" Version="$(SetOnTheCommandLine)" />
+    <PackageReference Include="Floating" Version="8.*" />
+    <PackageReference Include="Exact" Version="[4.2.0]" />
+    <PackageReference Include="No.Version.Anywhere" />
+    <PackageReference Include="xunit" Version="$(XunitVersion)" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+    <PackageReference Include="Roslynator.Analyzers">
+      <Version>4.12.0</Version>
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+    <PackageReference Update="Newtonsoft.Json" Version="99.0.0" />
+    <ProjectReference Include="..\Core\Demo.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="System.Memory" Version="4.5.5" />
+  </ItemGroup>
+  <Choose>
+    <When Condition="'$(OS)' == 'Windows_NT'">
+      <ItemGroup>
+        <PackageReference Include="Windows.Only" Version="1.0.0" />
+      </ItemGroup>
+    </When>
+  </Choose>
+</Project>
