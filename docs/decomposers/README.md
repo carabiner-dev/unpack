@@ -13,7 +13,7 @@ can be serialized as SPDX or CycloneDX.
 | [C and C++ (pkg-config)](pkgconf.md) | `source/pkgconf/` | _(none)_ | `*.pc`, `*.pc.in`; off unless asked for with `--enable pkgconf` | _(none)_ |
 | [GitHub Actions](githubactions.md) | `source/githubactions/` | _(none)_ | `.github/workflows/*.yml`; off unless asked for with `--enable githubactions` | _(none)_ |
 | [Go](golang.md) | `source/golang/` | `go.sum` | `go.mod` | deps.dev API + Go module proxy |
-| [Gradle](gradle.md) | `source/gradle/` | `gradle.lockfile`, `buildscript-gradle.lockfile` | _(not read — executable Groovy or Kotlin)_ | _(none)_ |
+| [Gradle](gradle.md) | `source/gradle/` | `gradle.lockfile`, `buildscript-gradle.lockfile` | `gradle/libs.versions.toml`, when there is no lockfile; build scripts are not read | _(none)_ |
 | [Maven](maven.md) | `source/maven/` | _(none)_ | `pom.xml` | Maven Central |
 | [.NET (NuGet)](nuget.md) | `source/nuget/` | `packages.lock.json` | `*.csproj`, `*.fsproj`, `*.vbproj`, `Directory.Packages.props`, `Directory.Build.props`, `packages.config`, when there is no lockfile | _(none)_ |
 | [PHP (Composer)](composer.md) | `source/composer/` | `composer.lock` | `composer.json` | _(none — licenses and authors are in the lock)_ |
@@ -34,7 +34,7 @@ container image `unpack image` scans.
 | Artifact | Entry point | Reads | Runs by default under | Remote enrichment |
 |----------|------------|-------|-----------------------|-------------------|
 | [Go executables](gobinary.md) | `artifact/gobinary/` | Embedded build information (`debug/buildinfo`) | images, system roots; not codebases | Go module proxy + deps.dev, through the Go decomposer |
-| [Java archives](javaarchive.md) | `artifact/javaarchive/` | `pom.properties` and manifests inside jars, WARs and EARs, nested and shaded | images, system roots; not codebases | _(none)_ |
+| [Java archives](jar.md) | `artifact/jar/` | `pom.properties` and manifests inside jars, WARs and EARs, nested and shaded | images, system roots; not codebases | _(none)_ |
 | [Rust executables](rustbinary.md) | `artifact/rustbinary/` | The cargo-auditable record (`.dep-v0` section) | images, system roots; not codebases | crates.io API, through the Rust decomposer |
 
 ## Common capabilities

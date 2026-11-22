@@ -1,0 +1,5 @@
+name: built
+description: A Docker action built from the Dockerfile beside it.
+runs:
+  using: docker
+  image: Dockerfile

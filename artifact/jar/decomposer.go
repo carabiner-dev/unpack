@@ -1,10 +1,10 @@
 // SPDX-FileCopyrightText: Copyright 2026 Carabiner Systems, Inc
 // SPDX-License-Identifier: Apache-2.0
 
-// Package javaarchive reads the packages bundled in Java archives: jars,
+// Package jar reads the packages bundled in Java archives: jars,
 // and the WARs, EARs and executable jars that carry their dependencies
 // inside them.
-package javaarchive
+package jar
 
 import (
 	"archive/zip"
@@ -16,6 +16,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"slices"
 
 	"github.com/google/uuid"
 	purl "github.com/package-url/packageurl-go"
@@ -33,7 +34,7 @@ var (
 
 // Name is the name the decomposer is registered under in the artifact
 // unpacker, and the key options refer to it by.
-const Name = "javaarchive"
+const Name = "jar"
 
 // Properties a node carries.
 const (
@@ -48,6 +49,10 @@ const (
 	// PropertyPath is where a nested archive is inside the one that
 	// holds it.
 	PropertyPath = "java:path"
+
+	// PropertyLicenseFrom says where a package's license was read:
+	// pom.xml, manifest or license-file.
+	PropertyLicenseFrom = "java:license-from"
 
 	// PropertyMainClass is the class an archive's manifest names to run.
 	PropertyMainClass = "java:main-class"
@@ -102,7 +107,7 @@ func (d *Decomposer) Matches(info fs.FileInfo, header []byte) bool {
 // api.Decomposer entry point; the artifact unpacker uses ExtractArtifact.
 func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	if opts == nil || opts.WorkDir == "" {
-		return nil, errors.New("javaarchive decomposer needs a WorkDir naming the archive")
+		return nil, errors.New("jar decomposer needs a WorkDir naming the archive")
 	}
 	f, err := os.Open(opts.WorkDir)
 	if err != nil {
@@ -158,7 +163,7 @@ type builder struct {
 // add relates what an archive bundles to its node.
 func (b *builder) add(archive *Archive, node *sbom.Node) error {
 	for _, skipped := range archive.Skipped {
-		b.log.Debug("javaarchive: a nested archive was not read", "entry", skipped)
+		b.log.Debug("jar: a nested archive was not read", "entry", skipped)
 	}
 	for i := range archive.Shaded {
 		id := &archive.Shaded[i]
@@ -228,7 +233,9 @@ func identityNode(id *Identity) *sbom.Node {
 	if id.Vendor != "" {
 		node.Suppliers = []*sbom.Person{{Name: id.Vendor, IsOrg: true}}
 	}
+	node.Licenses = slices.Clone(id.Licenses)
 	addProperty(node, PropertyIdentifiedBy, id.Source)
+	addProperty(node, PropertyLicenseFrom, id.LicenseSource)
 	return node
 }
 

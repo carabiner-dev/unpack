@@ -1,0 +1,9 @@
+name: nested
+description: Used by the other, and using it back.
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+    - uses: docker://ghcr.io/example/helper:2
+    - uses: ./.github/actions/local
+    - uses: ./../outside-the-repository

@@ -1,6 +1,7 @@
 # Java Archive Decomposer
 
-**Location:** `artifact/javaarchive/`
+**Location:** `artifact/jar/`
+**Name:** `jar`
 
 Reads the packages bundled in Java archives: jars, and the WARs, EARs
 and executable jars that carry their dependencies inside them. Nothing
@@ -67,20 +68,50 @@ is: a shaded jar is often named for what it is and not for the artifact
 that built it.
 
 The manifest's `Implementation-Vendor`, or `Bundle-Vendor`, is the
-supplier.
+supplier, and failing those the organization the archive's own POM
+names.
+
+## Licenses
+
+An archive may say how it is licensed in three places. They are tried
+in this order, and the first that says anything settles it; the
+`java:license-from` property says which did.
+
+| Source | What is read |
+|--------|--------------|
+| `pom.xml` | The POM Maven puts beside `pom.properties`, when it declares `<licenses>` itself |
+| `manifest` | The `Bundle-License` header: identifiers or URLs, which OSGi bundles carry and many plain jars too |
+| `license-file` | A `LICENSE`, `LICENCE` or `COPYING` file at the root of the archive or in its `META-INF`, whose text is recognized |
+
+Names and URLs are normalized through the shared license catalog. A
+name it does not recognize is passed on as written; a URL it does not
+recognize is no license to pass on, and is left out.
+
+The order matters less than it looks, because the first source is
+often silent: most projects inherit their license from a parent POM,
+and the parent is not in the archive. `commons-lang3` is such a jar,
+and its license is read from its manifest.
+
+A package **shaded** into an archive takes the license its own POM
+declares, and no other: the manifest is the outer archive's, and a
+license file in an archive several packages were unpacked into may be
+any of theirs. For the same reason the license file is not read for an
+archive that has shaded packages.
 
 ## Data produced
 
 | Field | Source | Notes |
 |-------|--------|-------|
 | Name, Version, PURL | see [Identity](#identity) | |
-| Supplier | manifest | The vendor, as an organization |
+| Supplier | manifest, `pom.xml` | The vendor, or the POM's organization, as an organization |
+| License | `pom.xml`, manifest, license file | See [Licenses](#licenses) |
 | Hashes | computed | SHA-256 and SHA-1 of a nested archive's file. A shaded package has no file of its own and none; the outermost archive's is on the file node |
 | Primary purpose | manifest | `APPLICATION` for an archive with a `Main-Class`, `LIBRARY` otherwise |
 | `java:identified-by` | | `pom.properties`, `manifest` or `filename` |
 | `java:embedding` | | `nested` or `shaded` |
 | `java:path` | | Where a nested archive is inside the one that holds it |
 | `java:main-class` | manifest | |
+| `java:license-from` | | `pom.xml`, `manifest` or `license-file` |
 
 The SHA-1 is there because Maven repositories publish and index jars by
 it: it is the hash to look a jar up with.
@@ -90,7 +121,7 @@ it: it is the hash to look a jar up with.
 Like the [Go binary decomposer](gobinary.md), this one answers **images
 and system roots** to the `api.SubjectDefaults` trait and not
 **codebases**: the jars lying in a source tree are build outputs and
-test fixtures. The same switches apply: `--skip-artifact javaarchive`
+test fixtures. The same switches apply: `--skip-artifact jar`
 on either command, `--no-artifacts` on `unpack image`, and the
 `ArtifactDecomposers` map on the image unpacker. The default skip list
 for system directories applies too, so the jars of a distribution's own
@@ -128,9 +159,9 @@ document made from its data is an analyzed SBOM: CycloneDX lifecycle
   says anything, or by a file name with no version, and a shaded jar of
   theirs shows nothing of what was unpacked into it.
 - **No dependency structure.** Bundled is all that is known.
-- **No licenses.** A `pom.xml` is often beside the `pom.properties`, but
-  the license is usually inherited from a parent that is not; reading
-  them is left for later.
+- **Not every archive says its license.** One whose POM inherits it,
+  with no `Bundle-License` and no license file, has none here: the
+  parent POM is on a repository, and no repository is asked.
 - **A shaded package has no hash**, and a relocated one keeps its
   `pom.properties` under the package's original name.
 - **Class files are not read.** A jar with no metadata is not

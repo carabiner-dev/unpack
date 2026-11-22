@@ -98,15 +98,22 @@ func ReadWorkflow(path string) ([]*Reference, error) {
 // nothing from elsewhere and is left out, and so is one that is an
 // expression, whose value is only known when the workflow runs.
 func ParseWorkflow(data []byte) ([]*Reference, error) {
+	references, _, err := parseWorkflow(data)
+	return references, err
+}
+
+// parseWorkflow reads a workflow's references, and the actions of the
+// repository itself its steps use, as the paths written: ./path.
+func parseWorkflow(data []byte) (references []*Reference, local []string, err error) {
 	var document yaml.Node
 	if err := yaml.Unmarshal(data, &document); err != nil {
-		return nil, fmt.Errorf("parsing workflow: %w", err)
+		return nil, nil, fmt.Errorf("parsing workflow: %w", err)
 	}
 	if len(document.Content) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
-	references := []*Reference{}
+	references = []*Reference{}
 	add := func(reference *Reference) {
 		if reference != nil {
 			references = append(references, reference)
@@ -122,17 +129,67 @@ func ParseWorkflow(data []byte) ([]*Reference, error) {
 		for _, service := range values(child(job, "services")) {
 			add(imageNode(service))
 		}
-		steps := child(job, "steps")
-		if steps == nil || steps.Kind != yaml.SequenceNode {
+		found, localActions := stepReferences(child(job, "steps"))
+		references = append(references, found...)
+		local = append(local, localActions...)
+	}
+	return references, local, nil
+}
+
+// stepReferences reads the uses keys of a list of steps: the references
+// to what is elsewhere, and the paths of the repository's own actions.
+func stepReferences(steps *yaml.Node) (references []*Reference, local []string) {
+	if steps == nil || steps.Kind != yaml.SequenceNode {
+		return nil, nil
+	}
+	for _, step := range steps.Content {
+		uses := child(step, "uses")
+		if uses == nil || uses.Kind != yaml.ScalarNode {
 			continue
 		}
-		for _, step := range steps.Content {
-			if uses := child(step, "uses"); uses != nil {
-				add(usesReference(uses, KindAction))
+		if raw := strings.TrimSpace(uses.Value); strings.HasPrefix(raw, "./") {
+			local = append(local, raw)
+			continue
+		}
+		if reference := usesReference(uses, KindAction); reference != nil {
+			references = append(references, reference)
+		}
+	}
+	return references, local
+}
+
+// ActionFiles are the names the metadata file of an action goes by.
+var ActionFiles = []string{"action.yml", "action.yaml"}
+
+// ParseAction reads what an action of the repository runs from
+// elsewhere, from its metadata file:
+//
+//	runs.steps[].uses    a composite action's steps, as a workflow's
+//	runs.image           the image of a Docker action, when it is one
+//	                     pulled (docker://image) and not built from the
+//	                     Dockerfile beside it
+//
+// and the paths of the other actions of the repository it uses.
+func ParseAction(data []byte) (references []*Reference, local []string, err error) {
+	var document yaml.Node
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		return nil, nil, fmt.Errorf("parsing action: %w", err)
+	}
+	if len(document.Content) == 0 {
+		return nil, nil, nil
+	}
+	runs := child(document.Content[0], "runs")
+	references, local = stepReferences(child(runs, "steps"))
+
+	if image := child(runs, "image"); image != nil && image.Kind == yaml.ScalarNode {
+		if raw := strings.TrimSpace(image.Value); strings.HasPrefix(raw, "docker://") {
+			if reference := imageReference(strings.TrimPrefix(raw, "docker://")); reference != nil {
+				reference.Raw, reference.Line, reference.Comment = raw, image.Line, comment(image)
+				references = append(references, reference)
 			}
 		}
 	}
-	return references, nil
+	return references, local, nil
 }
 
 // child returns the value of a key of a mapping, and nil for anything

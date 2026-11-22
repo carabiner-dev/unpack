@@ -4,10 +4,14 @@
 package cmd
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
+
+	"github.com/carabiner-dev/unpack/dependencies"
 )
 
 // TestCodebaseOutputFilename pins the names written when --multi sends each
@@ -102,4 +106,31 @@ func TestExtractOptionsPlatform(t *testing.T) {
 			require.ErrorContains(t, err, "invalid platform")
 		})
 	}
+}
+
+// TestFailListingCodebases checks that extract not knowing which codebase
+// to read is a failure: an error is returned, which is what gives the
+// command a status other than zero, and the message and the codebases to
+// choose from go to standard error, cobra adding nothing of its own.
+func TestFailListingCodebases(t *testing.T) {
+	t.Parallel()
+	var stderr, stdout bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetErr(&stderr)
+	cmd.SetOut(&stdout)
+
+	err := failListingCodebases(cmd, []dependencies.CodebaseInfo{
+		{ID: "golang:.", Language: "golang", Path: "."},
+		{ID: "npm:web", Language: "npm", Path: "web"},
+	}, `codebase "golang:nope" not found.`, "Available codebases:")
+
+	require.ErrorIs(t, err, errCodebaseSelection)
+	require.ErrorContains(t, err, "golang:nope")
+	require.True(t, cmd.SilenceErrors, "the message is already printed")
+	require.True(t, cmd.SilenceUsage)
+
+	require.Contains(t, stderr.String(), `codebase "golang:nope" not found.`)
+	require.Contains(t, stderr.String(), "Available codebases:")
+	require.Contains(t, stderr.String(), "npm:web")
+	require.Empty(t, stdout.String(), "standard output is where the SBOM goes")
 }

@@ -1,0 +1,27 @@
+[versions]
+kotlin = "2.0.0"
+jackson = "2.17.1"
+commons = { strictly = "[3.8, 4.0[", prefer = "3.14.0" }
+pinned = { strictly = "1.7.36" }
+
+[libraries]
+guava = "com.google.guava:guava:33.2.0-jre"
+jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-core = { group = "com.fasterxml.jackson.core", name = "jackson-core", version.ref = "jackson" }
+commons-lang3 = { group = "org.apache.commons", name = "commons-lang3", version.ref = "commons" }
+slf4j = { module = "org.slf4j:slf4j-api", version.ref = "pinned" }
+okhttp = { module = "com.squareup.okhttp3:okhttp", version = "4.12.0" }
+okio = { module = "com.squareup.okio:okio", version = { require = "3.9.0" } }
+spring-web = { module = "org.springframework:spring-web" }
+dynamic = "org.example:dynamic:1.+"
+undefined-ref = { module = "org.example:undefined", version.ref = "nowhere" }
+bom-managed.module = "org.example:managed"
+not-a-library = 42
+
+[bundles]
+jackson = ["jackson-databind", "jackson-core"]
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+versions = { id = "com.github.ben-manes.versions", version = "0.51.0" }
+shorthand = "com.diffplug.spotless:6.25.0"
