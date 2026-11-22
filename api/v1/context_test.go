@@ -12,6 +12,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/artifact/gobinary"
+	"github.com/carabiner-dev/unpack/artifact/javaarchive"
 	"github.com/carabiner-dev/unpack/artifact/rustbinary"
 	"github.com/carabiner-dev/unpack/release"
 	"github.com/carabiner-dev/unpack/source/cmake"
@@ -47,19 +48,20 @@ func TestDecomposerContexts(t *testing.T) {
 		expected   api.GenerationContext
 	}{
 		// What a source tree states, before any build.
-		"composer": {composer.New(), api.ContextSource},
-		"golang":   {golang.New(), api.ContextSource},
-		"maven":    {maven.New(), api.ContextSource},
-		"npm":      {npm.New(), api.ContextSource},
-		"python":   {python.New(), api.ContextSource},
-		"ruby":     {ruby.New(), api.ContextSource},
-		"cmake":    {cmake.New(), api.ContextSource},
-		"conan":    {conan.New(), api.ContextSource},
-		"pkgconf":  {pkgconf.New(), api.ContextSource},
-		"swift":    {swift.New(), api.ContextSource},
-		"nuget":    {nuget.New(), api.ContextSource},
-		"gradle":   {gradle.New(), api.ContextSource},
-		"rust":     {rust.New(), api.ContextSource},
+		"composer":    {composer.New(), api.ContextSource},
+		"golang":      {golang.New(), api.ContextSource},
+		"maven":       {maven.New(), api.ContextSource},
+		"npm":         {npm.New(), api.ContextSource},
+		"python":      {python.New(), api.ContextSource},
+		"ruby":        {ruby.New(), api.ContextSource},
+		"cmake":       {cmake.New(), api.ContextSource},
+		"conan":       {conan.New(), api.ContextSource},
+		"pkgconf":     {pkgconf.New(), api.ContextSource},
+		"swift":       {swift.New(), api.ContextSource},
+		"nuget":       {nuget.New(), api.ContextSource},
+		"gradle":      {gradle.New(), api.ContextSource},
+		"javaarchive": {javaarchive.New(), api.ContextAnalyzed},
+		"rust":        {rust.New(), api.ContextSource},
 
 		// What the build tool recorded of its own resolution.
 		"sbt": {sbt.New(""), api.ContextBuild},
