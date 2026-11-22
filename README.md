@@ -290,7 +290,7 @@ inventory, and the modules built into any
 | Artifact | Reads | Remote enrichment |
 | --- | --- | --- |
 | [Go executables](docs/decomposers/gobinary.md) | Embedded build information | Go module proxy + deps.dev |
-| [Java archives](docs/decomposers/javaarchive.md) | `pom.properties` and manifests inside jars, WARs and EARs | _(none)_ |
+| [Java archives](docs/decomposers/jar.md) | `pom.properties` and manifests inside jars, WARs and EARs | _(none)_ |
 | [Rust executables](docs/decomposers/rustbinary.md) | The cargo-auditable record | crates.io API |
 
 Support for more ecosystems is planned.

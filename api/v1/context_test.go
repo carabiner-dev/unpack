@@ -12,7 +12,7 @@ import (
 
 	api "github.com/carabiner-dev/unpack/api/v1"
 	"github.com/carabiner-dev/unpack/artifact/gobinary"
-	"github.com/carabiner-dev/unpack/artifact/javaarchive"
+	"github.com/carabiner-dev/unpack/artifact/jar"
 	"github.com/carabiner-dev/unpack/artifact/rustbinary"
 	"github.com/carabiner-dev/unpack/release"
 	"github.com/carabiner-dev/unpack/source/cmake"
@@ -62,7 +62,7 @@ func TestDecomposerContexts(t *testing.T) {
 		"nuget":         {nuget.New(), api.ContextSource},
 		"gradle":        {gradle.New(), api.ContextSource},
 		"githubactions": {githubactions.New(), api.ContextSource},
-		"javaarchive":   {javaarchive.New(), api.ContextAnalyzed},
+		"jar":           {jar.New(), api.ContextAnalyzed},
 		"rust":          {rust.New(), api.ContextSource},
 
 		// What the build tool recorded of its own resolution.

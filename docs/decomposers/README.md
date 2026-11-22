@@ -34,7 +34,7 @@ container image `unpack image` scans.
 | Artifact | Entry point | Reads | Runs by default under | Remote enrichment |
 |----------|------------|-------|-----------------------|-------------------|
 | [Go executables](gobinary.md) | `artifact/gobinary/` | Embedded build information (`debug/buildinfo`) | images, system roots; not codebases | Go module proxy + deps.dev, through the Go decomposer |
-| [Java archives](javaarchive.md) | `artifact/javaarchive/` | `pom.properties` and manifests inside jars, WARs and EARs, nested and shaded | images, system roots; not codebases | _(none)_ |
+| [Java archives](jar.md) | `artifact/jar/` | `pom.properties` and manifests inside jars, WARs and EARs, nested and shaded | images, system roots; not codebases | _(none)_ |
 | [Rust executables](rustbinary.md) | `artifact/rustbinary/` | The cargo-auditable record (`.dep-v0` section) | images, system roots; not codebases | crates.io API, through the Rust decomposer |
 
 ## Common capabilities

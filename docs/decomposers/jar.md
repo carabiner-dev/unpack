@@ -1,6 +1,7 @@
 # Java Archive Decomposer
 
-**Location:** `artifact/javaarchive/`
+**Location:** `artifact/jar/`
+**Name:** `jar`
 
 Reads the packages bundled in Java archives: jars, and the WARs, EARs
 and executable jars that carry their dependencies inside them. Nothing
@@ -120,7 +121,7 @@ it: it is the hash to look a jar up with.
 Like the [Go binary decomposer](gobinary.md), this one answers **images
 and system roots** to the `api.SubjectDefaults` trait and not
 **codebases**: the jars lying in a source tree are build outputs and
-test fixtures. The same switches apply: `--skip-artifact javaarchive`
+test fixtures. The same switches apply: `--skip-artifact jar`
 on either command, `--no-artifacts` on `unpack image`, and the
 `ArtifactDecomposers` map on the image unpacker. The default skip list
 for system directories applies too, so the jars of a distribution's own
