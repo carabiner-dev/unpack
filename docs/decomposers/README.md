@@ -1,6 +1,6 @@
 # Decomposers
 
-Unpack ships with decomposers for eight package ecosystems, and for CMake
+Unpack ships with decomposers for nine package ecosystems, and for CMake
 projects and pkg-config files. Each decomposer
 parses lock files and manifest files, resolves the dependency graph, and
 produces a [protobom](https://github.com/protobom/protobom) NodeList that
@@ -18,6 +18,7 @@ can be serialized as SPDX or CycloneDX.
 | [Python](python.md) | `source/python/` | `uv.lock`, `poetry.lock`, `requirements.txt` | `pyproject.toml` (poetry only) | PyPI JSON API |
 | [Ruby (Bundler)](ruby.md) | `source/ruby/` | `Gemfile.lock` | _(not read — executable Ruby)_ | rubygems.org API |
 | [Rust](rust.md) | `source/rust/` | `Cargo.lock` | `Cargo.toml` | crates.io API |
+| [Swift](swift.md) | `source/swift/` | `Package.resolved` | _(not read — executable Swift)_ | _(none)_ |
 | [sbt](sbt.md) | `source/sbt/` | _(a GitHub dependency snapshot, given with `--sbt-snapshot`)_ | _(not read — executable Scala)_ | Maven Central (hashes) |
 
 ## Artifact decomposers
@@ -91,7 +92,7 @@ decomposer implements `api.ContextReporter` and names the one it reads in.
 
 | Context | Meaning | Decomposers |
 |---------|---------|-------------|
-| `source` | Read from a source tree and the manifests and lock files in it, before anything is built | CMake, Conan, Go, Maven, JavaScript, PHP, pkg-config, Python, Ruby, Rust |
+| `source` | Read from a source tree and the manifests and lock files in it, before anything is built | CMake, Conan, Go, Maven, JavaScript, PHP, pkg-config, Python, Ruby, Rust, Swift |
 | `build` | Read from what the build tool recorded of its own dependency resolution | sbt |
 | `analyzed` | Read by taking apart something already built | Go binary, Rust binary, the release reader, and the system readers (rpm, deb, apk, installed Python environments, Composer vendor directories) |
 
@@ -215,6 +216,7 @@ decomposers uniformly.
 | **CMake:** local parsing, no network at any level | works | works | works |
 | **Conan:** local parsing, no network at any level | works | works | works |
 | **pkg-config:** local parsing, no network at any level | works | works | works |
+| **Swift:** local parsing, no network at any level | works | works | works |
 | **Ruby:** local parsing (Gemfile.lock) | works | works | works |
 | **Ruby:** rubygems.org API (licenses, metadata) | skip | yes | yes |
 | **Python:** PyPI JSON API (licenses, metadata) | skip | yes | yes |
