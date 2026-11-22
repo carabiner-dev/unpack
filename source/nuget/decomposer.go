@@ -7,9 +7,12 @@ package nuget
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -72,10 +75,19 @@ func (d *Decomposer) Requirements(*api.DecomposerOptions) []api.Requirement { re
 // the lockfile, as it stands in the source tree.
 func (d *Decomposer) GenerationContext() api.GenerationContext { return api.ContextSource }
 
-// FindCodeBases locates .NET projects by their lockfile, which is beside
-// the project file. A project restored without one is not found.
+// FindCodeBases locates .NET projects: the directories holding a
+// lockfile, a project file or a packages.config.
 func (d *Decomposer) FindCodeBases(index *code.PathIndex) ([]string, error) {
-	return index.FindFileLocations(LockFile)
+	found := []string{}
+	for dir, files := range *index {
+		if slices.ContainsFunc(files, func(name string) bool {
+			return name == LockFile || name == PackagesConfigFile || isProjectFile(name)
+		}) {
+			found = append(found, dir)
+		}
+	}
+	slices.Sort(found)
+	return found, nil
 }
 
 // Extract is ExtractWithContext with a background context, for a caller
@@ -84,7 +96,9 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 	return d.ExtractWithContext(context.Background(), opts)
 }
 
-// ExtractWithContext reads the lockfile and builds the graph it holds.
+// ExtractWithContext reads the lockfile and builds the graph it holds. A
+// project that has none is read from what it asks for (see
+// extractUnlocked).
 //
 // A lockfile resolves the project once for each target it is built for,
 // and the resolutions may differ: a package needed on one framework and
@@ -92,12 +106,15 @@ func (d *Decomposer) Extract(opts *api.DecomposerOptions) (*sbom.NodeList, error
 // package at a version is one node however many targets have it, each
 // named on it, and a package two targets resolve to two versions is two
 // nodes.
-func (d *Decomposer) ExtractWithContext(_ context.Context, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
+func (d *Decomposer) ExtractWithContext(ctx context.Context, opts *api.DecomposerOptions) (*sbom.NodeList, error) {
 	workDir := opts.WorkDir
 	if workDir == "" {
 		workDir = "."
 	}
 	lock, err := ReadLock(filepath.Join(workDir, LockFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return d.extractUnlocked(ctx, workDir, opts)
+	}
 	if err != nil {
 		return nil, err
 	}

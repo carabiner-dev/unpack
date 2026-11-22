@@ -192,10 +192,11 @@ func TestFindCodeBases(t *testing.T) {
 	index := code.PathIndex{}
 	index.Add("src/App", "App.csproj")
 	index.Add("src/App", LockFile)
-	// Restored without a lockfile.
+	// Restored without a lockfile: found by its project file.
 	index.Add("src/Lib", "Lib.csproj")
+	index.Add("docs", "README.md")
 
 	found, err := New().FindCodeBases(&index)
 	require.NoError(t, err)
-	require.Equal(t, []string{"src/App"}, found)
+	require.Equal(t, []string{"src/App", "src/Lib"}, found)
 }
