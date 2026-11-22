@@ -137,11 +137,11 @@ func TestDefaultDecomposers(t *testing.T) {
 	t.Parallel()
 	unpacker := NewUnpacker()
 	require.Equal(t,
-		[]string{"conan", "golang", "maven", "npm", "nuget", "php", "python", "ruby", "rust", "swift"},
+		[]string{"conan", "golang", "gradle", "maven", "npm", "nuget", "php", "python", "ruby", "rust", "swift"},
 		unpacker.DefaultDecomposerNames(),
 	)
 	require.Equal(t,
-		[]string{"cmake", "conan", "golang", "maven", "npm", "nuget", "php", "pkgconf", "python", "ruby", "rust", "swift"},
+		[]string{"cmake", "conan", "golang", "gradle", "maven", "npm", "nuget", "php", "pkgconf", "python", "ruby", "rust", "swift"},
 		unpacker.DecomposerNames(),
 	)
 }
