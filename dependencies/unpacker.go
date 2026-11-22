@@ -21,6 +21,7 @@ import (
 	"github.com/carabiner-dev/unpack/source/python"
 	"github.com/carabiner-dev/unpack/source/ruby"
 	"github.com/carabiner-dev/unpack/source/rust"
+	"github.com/carabiner-dev/unpack/source/swift"
 )
 
 var ErrMultipleCodebases = errors.New("multiple codebases found")
@@ -48,6 +49,7 @@ func NewUnpacker() *Unpacker {
 			"ruby":   ruby.New(),
 			"maven":  maven.New(),
 			"conan":  conan.New(),
+			"swift":  swift.New(),
 		},
 	}
 }

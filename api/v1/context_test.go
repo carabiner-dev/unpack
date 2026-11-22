@@ -25,6 +25,7 @@ import (
 	"github.com/carabiner-dev/unpack/source/ruby"
 	"github.com/carabiner-dev/unpack/source/rust"
 	"github.com/carabiner-dev/unpack/source/sbt"
+	"github.com/carabiner-dev/unpack/source/swift"
 	"github.com/carabiner-dev/unpack/system/apk"
 	syscomposer "github.com/carabiner-dev/unpack/system/composer"
 	"github.com/carabiner-dev/unpack/system/deb"
@@ -53,6 +54,7 @@ func TestDecomposerContexts(t *testing.T) {
 		"cmake":    {cmake.New(), api.ContextSource},
 		"conan":    {conan.New(), api.ContextSource},
 		"pkgconf":  {pkgconf.New(), api.ContextSource},
+		"swift":    {swift.New(), api.ContextSource},
 		"rust":     {rust.New(), api.ContextSource},
 
 		// What the build tool recorded of its own resolution.
