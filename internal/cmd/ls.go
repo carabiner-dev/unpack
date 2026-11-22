@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 
@@ -135,6 +136,11 @@ func listCodebases(ctx context.Context, opts *codebasesOptions) error {
 }
 
 func outputCodebasesTable(codebases []dependencies.CodebaseInfo) error {
+	return writeCodebasesTable(os.Stdout, codebases)
+}
+
+// writeCodebasesTable writes the table of codebases to a writer.
+func writeCodebasesTable(w io.Writer, codebases []dependencies.CodebaseInfo) error {
 	t := termtable.NewTable(
 		termtable.WithBorder(lsBorderSet()),
 		termtable.WithTargetWidthPercent(100),
@@ -156,7 +162,7 @@ func outputCodebasesTable(codebases []dependencies.CodebaseInfo) error {
 		row.AddCell(termtable.WithContent(cb.Path))
 	}
 
-	_, err := t.WriteTo(os.Stdout)
+	_, err := t.WriteTo(w)
 	return err
 }
 

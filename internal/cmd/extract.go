@@ -291,16 +291,8 @@ to the current directory.
 					}
 				}
 				if len(filtered) == 0 {
-					fmt.Fprintln(os.Stderr)
-					fmt.Fprintf(os.Stderr, "%s codebase %q not found.\n", color.RedString("Error:"), opts.Codebase)
-					fmt.Fprintln(os.Stderr, "Available codebases:")
-					fmt.Fprintln(os.Stderr)
-					return listCodebases(cmd.Context(), &codebasesOptions{
-						decomposerOptions: opts.decomposerOptions,
-						Path:              opts.Path,
-						IgnorePatterns:    opts.IgnorePatterns,
-						Format:            codebasesFormatTable,
-					})
+					return failListingCodebases(cmd, codebases,
+						fmt.Sprintf("codebase %q not found.", opts.Codebase), "Available codebases:")
 				}
 				codebases = filtered
 			}
@@ -312,16 +304,8 @@ to the current directory.
 
 			if len(codebases) > 1 {
 				if !opts.IgnoreExtraCodebases && !opts.MultipleOutputs {
-					fmt.Fprintln(os.Stderr)
-					fmt.Fprintf(os.Stderr, "%s Multiple codebases found.\n", color.RedString("Error:"))
-					fmt.Fprintln(os.Stderr, "Run unpack extract <codebase ID> (or unpack extract --multi with an SBOM format)")
-					fmt.Fprintln(os.Stderr)
-					return listCodebases(cmd.Context(), &codebasesOptions{
-						decomposerOptions: opts.decomposerOptions,
-						Path:              opts.Path,
-						IgnorePatterns:    opts.IgnorePatterns,
-						Format:            codebasesFormatTable,
-					})
+					return failListingCodebases(cmd, codebases, "Multiple codebases found.",
+						"Run unpack extract <codebase ID> (or unpack extract --multi with an SBOM format)")
 				}
 			}
 
@@ -345,6 +329,32 @@ to the current directory.
 
 	opts.AddFlags(extractCmd)
 	parent.AddCommand(extractCmd)
+}
+
+// errCodebaseSelection is returned when extract cannot tell which codebase
+// to read: the one asked for is not there, or there are several and none
+// was asked for.
+var errCodebaseSelection = errors.New("no codebase selected")
+
+// failListingCodebases fails the command with a message and the codebases
+// there are to choose from.
+//
+// Both go to standard error. Standard output is where the SBOM goes, and
+// is often a file: a listing written there would be taken for one. The
+// command then fails without cobra printing the error or the usage a
+// second time, which is what makes it exit with a status that is not
+// zero.
+func failListingCodebases(cmd *cobra.Command, codebases []dependencies.CodebaseInfo, message, hint string) error {
+	stderr := cmd.ErrOrStderr()
+	fmt.Fprintln(stderr)                                               //nolint:errcheck // nowhere to report a failed write to stderr
+	fmt.Fprintf(stderr, "%s %s\n", color.RedString("Error:"), message) //nolint:errcheck // as above
+	fmt.Fprintln(stderr, hint)                                         //nolint:errcheck // as above
+	fmt.Fprintln(stderr)                                               //nolint:errcheck // as above
+	if err := writeCodebasesTable(stderr, codebases); err != nil {
+		return err
+	}
+	cmd.SilenceErrors, cmd.SilenceUsage = true, true
+	return fmt.Errorf("%w: %s", errCodebaseSelection, message)
 }
 
 func handleCodeBase(ctx context.Context, opts *extractOptions, s *signer.Signer, unpacker *dependencies.Unpacker, id string) error {
