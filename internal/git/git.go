@@ -4,8 +4,11 @@
 package git
 
 import (
+	"bytes"
+	"container/heap"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -13,6 +16,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"golang.org/x/mod/semver"
 )
 
 func getHeadHash(repo *git.Repository) (string, error) {
@@ -23,7 +27,11 @@ func getHeadHash(repo *git.Repository) (string, error) {
 	return headRef.Hash().String(), nil
 }
 
-// RepoVersion
+// RepoVersion returns a version of the commit the repository at path is at,
+// relative to the most recent tag in its history (see nearestTag), and the
+// commit hash. The version is the tag itself at the tagged commit, empty
+// without a tag in the history, and otherwise the tag, a separator, the
+// number of newer commits and the abbreviated hash, like v1.0.1-2+2bce182a.
 func RepoVersion(path string) (tag, commit string, err error) {
 	repo, err := git.PlainOpen(path)
 	if err != nil {
@@ -35,21 +43,18 @@ func RepoVersion(path string) (tag, commit string, err error) {
 		return "", "", fmt.Errorf("reading head hash: %w", err)
 	}
 
-	// Get the latest tag
-	lastTag, _, err := getLatestTagFromRepository(repo)
+	// The version is relative to the nearest tag in the history of HEAD.
+	// A tag on another branch says nothing about this commit, even when
+	// it is the most recent one in the repository.
+	lastTag, num, err := nearestTag(repo, plumbing.NewHash(headHash))
 	if err != nil {
-		return "", "", fmt.Errorf("reading latest tag: %w", err)
+		return "", "", fmt.Errorf("finding the nearest tag: %w", err)
 	}
 
 	// If there is no tag, then dont, try to compute a version.
 	// We just return the commit
 	if lastTag == "" {
 		return "", headHash, nil
-	}
-
-	num, err := getCommitsFromTag(repo, lastTag)
-	if err != nil {
-		return "", "", fmt.Errorf("finding commits from tag: %w", err)
 	}
 
 	if num == 0 {
@@ -106,6 +111,38 @@ func HeadRevision(path string) (*Revision, error) {
 		Time:   head.Committer.When.UTC(),
 	}
 
+	tagged, err := tagsByCommit(repo)
+	if err != nil {
+		return nil, err
+	}
+	if len(tagged) == 0 {
+		return revision, nil
+	}
+
+	revision.Tags = tagged[head.Hash]
+	delete(tagged, head.Hash)
+
+	// The history is walked once, picking up the tags as their commits
+	// come by, and no further than the last of them.
+	err = walkHistory(repo, head.Hash, func(c *object.Commit) bool {
+		if names, ok := tagged[c.Hash]; ok {
+			revision.AncestorTags = append(revision.AncestorTags, names...)
+			delete(tagged, c.Hash)
+		}
+		return len(tagged) > 0
+	})
+	if err != nil {
+		return nil, fmt.Errorf("iterating history: %w", err)
+	}
+
+	sort.Strings(revision.Tags)
+	sort.Strings(revision.AncestorTags)
+	return revision, nil
+}
+
+// tagsByCommit returns the names of the tags of the repository by the
+// commit they point at.
+func tagsByCommit(repo *git.Repository) (map[plumbing.Hash][]string, error) {
 	tagRefs, err := repo.Tags()
 	if err != nil {
 		return nil, fmt.Errorf("reading tags: %w", err)
@@ -124,138 +161,139 @@ func HeadRevision(path string) (*Revision, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading tags: %w", err)
 	}
+	return tagged, nil
+}
+
+// nearestTag returns the most recent tag in the history of head and how
+// many commits of that history are newer than its commit. The history is
+// walked by commit time, so a tag that came in through a merge counts as
+// well as one on the first-parent line. The most recent tagged commit wins,
+// even over a higher version further back. This is simpler than git
+// describe, which weighs several tags and counts the commits only head
+// has. They differ after merges: when an older release branch is merged
+// into main after a newer tag, this picks the release branch tag, git
+// describe the newer one, and commits older than the tag on a branch merged
+// after it count for git describe, not here. Of several tags on a commit,
+// the highest semantic version wins, then the name. It returns no tag when
+// none is in the history.
+func nearestTag(repo *git.Repository, head plumbing.Hash) (tag string, distance int, err error) {
+	tagged, err := tagsByCommit(repo)
+	if err != nil {
+		return "", 0, err
+	}
 	if len(tagged) == 0 {
-		return revision, nil
+		return "", 0, nil
 	}
 
-	revision.Tags = tagged[head.Hash]
-	delete(tagged, head.Hash)
-
-	// The history is walked once, picking up the tags as their commits
-	// come by, and no further than the last of them.
-	if len(tagged) > 0 {
-		commits, err := repo.Log(&git.LogOptions{From: head.Hash})
-		if err != nil {
-			return nil, fmt.Errorf("creating commit iterator: %w", err)
+	err = walkHistory(repo, head, func(c *object.Commit) bool {
+		if names, ok := tagged[c.Hash]; ok {
+			tag = highestTag(names)
+			return false
 		}
-		errDone := errors.New("every tag found")
-		err = commits.ForEach(func(c *object.Commit) error {
-			if names, ok := tagged[c.Hash]; ok {
-				revision.AncestorTags = append(revision.AncestorTags, names...)
-				delete(tagged, c.Hash)
-				if len(tagged) == 0 {
-					return errDone
-				}
-			}
+		distance++
+		return true
+	})
+	if err != nil {
+		return "", 0, fmt.Errorf("iterating history: %w", err)
+	}
+	if tag == "" {
+		return "", 0, nil
+	}
+	return tag, distance, nil
+}
+
+// walkHistory calls visit with head and the commits of its history, the
+// most recently committed first, until visit returns false. Like git, it
+// treats the commits at the boundary of a shallow clone as having no
+// parents, whether their parents are on disk or not. go-git's iterator by
+// commit time reads the parents of a commit before returning it, which
+// fails on a shallow clone, hence the walk here.
+func walkHistory(repo *git.Repository, head plumbing.Hash, visit func(*object.Commit) bool) error {
+	shallowList, err := repo.Storer.Shallow()
+	if err != nil {
+		return fmt.Errorf("reading shallow commits: %w", err)
+	}
+	shallow := map[plumbing.Hash]bool{}
+	for _, hash := range shallowList {
+		shallow[hash] = true
+	}
+
+	start, err := repo.CommitObject(head)
+	if err != nil {
+		return fmt.Errorf("reading commit %s: %w", head, err)
+	}
+	queue := &commitsByTime{start}
+	seen := map[plumbing.Hash]bool{head: true}
+	for queue.Len() > 0 {
+		commit, ok := heap.Pop(queue).(*object.Commit)
+		if !ok {
+			return errors.New("not a commit")
+		}
+		if !visit(commit) {
 			return nil
-		})
-		if err != nil && !errors.Is(err, errDone) {
-			return nil, fmt.Errorf("iterating history: %w", err)
+		}
+		if shallow[commit.Hash] {
+			continue
+		}
+		for _, parent := range commit.ParentHashes {
+			if seen[parent] {
+				continue
+			}
+			seen[parent] = true
+			parentCommit, err := repo.CommitObject(parent)
+			if err != nil {
+				return fmt.Errorf("reading commit %s: %w", parent, err)
+			}
+			heap.Push(queue, parentCommit)
 		}
 	}
-
-	sort.Strings(revision.Tags)
-	sort.Strings(revision.AncestorTags)
-	return revision, nil
+	return nil
 }
 
-func GetLatestTag(path string) (tag, commit string, err error) {
-	repo, err := git.PlainOpen(path)
-	if err != nil {
-		return "", "", fmt.Errorf("opening repository: %w", err)
-	}
+// commitsByTime is a heap of commits, the most recently committed first.
+type commitsByTime []*object.Commit
 
-	tag, ocommit, err := getLatestTagFromRepository(repo)
-	if err != nil {
-		return "", "", err
-	}
+func (c *commitsByTime) Len() int { return len(*c) }
 
-	return tag, ocommit.Hash.String(), nil
+func (c *commitsByTime) Less(i, j int) bool {
+	a, b := (*c)[i], (*c)[j]
+	if !a.Committer.When.Equal(b.Committer.When) {
+		return a.Committer.When.After(b.Committer.When)
+	}
+	return bytes.Compare(a.Hash[:], b.Hash[:]) < 0
 }
 
-// getCommitsFromTag returns the number of commits HEAD is from a tag
-func getCommitsFromTag(repo *git.Repository, tagName string) (int, error) {
-	headRef, err := repo.Head()
-	if err != nil {
-		return 0, fmt.Errorf("reading head from repo: %w", err)
-	}
+func (c *commitsByTime) Swap(i, j int) { (*c)[i], (*c)[j] = (*c)[j], (*c)[i] }
 
-	tagRef, err := repo.Tag(tagName)
-	if err != nil {
-		return 0, fmt.Errorf("finding tag %q: %w", tagName, err)
+func (c *commitsByTime) Push(x any) {
+	if commit, ok := x.(*object.Commit); ok {
+		*c = append(*c, commit)
 	}
+}
 
-	tagCommitHash, err := repo.ResolveRevision(plumbing.Revision(tagRef.Name().String()))
-	if err != nil {
-		return 0, fmt.Errorf("resolving revision")
+func (c *commitsByTime) Pop() any {
+	old := *c
+	commit := old[len(old)-1]
+	*c = old[:len(old)-1]
+	return commit
+}
+
+// withV adds the v prefix semver expects to tags without one, like 1.2.0.
+func withV(tag string) string {
+	if strings.HasPrefix(tag, "v") {
+		return tag
 	}
+	return "v" + tag
+}
 
-	tagCommit, err := repo.CommitObject(*tagCommitHash)
-	if err != nil {
-		return 0, fmt.Errorf("finding tagged commit: %w", err)
-	}
-
-	// read the commit history backwards
-	cIter, err := repo.Log(&git.LogOptions{From: headRef.Hash()})
-	if err != nil {
-		return 0, fmt.Errorf("creating commit iterator: %w", err)
-	}
-
-	i := 0
-	found := false
-	err = cIter.ForEach(func(c *object.Commit) error {
-		if c.Hash.String() == tagCommit.Hash.String() {
-			found = true
-			return git.ErrTagExists
+// highestTag returns the highest semantic version of the tags, with or
+// without a v prefix, or the last name in sort order when none or several
+// equal ones are.
+func highestTag(tags []string) string {
+	return slices.MaxFunc(tags, func(a, b string) int {
+		if c := semver.Compare(withV(a), withV(b)); c != 0 {
+			return c
 		}
-		i++
-		return nil
+		return strings.Compare(a, b)
 	})
-	if err != nil && !errors.Is(err, git.ErrTagExists) {
-		return 0, fmt.Errorf("iterating history: %w", err)
-	}
-	if !found {
-		return 0, fmt.Errorf("tag not found in history")
-	}
-	return i, nil
-}
-
-func getLatestTagFromRepository(repo *git.Repository) (string, *object.Commit, error) {
-	tagRefs, err := repo.Tags()
-	if err != nil {
-		return "", nil, err
-	}
-
-	var latestTagCommit *object.Commit
-	var latestTagName string
-
-	err = tagRefs.ForEach(func(tagRef *plumbing.Reference) error {
-		revision := plumbing.Revision(tagRef.Name().String())
-		tagCommitHash, err := repo.ResolveRevision(revision)
-		if err != nil {
-			return err
-		}
-
-		commit, err := repo.CommitObject(*tagCommitHash)
-		if err != nil {
-			return err
-		}
-
-		if latestTagCommit == nil {
-			latestTagCommit = commit
-			latestTagName = tagRef.Name().String()
-		}
-
-		if commit.Committer.When.After(latestTagCommit.Committer.When) {
-			latestTagCommit = commit
-			latestTagName = tagRef.Name().String()
-		}
-
-		return nil
-	})
-	if err != nil {
-		return "", nil, err
-	}
-
-	return strings.TrimPrefix(latestTagName, "refs/tags/"), latestTagCommit, nil
 }
