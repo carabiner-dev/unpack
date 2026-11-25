@@ -21,7 +21,7 @@ require (
 	github.com/nozzle/throttler v0.0.0-20180817012639-2ea982251481
 	github.com/package-url/packageurl-go v0.1.7
 	github.com/policylabs/attestation v0.3.0
-	github.com/policylabs/collector v0.4.1
+	github.com/policylabs/collector v0.4.2
 	github.com/policylabs/signer v0.6.8
 	github.com/protobom/protobom v0.7.0
 	github.com/spf13/cobra v1.10.2
